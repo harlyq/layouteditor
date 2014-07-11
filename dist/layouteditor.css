@@ -1,0 +1,9 @@
+body {
+  background-color: #eeeeee;
+}
+.layout {
+  position: fixed;
+  width: 500px;
+  height: 500px;
+  border: black solid 1px;
+}

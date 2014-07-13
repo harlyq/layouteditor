@@ -10,7 +10,7 @@ var LayoutEditor;
 (function (LayoutEditor) {
     "use strict";
 
-    var EPSILON = 0.01;
+    var EPSILON = 0.001;
     var g_canvas = null;
     var g_ctx = null;
     var g_div = null;
@@ -26,10 +26,41 @@ var LayoutEditor;
         if (!obj)
             obj = {};
         for (var key in props) {
-            if (props.hasOwnProperty(key))
-                obj[key] = props[key];
+            if (props.hasOwnProperty(key)) {
+                if (typeof props[key] === "object") {
+                    extend(obj[key], props[key]);
+                } else {
+                    obj[key] = props[key];
+                }
+            }
         }
         return obj;
+    }
+
+    function arrayMin(list) {
+        if (list.length === 0)
+            return 0;
+
+        var min = list[0];
+        for (var i = list.length - 1; i > 0; --i) {
+            var val = list[i];
+            if (val < min)
+                min = val;
+        }
+        return min;
+    }
+
+    function arrayMax(list) {
+        if (list.length === 0)
+            return 0;
+
+        var max = list[0];
+        for (var i = list.length - 1; i > 0; --i) {
+            var val = list[i];
+            if (val > max)
+                max = val;
+        }
+        return max;
     }
 
     //------------------------------
@@ -53,9 +84,13 @@ var LayoutEditor;
     })();
     var g_defaultStyle = new Style();
     var g_drawStyle = new Style();
+    var g_selectStyle = new Style();
     g_drawStyle.strokeStyle = "red";
     g_drawStyle.lineDash = [2, 2];
     g_drawStyle.fillStyle = "none";
+    g_selectStyle.strokeStyle = "blue";
+    g_selectStyle.lineDash = [5, 5];
+    g_selectStyle.fillStyle = "none";
 
     var g_style = g_defaultStyle;
 
@@ -66,12 +101,82 @@ var LayoutEditor;
         return Bounds;
     })();
 
+    
+
+    //------------------------------
+    var Transform = (function () {
+        function Transform() {
+            this.rotate = 0;
+            this.scale = {
+                x: 1,
+                y: 1
+            };
+            this.translate = {
+                x: 0,
+                y: 0
+            };
+            this.pivot = {
+                x: 0,
+                y: 0
+            };
+        }
+        Transform.prototype.calc = function (x, y) {
+            var newPos = {
+                x: 0,
+                y: 0
+            };
+            var sr = Math.sin(this.rotate);
+            var cr = Math.cos(this.rotate);
+
+            var lx = (x - this.pivot.x) * this.scale.x;
+            var ly = (y - this.pivot.y) * this.scale.y;
+            newPos.x = (lx * cr + ly * sr) + this.translate.x;
+            newPos.y = (-lx * sr + ly * cr) + this.translate.y;
+
+            newPos.x += this.pivot.x;
+            newPos.y += this.pivot.y;
+
+            return newPos;
+        };
+
+        Transform.prototype.inv = function (x, y) {
+            var newPos = {
+                x: 0,
+                y: 0
+            };
+
+            var sr = Math.sin(this.rotate);
+            var cr = Math.cos(this.rotate);
+
+            newPos.x = x - this.pivot.x - this.translate.x;
+            newPos.y = y - this.pivot.y - this.translate.y;
+
+            var lx = 0;
+            var ly = 0;
+
+            if (Math.abs(cr) < EPSILON) {
+                lx = -newPos.y / sr;
+                ly = newPos.x / sr;
+            } else if (Math.abs(sr) < EPSILON) {
+                lx = newPos.x / cr;
+                ly = newPos.y / cr;
+            } else {
+                lx = (newPos.x * cr - newPos.y) / (cr * cr + sr);
+                ly = (newPos.y + lx * sr) / cr;
+            }
+
+            return newPos;
+        };
+        return Transform;
+    })();
+
     //------------------------------
     var Shape = (function () {
         function Shape() {
             this.style = g_defaultStyle;
             this.isDeleted = false;
             this.bounds = new Bounds();
+            this.transform = new Transform();
         }
         Shape.prototype.setStyle = function (style) {
             this.style = style;
@@ -79,6 +184,16 @@ var LayoutEditor;
 
         Shape.prototype.draw = function (ctx) {
             this.style.draw(ctx);
+
+            this.buildPath(ctx);
+
+            if (this.style.fillStyle !== "none")
+                ctx.fill();
+            ctx.stroke();
+        };
+
+        // implemented in the derived class
+        Shape.prototype.buildPath = function (ctx) {
         };
 
         Shape.prototype.drawSelect = function (ctx) {
@@ -90,10 +205,16 @@ var LayoutEditor;
         };
 
         Shape.prototype.isInsideXY = function (x, y) {
-            return false;
+            this.buildPath(g_toolCtx);
+            return g_toolCtx.isPointInPath(x, y);
         };
 
-        Shape.prototype.clone = function (base) {
+        Shape.prototype.isOverlap = function (bounds) {
+            // overlap with bounds
+            return bounds.x1 < this.bounds.x2 && bounds.y1 < this.bounds.y2 && bounds.x2 > this.bounds.x1 && bounds.y2 > this.bounds.y1;
+        };
+
+        Shape.prototype.copy = function (base) {
             if (!base)
                 base = new Shape();
             extend(base, this);
@@ -102,6 +223,172 @@ var LayoutEditor;
         return Shape;
     })();
 
+    var RectShape = (function (_super) {
+        __extends(RectShape, _super);
+        function RectShape(x, y, w, h) {
+            _super.call(this);
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.calculateBounds();
+        }
+        RectShape.prototype.buildPath = function (ctx) {
+            var transform = this.transform;
+
+            ctx.save();
+            ctx.scale(transform.scale.x, transform.scale.y);
+            ctx.translate(transform.pivot.x, transform.pivot.y);
+            ctx.rotate(transform.rotate);
+            ctx.translate(transform.translate.x + this.x, transform.translate.y + this.y);
+
+            ctx.beginPath();
+            ctx.rect(-transform.pivot.x, -transform.pivot.y, this.w, this.h);
+            ctx.restore();
+        };
+
+        RectShape.prototype.copy = function (base) {
+            if (!base)
+                base = new RectShape(this.x, this.y, this.w, this.h);
+            _super.prototype.copy.call(this, base);
+            extend(base, this);
+            return base;
+        };
+
+        RectShape.prototype.calculateBounds = function () {
+            this.transform.pivot.x = this.x + this.w * 0.5;
+            this.transform.pivot.y = this.y + this.h * 0.5;
+
+            var topLeft = this.transform.calc(this.x, this.y);
+            var topRight = this.transform.calc(this.x + this.w, this.y);
+            var bottomLeft = this.transform.calc(this.x, this.y + this.h);
+            var bottomRight = this.transform.calc(this.x + this.w, this.y + this.h);
+
+            this.bounds.x1 = arrayMin([topLeft.x, topRight.x, bottomLeft.x, bottomRight.x]);
+            this.bounds.y1 = arrayMin([topLeft.y, topRight.y, bottomLeft.y, bottomRight.y]);
+            this.bounds.x2 = arrayMax([topLeft.x, topRight.x, bottomLeft.x, bottomRight.x]);
+            this.bounds.y2 = arrayMax([topLeft.y, topRight.y, bottomLeft.y, bottomRight.y]);
+        };
+        return RectShape;
+    })(Shape);
+
+    var EllipseShape = (function (_super) {
+        __extends(EllipseShape, _super);
+        function EllipseShape(x, y, rx, ry) {
+            _super.call(this);
+            this.x = x;
+            this.y = y;
+            this.rx = rx;
+            this.ry = ry;
+            this.calculateBounds();
+        }
+        EllipseShape.prototype.buildPath = function (ctx) {
+            var transform = this.transform;
+            var x = this.x;
+            var y = this.y;
+            var rx = this.rx;
+            var ry = this.ry;
+            if (rx < 0) {
+                x += 2 * rx;
+                rx = -rx;
+            }
+            if (ry < 0) {
+                y += 2 * ry;
+                ry = -ry;
+            }
+
+            ctx.save();
+            ctx.scale(transform.scale.x, transform.scale.y);
+            ctx.translate(transform.pivot.x, transform.pivot.y);
+            ctx.rotate(transform.rotate);
+            ctx.translate(transform.translate.x + x + rx, transform.translate.y + y + ry);
+
+            ctx.beginPath();
+            ctx.ellipse(-transform.pivot.x, -transform.pivot.y, rx, ry, 0, 0, 2 * Math.PI);
+            ctx.restore(); // restore before stroke so lines is not stretched
+        };
+
+        EllipseShape.prototype.copy = function (base) {
+            if (!base)
+                base = new EllipseShape(this.x, this.y, this.rx, this.ry);
+            _super.prototype.copy.call(this, base);
+            extend(base, this);
+            return base;
+        };
+
+        EllipseShape.prototype.calculateBounds = function () {
+            var transform = this.transform;
+            transform.pivot.x = this.x + this.rx;
+            transform.pivot.y = this.y + this.ry;
+
+            // TODO handle the case where the pivot is not the center
+            var ux = this.rx * Math.cos(transform.rotate);
+            var uy = this.rx * Math.sin(transform.rotate);
+            var vx = this.ry * Math.cos(transform.rotate + Math.PI * 0.5);
+            var vy = this.ry * Math.sin(transform.rotate + Math.PI * 0.5);
+
+            var rrx = Math.sqrt(ux * ux + vx * vx);
+            var rry = Math.sqrt(uy * uy + vy * vy);
+            var cx = this.x + this.rx;
+            var cy = this.y + this.ry;
+
+            var topLeft = transform.calc(cx - rrx, cy - rry);
+            var bottomRight = transform.calc(this.x + 2 * this.rx, this.y + 2 * this.ry);
+
+            this.bounds.x1 = arrayMin([cx - rrx, cx + rrx]);
+            this.bounds.y1 = arrayMin([cy - rry, cy + rry]);
+            this.bounds.x2 = arrayMax([cx - rrx, cx + rrx]);
+            this.bounds.y2 = arrayMax([cy - rry, cy + rry]);
+        };
+        return EllipseShape;
+    })(Shape);
+
+    // cannot transform!!!
+    var BoundsShape = (function (_super) {
+        __extends(BoundsShape, _super);
+        function BoundsShape() {
+            _super.call(this);
+        }
+        BoundsShape.prototype.copy = function (base) {
+            if (!base)
+                base = new BoundsShape();
+            _super.prototype.copy.call(this, base);
+            extend(base, this);
+            return base;
+        };
+
+        BoundsShape.prototype.buildPath = function (ctx) {
+            // don't apply transform!
+            ctx.beginPath();
+            var x1 = this.bounds.x1;
+            var x2 = this.bounds.x2;
+            var y1 = this.bounds.y1;
+            var y2 = this.bounds.y2;
+            ctx.rect(x1, y1, x2 - x1, y2 - y1);
+        };
+
+        BoundsShape.prototype.calculateBounds = function () {
+            this.transform.pivot.x = (this.x1 + this.x2) * 0.5;
+            this.transform.pivot.y = (this.y1 + this.y2) * 0.5;
+            if (this.x1 < this.x2) {
+                this.bounds.x1 = this.x1;
+                this.bounds.x2 = this.x2;
+            } else {
+                this.bounds.x1 = this.x2;
+                this.bounds.x2 = this.x1;
+            }
+            if (this.y1 < this.y2) {
+                this.bounds.y1 = this.y1;
+                this.bounds.y2 = this.y2;
+            } else {
+                this.bounds.y1 = this.y2;
+                this.bounds.y2 = this.y1;
+            }
+        };
+        return BoundsShape;
+    })(Shape);
+
+    //------------------------------
     var ShapeList = (function () {
         function ShapeList() {
             this.shapes = [];
@@ -121,12 +408,15 @@ var LayoutEditor;
             shape.isDeleted = true;
         };
 
-        ShapeList.prototype.toggleSelected = function (shape) {
-            var index = this.selectedShapes.indexOf(shape);
-            if (index === -1)
-                this.selectedShapes.push(shape);
-            else
-                this.selectedShapes.splice(index, 1);
+        ShapeList.prototype.toggleSelected = function (shapes) {
+            for (var i = 0; i < shapes.length; ++i) {
+                var shape = shapes[i];
+                var index = this.selectedShapes.indexOf(shape);
+                if (index === -1)
+                    this.selectedShapes.push(shape);
+                else
+                    this.selectedShapes.splice(index, 1);
+            }
         };
 
         ShapeList.prototype.setSelectedShapes = function (shapes) {
@@ -178,7 +468,7 @@ var LayoutEditor;
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         };
 
-        ShapeList.prototype.getShapeXY = function (x, y) {
+        ShapeList.prototype.getShapeInXY = function (x, y) {
             for (var i = this.shapes.length - 1; i >= 0; --i) {
                 var shape = this.shapes[i];
                 if (shape.isInsideXY(x, y))
@@ -187,113 +477,21 @@ var LayoutEditor;
 
             return null;
         };
+
+        ShapeList.prototype.getShapesInBounds = function (bounds) {
+            var shapes = [];
+
+            for (var i = this.shapes.length - 1; i >= 0; --i) {
+                var shape = this.shapes[i];
+                if (shape.isOverlap(bounds))
+                    shapes.push(shape);
+            }
+
+            return shapes;
+        };
         return ShapeList;
     })();
     var g_shapeList = new ShapeList();
-
-    var RectShape = (function (_super) {
-        __extends(RectShape, _super);
-        function RectShape(x, y, w, h) {
-            _super.call(this);
-            this.x = x;
-            this.y = y;
-            this.w = w;
-            this.h = h;
-            this.calculateBounds();
-        }
-        RectShape.prototype.draw = function (ctx) {
-            _super.prototype.draw.call(this, ctx);
-
-            if (this.style.fillStyle !== "none")
-                ctx.fillRect(this.x, this.y, this.w, this.h);
-
-            ctx.strokeRect(this.x, this.y, this.w, this.h);
-        };
-
-        RectShape.prototype.isInsideXY = function (x, y) {
-            return x >= this.x && x < this.x + this.w && y >= this.y && y < this.y + this.h;
-        };
-
-        RectShape.prototype.clone = function (base) {
-            if (!base)
-                base = new RectShape(this.x, this.y, this.w, this.h);
-            _super.prototype.clone.call(this, base);
-            extend(base, this);
-            return base;
-        };
-
-        RectShape.prototype.calculateBounds = function () {
-            this.bounds.x1 = this.x;
-            this.bounds.y1 = this.y;
-            this.bounds.x2 = this.x + this.w;
-            this.bounds.y2 = this.y + this.h;
-        };
-        return RectShape;
-    })(Shape);
-
-    var EllipseShape = (function (_super) {
-        __extends(EllipseShape, _super);
-        function EllipseShape(cx, cy, rx, ry) {
-            _super.call(this);
-            this.cx = cx;
-            this.cy = cy;
-            this.rx = rx;
-            this.ry = ry;
-            this.calculateBounds();
-        }
-        EllipseShape.prototype.draw = function (ctx) {
-            if (this.rx < EPSILON && this.ry < EPSILON)
-                return;
-
-            _super.prototype.draw.call(this, ctx);
-
-            // an ellipse is a scale circle
-            var scaleX = 1;
-            var scaleY = 1;
-            var r = 0;
-            if (this.rx > this.ry) {
-                scaleY = this.ry / this.rx;
-                r = this.rx;
-            } else {
-                scaleX = this.rx / this.ry;
-                r = this.ry;
-            }
-
-            ctx.save();
-            ctx.translate(this.cx, this.cy);
-            ctx.scale(scaleX, scaleY);
-
-            ctx.beginPath();
-            ctx.arc(0, 0, r, 0, 2 * Math.PI);
-            if (this.style.fillStyle !== "none")
-                ctx.fill();
-            ctx.stroke();
-
-            ctx.restore(); // this can't be very performant
-        };
-
-        EllipseShape.prototype.isInsideXY = function (x, y) {
-            var dx = (x - this.cx) / this.rx;
-            var dy = (y - this.cy) / this.ry;
-            return dx * dx + dy * dy < 1;
-        };
-
-        EllipseShape.prototype.clone = function (base) {
-            if (!base)
-                base = new EllipseShape(this.cx, this.cy, this.rx, this.ry);
-            _super.prototype.clone.call(this, base);
-            extend(base, this);
-            return base;
-        };
-
-        EllipseShape.prototype.calculateBounds = function () {
-            this.bounds.x1 = this.cx - this.rx;
-            this.bounds.y1 = this.cy - this.ry;
-            this.bounds.x2 = this.cx + this.rx;
-            this.bounds.y2 = this.cy + this.ry;
-        };
-        return EllipseShape;
-    })(Shape);
 
     
 
@@ -365,47 +563,49 @@ var LayoutEditor;
 
     var EllipseCommand = (function (_super) {
         __extends(EllipseCommand, _super);
-        function EllipseCommand(cx, cy, rx, ry) {
+        function EllipseCommand(x, y, rx, ry) {
             _super.call(this);
-            this.cx = cx;
-            this.cy = cy;
+            this.x = x;
+            this.y = y;
             this.rx = rx;
             this.ry = ry;
 
-            this.shape = new EllipseShape(this.cx, this.cy, this.rx, this.ry);
+            this.shape = new EllipseShape(this.x, this.y, this.rx, this.ry);
             this.shape.setStyle(g_style);
         }
         return EllipseCommand;
     })(ShapeCommand);
 
-    var AlterShapeCommand = (function () {
-        function AlterShapeCommand(shape, newShape) {
+    var TransformCommand = (function () {
+        function TransformCommand(shape, transform) {
             this.shape = shape;
-            this.newShape = newShape;
-            this.originalShape = null;
-            this.originalShape = shape.clone();
+            this.transform = transform;
+            this.originalTransform = new Transform();
+            extend(this.originalTransform, shape.transform);
         }
-        AlterShapeCommand.prototype.redo = function () {
-            extend(this.shape, this.newShape);
+        TransformCommand.prototype.redo = function () {
+            extend(this.shape.transform, this.transform);
+            this.shape.calculateBounds();
             g_shapeList.requestDraw();
         };
 
-        AlterShapeCommand.prototype.undo = function () {
-            extend(this.shape, this.originalShape);
+        TransformCommand.prototype.undo = function () {
+            extend(this.shape.transform, this.originalTransform);
+            this.shape.calculateBounds();
             g_shapeList.requestDraw();
         };
-        return AlterShapeCommand;
+        return TransformCommand;
     })();
 
     var SelectCommand = (function () {
-        function SelectCommand(shape) {
-            this.shape = shape;
+        function SelectCommand(shapes) {
+            this.shapes = shapes;
             this.selectedShapes = [];
             this.selectedShapes = g_shapeList.getSelectedShapes().slice();
         }
         SelectCommand.prototype.redo = function () {
             g_shapeList.setSelectedShapes(this.selectedShapes);
-            g_shapeList.toggleSelected(this.shape);
+            g_shapeList.toggleSelected(this.shapes);
             g_shapeList.requestDraw();
         };
 
@@ -420,24 +620,54 @@ var LayoutEditor;
     var g_tool = null;
 
     function setTool(toolName) {
+        var oldTool = g_tool;
         switch (toolName) {
-            case "rectTool":
-                g_tool = new RectTool();
-                break;
-
             case "selectTool":
                 g_tool = new SelectTool();
+                break;
+
+            case "resizeTool":
+                g_tool = new ResizeTool();
+                break;
+
+            case "rectTool":
+                g_tool = new RectTool();
                 break;
 
             case "ellipseTool":
                 g_tool = new EllipseTool();
                 break;
+
+            case "rotateTool":
+                g_tool = new RotateTool();
+                break;
+        }
+
+        if (g_tool !== oldTool) {
+            console.log("Changed tool to: " + toolName);
         }
     }
+
+    var TemplateTool = (function () {
+        function TemplateTool() {
+        }
+        TemplateTool.prototype.onPointer = function (e) {
+            switch (e.state) {
+                case InteractionHelper.State.Start:
+                    break;
+                case InteractionHelper.State.Move:
+                    break;
+                case InteractionHelper.State.End:
+                    break;
+            }
+        };
+        return TemplateTool;
+    })();
 
     var DrawTool = (function () {
         function DrawTool() {
             this.shape = null;
+            this.canUse = false;
         }
         DrawTool.prototype.clear = function () {
             g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
@@ -474,12 +704,16 @@ var LayoutEditor;
                 case InteractionHelper.State.Move:
                     this.x2 = e.x;
                     this.y2 = e.y;
+                    this.canUse = true;
                     this.drawShape();
                     break;
                 case InteractionHelper.State.End:
                     this.clear();
-                    var newCommand = new RectCommand(this.rectShape.x, this.rectShape.y, this.rectShape.w, this.rectShape.h);
-                    g_commandList.addCommand(newCommand);
+                    if (this.canUse) {
+                        var newCommand = new RectCommand(this.rectShape.x, this.rectShape.y, this.rectShape.w, this.rectShape.h);
+                        g_commandList.addCommand(newCommand);
+                        this.canUse = false;
+                    }
                     break;
             }
         };
@@ -512,19 +746,23 @@ var LayoutEditor;
                 case InteractionHelper.State.Move:
                     this.x2 = e.x;
                     this.y2 = e.y;
+                    this.canUse = true;
                     this.drawShape();
                     break;
                 case InteractionHelper.State.End:
                     this.clear();
-                    var newCommand = new EllipseCommand(this.ellipseShape.cx, this.ellipseShape.cy, this.ellipseShape.rx, this.ellipseShape.ry);
-                    g_commandList.addCommand(newCommand);
+                    if (this.canUse) {
+                        var newCommand = new EllipseCommand(this.ellipseShape.x, this.ellipseShape.y, this.ellipseShape.rx, this.ellipseShape.ry);
+                        g_commandList.addCommand(newCommand);
+                        this.canUse = false;
+                    }
                     break;
             }
         };
 
         EllipseTool.prototype.drawShape = function () {
-            this.ellipseShape.cx = (this.x1 + this.x2) * 0.5;
-            this.ellipseShape.cy = (this.y1 + this.y2) * 0.5;
+            this.ellipseShape.x = this.x1;
+            this.ellipseShape.y = this.y1;
             this.ellipseShape.rx = (this.x2 - this.x1) * 0.5;
             this.ellipseShape.ry = (this.y2 - this.y1) * 0.5;
             this.draw();
@@ -534,18 +772,208 @@ var LayoutEditor;
 
     var SelectTool = (function () {
         function SelectTool() {
+            this.boundsShape = new BoundsShape();
+            this.boundsShape.style = g_selectStyle;
         }
         SelectTool.prototype.onPointer = function (e) {
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    var shape = g_shapeList.getShapeXY(e.x, e.y);
-                    if (shape)
-                        g_commandList.addCommand(new SelectCommand(shape));
+                    this.boundsShape.x1 = e.x;
+                    this.boundsShape.y1 = e.y;
+                    this.boundsShape.x2 = e.x;
+                    this.boundsShape.y2 = e.y;
+                    this.boundsShape.calculateBounds();
                     break;
+                case InteractionHelper.State.Move:
+                    this.boundsShape.x2 = e.x;
+                    this.boundsShape.y2 = e.y;
+                    this.drawBounds();
+                    break;
+                case InteractionHelper.State.End:
+                    this.clear();
+                    var shapes = g_shapeList.getShapesInBounds(this.boundsShape.bounds);
+                    if (shapes.length > 0)
+                        g_commandList.addCommand(new SelectCommand(shapes));
+                    break;
+            }
+        };
+
+        SelectTool.prototype.clear = function () {
+            g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
+        };
+
+        SelectTool.prototype.drawBounds = function () {
+            this.clear();
+
+            this.boundsShape.calculateBounds();
+            this.boundsShape.draw(g_toolCtx);
+
+            g_shapeList.selectedStyle.draw(g_toolCtx);
+            var shapes = g_shapeList.getShapesInBounds(this.boundsShape.bounds);
+            for (var i = 0; i < shapes.length; ++i) {
+                shapes[i].drawSelect(g_toolCtx);
             }
         };
         return SelectTool;
     })();
+
+    var ResizeTool = (function () {
+        function ResizeTool() {
+            this.boundsShape = new BoundsShape();
+            this.shape = null;
+            this.handle = 0 /* None */;
+            this.handleSize = 20;
+            this.canUse = false;
+            this.boundsShape.style = g_selectStyle;
+        }
+        ResizeTool.prototype.onPointer = function (e) {
+            switch (e.state) {
+                case InteractionHelper.State.Start:
+                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    this.handle = 0 /* None */;
+
+                    if (this.shape) {
+                        var x1 = this.shape.bounds.x1;
+                        var y1 = this.shape.bounds.y1;
+                        var x2 = this.shape.bounds.x2;
+                        var y2 = this.shape.bounds.y2;
+
+                        if (e.x - x1 < this.handleSize)
+                            this.handle = (this.handle | 1 /* Left */);
+                        else if (x2 - e.x < this.handleSize)
+                            this.handle = (this.handle | 2 /* Right */);
+
+                        if (e.y - y1 < this.handleSize)
+                            this.handle = (this.handle | 4 /* Top */);
+                        else if (y2 - e.y < this.handleSize)
+                            this.handle = (this.handle | 8 /* Bottom */);
+
+                        if (this.handle === 0 /* None */)
+                            this.handle = 16 /* Middle */;
+
+                        this.boundsShape.x1 = x1;
+                        this.boundsShape.y1 = y1;
+                        this.boundsShape.x2 = x2;
+                        this.boundsShape.y2 = y2;
+                    }
+                    break;
+
+                case InteractionHelper.State.Move:
+                    if (this.handle & 1 /* Left */)
+                        this.boundsShape.x1 += e.deltaX;
+                    if (this.handle & 2 /* Right */)
+                        this.boundsShape.x2 += e.deltaX;
+                    if (this.handle & 4 /* Top */)
+                        this.boundsShape.y1 += e.deltaY;
+                    if (this.handle & 8 /* Bottom */)
+                        this.boundsShape.y2 += e.deltaY;
+                    if (this.handle === 16 /* Middle */) {
+                        this.boundsShape.x1 += e.deltaX;
+                        this.boundsShape.y1 += e.deltaY;
+                        this.boundsShape.x2 += e.deltaX;
+                        this.boundsShape.y2 += e.deltaY;
+                    }
+                    this.canUse = this.handle !== 0 /* None */;
+                    this.drawBounds();
+                    break;
+
+                case InteractionHelper.State.End:
+                    if (this.canUse) {
+                        //var newCommand = new TransformCommand();
+                        this.canUse = false;
+                    }
+                    this.shape = null;
+                    break;
+            }
+        };
+
+        ResizeTool.prototype.clear = function () {
+            g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
+        };
+
+        ResizeTool.prototype.drawBounds = function () {
+            this.clear();
+
+            this.boundsShape.calculateBounds();
+            this.boundsShape.draw(g_toolCtx);
+        };
+        return ResizeTool;
+    })();
+
+    var RotateTool = (function () {
+        function RotateTool() {
+            this.shape = null;
+            this.lastAngle = 0;
+            this.rotateShape = null;
+        }
+        RotateTool.prototype.onPointer = function (e) {
+            switch (e.state) {
+                case InteractionHelper.State.Start:
+                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    if (this.shape) {
+                        this.rotateShape = this.shape.copy();
+                        this.rotateShape.style = g_selectStyle;
+                        this.lastAngle = this.getAngle(e.x, e.y, this.rotateShape.transform.pivot);
+                    }
+                    break;
+
+                case InteractionHelper.State.Move:
+                    if (this.rotateShape) {
+                        var newAngle = this.getAngle(e.x, e.y, this.rotateShape.transform.pivot);
+                        this.rotateShape.transform.rotate += newAngle - this.lastAngle;
+                        this.lastAngle = newAngle;
+                        this.drawRotate();
+                    }
+                    break;
+
+                case InteractionHelper.State.End:
+                    if (this.rotateShape) {
+                        var newCommand = new TransformCommand(this.shape, this.rotateShape.transform);
+                        g_commandList.addCommand(newCommand);
+
+                        this.clear();
+                        this.rotateShape = null;
+                        this.shape = null;
+                    }
+                    break;
+            }
+        };
+
+        RotateTool.prototype.clear = function () {
+            g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
+        };
+
+        RotateTool.prototype.drawRotate = function () {
+            this.clear();
+
+            this.rotateShape.calculateBounds();
+            this.rotateShape.draw(g_toolCtx);
+        };
+
+        RotateTool.prototype.getAngle = function (x, y, pivot) {
+            var dy = y - pivot.y;
+            var dx = x - pivot.x;
+            if (Math.abs(dy) < EPSILON && Math.abs(dx) < EPSILON)
+                return 0;
+
+            return Math.atan2(dy, dx);
+        };
+        return RotateTool;
+    })();
+
+    var ResizeTool;
+    (function (ResizeTool) {
+        (function (HandleFlag) {
+            HandleFlag[HandleFlag["None"] = 0] = "None";
+            HandleFlag[HandleFlag["Left"] = 1] = "Left";
+            HandleFlag[HandleFlag["Right"] = 2] = "Right";
+            HandleFlag[HandleFlag["Top"] = 4] = "Top";
+            HandleFlag[HandleFlag["Bottom"] = 8] = "Bottom";
+            HandleFlag[HandleFlag["Middle"] = 16] = "Middle";
+        })(ResizeTool.HandleFlag || (ResizeTool.HandleFlag = {}));
+        var HandleFlag = ResizeTool.HandleFlag;
+        ;
+    })(ResizeTool || (ResizeTool = {}));
 
     //------------------------------
     function toolButtonClick(e) {
@@ -571,7 +999,7 @@ var LayoutEditor;
             g_commandList.redo();
         });
 
-        setTool("rect");
+        setTool("rectTool");
 
         var watchCanvas = new InteractionHelper.Watch(g_toolCanvas, function (e) {
             g_tool.onPointer(e);

@@ -132,11 +132,17 @@ var InteractionHelper;
             var event = new Event();
             event.x = x;
             event.y = y;
-            event.state = (doubleTap ? 4 /* DoubleTap */ : 1 /* Start */);
+            event.state = 1 /* Start */;
             event.target = e.target;
             event.origin = this.elem;
 
             this.onPointerFunc(event);
+
+            if (doubleTap) {
+                event.state = 4 /* DoubleTap */;
+                this.onPointerFunc(event);
+            }
+
             this.lastX = x;
             this.lastY = y;
         };
@@ -254,11 +260,19 @@ var InteractionHelper;
             event.x = pinch.x;
             event.y = pinch.y;
             event.pinchDistance = pinch.distance;
-            event.state = (doubleTap ? 4 /* DoubleTap */ : 1 /* Start */);
+            event.state = 1 /* Start */;
             event.target = e.target;
             event.origin = this.elem;
 
             this.onPointerFunc(event);
+
+            this.onPointerFunc(event);
+
+            if (doubleTap) {
+                event.state = 4 /* DoubleTap */;
+                this.onPointerFunc(event);
+            }
+
             this.lastX = pinch.x;
             this.lastY = pinch.y;
         };

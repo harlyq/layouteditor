@@ -97,9 +97,37 @@ var LayoutEditor;
     //------------------------------
     var Bounds = (function () {
         function Bounds() {
+            this.rotate = 0;
         }
+        Bounds.prototype.asPolygon = function () {
+            var cr = Math.cos(this.rotate);
+            var sr = Math.sin(this.rotate);
+
+            var polygon = [-this.hw, -this.hh, this.hw, -this.hh, this.hw, this.hh, -this.hw, this.hh];
+            for (var i = 0; i < polygon.length; i += 2) {
+                var x = polygon[i];
+                var y = polygon[i + 1];
+                polygon[i] = x * cr - y * sr + this.cx;
+                polygon[i + 1] = x * sr + y * cr + this.cy;
+            }
+
+            return polygon;
+        };
         return Bounds;
     })();
+
+    function drawPolygon(ctx, polygon) {
+        if (polygon.length < 4)
+            return;
+
+        ctx.strokeStyle = "green";
+        ctx.moveTo(polygon[0], polygon[1]);
+        for (var i = 2; i < polygon.length; i += 2) {
+            ctx.lineTo(polygon[i], polygon[i + 1]);
+        }
+        ctx.lineTo(polygon[0], polygon[1]);
+        ctx.stroke();
+    }
 
     
 
@@ -130,8 +158,8 @@ var LayoutEditor;
 
             var lx = (x - this.pivot.x) * this.scale.x;
             var ly = (y - this.pivot.y) * this.scale.y;
-            newPos.x = (lx * cr + ly * sr) + this.translate.x;
-            newPos.y = (-lx * sr + ly * cr) + this.translate.y;
+            newPos.x = (lx * cr - ly * sr) + this.translate.x;
+            newPos.y = (lx * sr + ly * cr) + this.translate.y;
 
             newPos.x += this.pivot.x;
             newPos.y += this.pivot.y;
@@ -155,14 +183,14 @@ var LayoutEditor;
             var ly = 0;
 
             if (Math.abs(cr) < EPSILON) {
-                lx = -newPos.y / sr;
-                ly = newPos.x / sr;
+                lx = newPos.y / sr;
+                ly = -newPos.x / sr;
             } else if (Math.abs(sr) < EPSILON) {
                 lx = newPos.x / cr;
                 ly = newPos.y / cr;
             } else {
-                lx = (newPos.x * cr - newPos.y) / (cr * cr + sr);
-                ly = (newPos.y + lx * sr) / cr;
+                lx = (newPos.x * cr + newPos.y) / (cr * cr + sr);
+                ly = (newPos.y - lx * sr) / cr;
             }
 
             return newPos;
@@ -197,7 +225,11 @@ var LayoutEditor;
         };
 
         Shape.prototype.drawSelect = function (ctx) {
-            ctx.strokeRect(this.bounds.x1, this.bounds.y1, this.bounds.x2 - this.bounds.x1, this.bounds.y2 - this.bounds.y1);
+            ctx.save();
+            ctx.translate(this.bounds.cx, this.bounds.cy);
+            ctx.rotate(this.bounds.rotate);
+            ctx.strokeRect(-this.bounds.hw, -this.bounds.hh, this.bounds.hw * 2, this.bounds.hh * 2);
+            ctx.restore();
         };
 
         // performed by the derived class
@@ -209,9 +241,53 @@ var LayoutEditor;
             return g_toolCtx.isPointInPath(x, y);
         };
 
-        Shape.prototype.isOverlap = function (bounds) {
-            // overlap with bounds
-            return bounds.x1 < this.bounds.x2 && bounds.y1 < this.bounds.y2 && bounds.x2 > this.bounds.x1 && bounds.y2 > this.bounds.y1;
+        Shape.prototype.isOverlapBounds = function (bounds) {
+            var polygonA = this.bounds.asPolygon();
+            var polygonB = bounds.asPolygon();
+
+            for (var i = 0; i < 2; ++i) {
+                var polygon = (i === 0 ? polygonA : polygonB);
+                var x1 = polygon[polygon.length - 2];
+                var y1 = polygon[polygon.length - 1];
+
+                for (var j = 0; j < polygon.length; j += 2) {
+                    var x2 = polygon[j];
+                    var y2 = polygon[j + 1];
+                    var normalX = y1 - y2;
+                    var normalY = x2 - x1;
+                    x1 = x2;
+                    y1 = y2;
+
+                    var minA;
+                    var maxA;
+                    for (var k = 0; k < polygonA.length; k += 2) {
+                        var projected = normalX * polygonA[k] + normalY * polygonA[k + 1];
+                        if (k === 0 || projected < minA) {
+                            minA = projected;
+                        }
+                        if (k === 0 || projected > maxA) {
+                            maxA = projected;
+                        }
+                    }
+
+                    var minB;
+                    var maxB;
+                    for (var k = 0; k < polygonB.length; k += 2) {
+                        var projected = normalX * polygonB[k] + normalY * polygonB[k + 1];
+                        if (k === 0 || projected < minB) {
+                            minB = projected;
+                        }
+                        if (k === 0 || projected > maxB) {
+                            maxB = projected;
+                        }
+                    }
+
+                    if (maxA < minB || maxB < minA)
+                        return false;
+                }
+            }
+
+            return true;
         };
 
         Shape.prototype.copy = function (base) {
@@ -259,15 +335,14 @@ var LayoutEditor;
             this.transform.pivot.x = this.x + this.w * 0.5;
             this.transform.pivot.y = this.y + this.h * 0.5;
 
-            var topLeft = this.transform.calc(this.x, this.y);
-            var topRight = this.transform.calc(this.x + this.w, this.y);
-            var bottomLeft = this.transform.calc(this.x, this.y + this.h);
-            var bottomRight = this.transform.calc(this.x + this.w, this.y + this.h);
-
-            this.bounds.x1 = arrayMin([topLeft.x, topRight.x, bottomLeft.x, bottomRight.x]);
-            this.bounds.y1 = arrayMin([topLeft.y, topRight.y, bottomLeft.y, bottomRight.y]);
-            this.bounds.x2 = arrayMax([topLeft.x, topRight.x, bottomLeft.x, bottomRight.x]);
-            this.bounds.y2 = arrayMax([topLeft.y, topRight.y, bottomLeft.y, bottomRight.y]);
+            // TODO fix for non-centered pivots
+            this.bounds.rotate = this.transform.rotate;
+            var hw = this.w * 0.5;
+            var hh = this.h * 0.5;
+            this.bounds.hw = Math.abs(hw);
+            this.bounds.hh = Math.abs(hh);
+            this.bounds.cx = this.x + hw;
+            this.bounds.cy = this.y + hh;
         };
         return RectShape;
     })(Shape);
@@ -321,71 +396,51 @@ var LayoutEditor;
             transform.pivot.x = this.x + this.rx;
             transform.pivot.y = this.y + this.ry;
 
-            // TODO handle the case where the pivot is not the center
-            var ux = this.rx * Math.cos(transform.rotate);
-            var uy = this.rx * Math.sin(transform.rotate);
-            var vx = this.ry * Math.cos(transform.rotate + Math.PI * 0.5);
-            var vy = this.ry * Math.sin(transform.rotate + Math.PI * 0.5);
-
-            var rrx = Math.sqrt(ux * ux + vx * vx);
-            var rry = Math.sqrt(uy * uy + vy * vy);
-            var cx = this.x + this.rx;
-            var cy = this.y + this.ry;
-
-            var topLeft = transform.calc(cx - rrx, cy - rry);
-            var bottomRight = transform.calc(this.x + 2 * this.rx, this.y + 2 * this.ry);
-
-            this.bounds.x1 = arrayMin([cx - rrx, cx + rrx]);
-            this.bounds.y1 = arrayMin([cy - rry, cy + rry]);
-            this.bounds.x2 = arrayMax([cx - rrx, cx + rrx]);
-            this.bounds.y2 = arrayMax([cy - rry, cy + rry]);
+            // TODO fix for non-centered pivots
+            this.bounds.rotate = this.transform.rotate;
+            var hw = this.rx;
+            var hh = this.ry;
+            this.bounds.hw = Math.abs(hw);
+            this.bounds.hh = Math.abs(hh);
+            this.bounds.cx = this.x + hw;
+            this.bounds.cy = this.y + hh;
         };
         return EllipseShape;
     })(Shape);
 
     // cannot transform!!!
-    var BoundsShape = (function (_super) {
-        __extends(BoundsShape, _super);
-        function BoundsShape() {
+    var AABBShape = (function (_super) {
+        __extends(AABBShape, _super);
+        function AABBShape() {
             _super.call(this);
         }
-        BoundsShape.prototype.copy = function (base) {
+        AABBShape.prototype.copy = function (base) {
             if (!base)
-                base = new BoundsShape();
+                base = new AABBShape();
             _super.prototype.copy.call(this, base);
             extend(base, this);
             return base;
         };
 
-        BoundsShape.prototype.buildPath = function (ctx) {
+        AABBShape.prototype.buildPath = function (ctx) {
             // don't apply transform!
             ctx.beginPath();
-            var x1 = this.bounds.x1;
-            var x2 = this.bounds.x2;
-            var y1 = this.bounds.y1;
-            var y2 = this.bounds.y2;
-            ctx.rect(x1, y1, x2 - x1, y2 - y1);
+            var x1 = this.bounds.cx - this.bounds.hw;
+            var y1 = this.bounds.cy - this.bounds.hh;
+            ctx.rect(x1, y1, this.bounds.hw * 2, this.bounds.hh * 2);
         };
 
-        BoundsShape.prototype.calculateBounds = function () {
+        AABBShape.prototype.calculateBounds = function () {
             this.transform.pivot.x = (this.x1 + this.x2) * 0.5;
             this.transform.pivot.y = (this.y1 + this.y2) * 0.5;
-            if (this.x1 < this.x2) {
-                this.bounds.x1 = this.x1;
-                this.bounds.x2 = this.x2;
-            } else {
-                this.bounds.x1 = this.x2;
-                this.bounds.x2 = this.x1;
-            }
-            if (this.y1 < this.y2) {
-                this.bounds.y1 = this.y1;
-                this.bounds.y2 = this.y2;
-            } else {
-                this.bounds.y1 = this.y2;
-                this.bounds.y2 = this.y1;
-            }
+            var hw = (this.x2 - this.x1) * 0.5;
+            var hh = (this.y2 - this.y1) * 0.5;
+            this.bounds.cx = this.x1 + hw;
+            this.bounds.cy = this.y1 + hh;
+            this.bounds.hw = Math.abs(hw);
+            this.bounds.hh = Math.abs(hh);
         };
-        return BoundsShape;
+        return AABBShape;
     })(Shape);
 
     //------------------------------
@@ -483,8 +538,10 @@ var LayoutEditor;
 
             for (var i = this.shapes.length - 1; i >= 0; --i) {
                 var shape = this.shapes[i];
-                if (shape.isOverlap(bounds))
+                if (shape.isOverlapBounds(bounds)) {
+                    shape.isOverlapBounds(bounds);
                     shapes.push(shape);
+                }
             }
 
             return shapes;
@@ -772,26 +829,27 @@ var LayoutEditor;
 
     var SelectTool = (function () {
         function SelectTool() {
-            this.boundsShape = new BoundsShape();
-            this.boundsShape.style = g_selectStyle;
+            this.aabbShape = new AABBShape();
+            this.aabbShape.style = g_selectStyle;
         }
         SelectTool.prototype.onPointer = function (e) {
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.boundsShape.x1 = e.x;
-                    this.boundsShape.y1 = e.y;
-                    this.boundsShape.x2 = e.x;
-                    this.boundsShape.y2 = e.y;
-                    this.boundsShape.calculateBounds();
+                    this.aabbShape.x1 = e.x;
+                    this.aabbShape.y1 = e.y;
+                    this.aabbShape.x2 = e.x;
+                    this.aabbShape.y2 = e.y;
+                    this.aabbShape.calculateBounds();
                     break;
                 case InteractionHelper.State.Move:
-                    this.boundsShape.x2 = e.x;
-                    this.boundsShape.y2 = e.y;
+                    this.aabbShape.x2 = e.x;
+                    this.aabbShape.y2 = e.y;
+                    this.aabbShape.calculateBounds();
                     this.drawBounds();
                     break;
                 case InteractionHelper.State.End:
                     this.clear();
-                    var shapes = g_shapeList.getShapesInBounds(this.boundsShape.bounds);
+                    var shapes = g_shapeList.getShapesInBounds(this.aabbShape.bounds);
                     if (shapes.length > 0)
                         g_commandList.addCommand(new SelectCommand(shapes));
                     break;
@@ -805,11 +863,10 @@ var LayoutEditor;
         SelectTool.prototype.drawBounds = function () {
             this.clear();
 
-            this.boundsShape.calculateBounds();
-            this.boundsShape.draw(g_toolCtx);
+            this.aabbShape.draw(g_toolCtx);
 
             g_shapeList.selectedStyle.draw(g_toolCtx);
-            var shapes = g_shapeList.getShapesInBounds(this.boundsShape.bounds);
+            var shapes = g_shapeList.getShapesInBounds(this.aabbShape.bounds);
             for (var i = 0; i < shapes.length; ++i) {
                 shapes[i].drawSelect(g_toolCtx);
             }
@@ -819,72 +876,70 @@ var LayoutEditor;
 
     var ResizeTool = (function () {
         function ResizeTool() {
-            this.boundsShape = new BoundsShape();
+            this.resizeShape = null;
             this.shape = null;
             this.handle = 0 /* None */;
             this.handleSize = 20;
             this.canUse = false;
-            this.boundsShape.style = g_selectStyle;
+            this.resizeShape.style = g_selectStyle;
         }
         ResizeTool.prototype.onPointer = function (e) {
-            switch (e.state) {
-                case InteractionHelper.State.Start:
-                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
-                    this.handle = 0 /* None */;
-
-                    if (this.shape) {
-                        var x1 = this.shape.bounds.x1;
-                        var y1 = this.shape.bounds.y1;
-                        var x2 = this.shape.bounds.x2;
-                        var y2 = this.shape.bounds.y2;
-
-                        if (e.x - x1 < this.handleSize)
-                            this.handle = (this.handle | 1 /* Left */);
-                        else if (x2 - e.x < this.handleSize)
-                            this.handle = (this.handle | 2 /* Right */);
-
-                        if (e.y - y1 < this.handleSize)
-                            this.handle = (this.handle | 4 /* Top */);
-                        else if (y2 - e.y < this.handleSize)
-                            this.handle = (this.handle | 8 /* Bottom */);
-
-                        if (this.handle === 0 /* None */)
-                            this.handle = 16 /* Middle */;
-
-                        this.boundsShape.x1 = x1;
-                        this.boundsShape.y1 = y1;
-                        this.boundsShape.x2 = x2;
-                        this.boundsShape.y2 = y2;
-                    }
-                    break;
-
-                case InteractionHelper.State.Move:
-                    if (this.handle & 1 /* Left */)
-                        this.boundsShape.x1 += e.deltaX;
-                    if (this.handle & 2 /* Right */)
-                        this.boundsShape.x2 += e.deltaX;
-                    if (this.handle & 4 /* Top */)
-                        this.boundsShape.y1 += e.deltaY;
-                    if (this.handle & 8 /* Bottom */)
-                        this.boundsShape.y2 += e.deltaY;
-                    if (this.handle === 16 /* Middle */) {
-                        this.boundsShape.x1 += e.deltaX;
-                        this.boundsShape.y1 += e.deltaY;
-                        this.boundsShape.x2 += e.deltaX;
-                        this.boundsShape.y2 += e.deltaY;
-                    }
-                    this.canUse = this.handle !== 0 /* None */;
-                    this.drawBounds();
-                    break;
-
-                case InteractionHelper.State.End:
-                    if (this.canUse) {
-                        //var newCommand = new TransformCommand();
-                        this.canUse = false;
-                    }
-                    this.shape = null;
-                    break;
-            }
+            // switch (e.state) {
+            //     case InteractionHelper.State.Start:
+            //         this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+            //         this.handle = ResizeTool.HandleFlag.None;
+            //         if (this.shape) {
+            //             this.resizeShape = this.shape.copy();
+            //             this.resizeShape.style = g_selectStyle;
+            //             var localPos: XY = this.shape.transform.inv(e.x, e.y);
+            //             var x1 = this.shape.bounds.x1;
+            //             var y1 = this.shape.bounds.y1;
+            //             var x2 = this.shape.bounds.x2;
+            //             var y2 = this.shape.bounds.y2;
+            //             if (localPos.x - x1 < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Left);
+            //             else if (x2 - localPos.x < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Right);
+            //             if (localPos.y - y1 < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Top);
+            //             else if (y2 - localPos.y < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Bottom);
+            //             if (this.handle === ResizeTool.HandleFlag.None)
+            //                 this.handle = ResizeTool.HandleFlag.Middle;
+            //             this.aabbShape.x1 = x1;
+            //             this.aabbShape.y1 = y1;
+            //             this.aabbShape.x2 = x2;
+            //             this.aabbShape.y2 = y2;
+            //         }
+            //         break;
+            //     case InteractionHelper.State.Move:
+            //         // var cr = Math.cos(this.rotate);
+            //         // var sr = Math.sin(this.rotate);
+            //         if (this.handle & ResizeTool.HandleFlag.Left)
+            //             this.aabbShape.x1 += e.deltaX;
+            //         if (this.handle & ResizeTool.HandleFlag.Right)
+            //             this.aabbShape.x2 += e.deltaX;
+            //         if (this.handle & ResizeTool.HandleFlag.Top)
+            //             this.aabbShape.y1 += e.deltaY;
+            //         if (this.handle & ResizeTool.HandleFlag.Bottom)
+            //             this.aabbShape.y2 += e.deltaY;
+            //         if (this.handle === ResizeTool.HandleFlag.Middle) {
+            //             this.aabbShape.x1 += e.deltaX;
+            //             this.aabbShape.y1 += e.deltaY;
+            //             this.aabbShape.x2 += e.deltaX;
+            //             this.aabbShape.y2 += e.deltaY;
+            //         }
+            //         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
+            //         this.drawBounds();
+            //         break;
+            //     case InteractionHelper.State.End:
+            //         if (this.canUse) {
+            //             //var newCommand = new TransformCommand();
+            //             this.canUse = false;
+            //         }
+            //         this.shape = null;
+            //         break;
+            // }
         };
 
         ResizeTool.prototype.clear = function () {
@@ -894,8 +949,8 @@ var LayoutEditor;
         ResizeTool.prototype.drawBounds = function () {
             this.clear();
 
-            this.boundsShape.calculateBounds();
-            this.boundsShape.draw(g_toolCtx);
+            this.resizeShape.calculateBounds();
+            this.resizeShape.draw(g_toolCtx);
         };
         return ResizeTool;
     })();

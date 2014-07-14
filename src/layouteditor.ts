@@ -89,13 +89,43 @@ module LayoutEditor {
 
     //------------------------------
     class Bounds {
-        x1: number;
-        y1: number;
-        x2: number; // x2 > x1
-        y2: number; // y2 > y1
+        rotate: number = 0; // radians
+        cx: number;
+        cy: number;
+        hw: number; // halfWidth
+        hh: number; // halfHeight
 
         constructor() {}
+
+        asPolygon(): number[] {
+            var cr = Math.cos(this.rotate);
+            var sr = Math.sin(this.rotate);
+
+            var polygon: number[] = [-this.hw, -this.hh, this.hw, -this.hh, this.hw, this.hh, -this.hw, this.hh];
+            for (var i: number = 0; i < polygon.length; i += 2) {
+                var x = polygon[i];
+                var y = polygon[i + 1];
+                polygon[i] = x * cr - y * sr + this.cx;
+                polygon[i + 1] = x * sr + y * cr + this.cy;
+            }
+
+            return polygon;
+        }
     }
+
+    function drawPolygon(ctx, polygon: number[]) {
+        if (polygon.length < 4)
+            return;
+
+        ctx.strokeStyle = "green";
+        ctx.moveTo(polygon[0], polygon[1]);
+        for (var i = 2; i < polygon.length; i += 2) {
+            ctx.lineTo(polygon[i], polygon[i + 1]);
+        }
+        ctx.lineTo(polygon[0], polygon[1]);
+        ctx.stroke();
+    }
+
 
     //------------------------------
     interface XY {
@@ -129,8 +159,8 @@ module LayoutEditor {
 
             var lx: number = (x - this.pivot.x) * this.scale.x;
             var ly: number = (y - this.pivot.y) * this.scale.y;
-            newPos.x = (lx * cr + ly * sr) + this.translate.x;
-            newPos.y = (-lx * sr + ly * cr) + this.translate.y;
+            newPos.x = (lx * cr - ly * sr) + this.translate.x;
+            newPos.y = (lx * sr + ly * cr) + this.translate.y;
 
             newPos.x += this.pivot.x;
             newPos.y += this.pivot.y;
@@ -154,14 +184,14 @@ module LayoutEditor {
             var ly: number = 0;
 
             if (Math.abs(cr) < EPSILON) {
-                lx = -newPos.y / sr;
-                ly = newPos.x / sr;
+                lx = newPos.y / sr;
+                ly = -newPos.x / sr;
             } else if (Math.abs(sr) < EPSILON) {
                 lx = newPos.x / cr;
                 ly = newPos.y / cr;
             } else {
-                lx = (newPos.x * cr - newPos.y) / (cr * cr + sr);
-                ly = (newPos.y + lx * sr) / cr;
+                lx = (newPos.x * cr + newPos.y) / (cr * cr + sr);
+                ly = (newPos.y - lx * sr) / cr;
             }
 
             return newPos;
@@ -195,11 +225,11 @@ module LayoutEditor {
         public buildPath(ctx) {}
 
         drawSelect(ctx) {
-            ctx.strokeRect(
-                this.bounds.x1,
-                this.bounds.y1,
-                this.bounds.x2 - this.bounds.x1,
-                this.bounds.y2 - this.bounds.y1);
+            ctx.save();
+            ctx.translate(this.bounds.cx, this.bounds.cy);
+            ctx.rotate(this.bounds.rotate);
+            ctx.strokeRect(-this.bounds.hw, -this.bounds.hh, this.bounds.hw * 2, this.bounds.hh * 2);
+            ctx.restore();
         }
 
         // performed by the derived class
@@ -210,10 +240,56 @@ module LayoutEditor {
             return g_toolCtx.isPointInPath(x, y);
         }
 
-        isOverlap(bounds: Bounds): boolean {
-            // overlap with bounds
-            return bounds.x1 < this.bounds.x2 && bounds.y1 < this.bounds.y2 &&
-                bounds.x2 > this.bounds.x1 && bounds.y2 > this.bounds.y1;
+        isOverlapBounds(bounds: Bounds): boolean {
+            var polygonA: number[] = this.bounds.asPolygon();
+            var polygonB: number[] = bounds.asPolygon();
+
+            //drawPolygon(g_toolCtx, polygonA);
+            //drawPolygon(g_toolCtx, polygonB);
+
+            for (var i: number = 0; i < 2; ++i) {
+                var polygon: number[] = (i === 0 ? polygonA : polygonB);
+                var x1: number = polygon[polygon.length - 2];
+                var y1: number = polygon[polygon.length - 1];
+
+                for (var j: number = 0; j < polygon.length; j += 2) {
+                    var x2: number = polygon[j];
+                    var y2: number = polygon[j + 1];
+                    var normalX: number = y1 - y2; // -dy
+                    var normalY: number = x2 - x1; // dx
+                    x1 = x2;
+                    y1 = y2;
+
+                    var minA;
+                    var maxA;
+                    for (var k: number = 0; k < polygonA.length; k += 2) {
+                        var projected = normalX * polygonA[k] + normalY * polygonA[k + 1];
+                        if (k === 0 || projected < minA) {
+                            minA = projected;
+                        }
+                        if (k === 0 || projected > maxA) {
+                            maxA = projected;
+                        }
+                    }
+
+                    var minB;
+                    var maxB;
+                    for (var k: number = 0; k < polygonB.length; k += 2) {
+                        var projected = normalX * polygonB[k] + normalY * polygonB[k + 1];
+                        if (k === 0 || projected < minB) {
+                            minB = projected;
+                        }
+                        if (k === 0 || projected > maxB) {
+                            maxB = projected;
+                        }
+                    }
+
+                    if (maxA < minB || maxB < minA)
+                        return false;
+                }
+            }
+
+            return true;
         }
 
         copy(base ? : Shape): Shape {
@@ -256,15 +332,14 @@ module LayoutEditor {
             this.transform.pivot.x = this.x + this.w * 0.5;
             this.transform.pivot.y = this.y + this.h * 0.5;
 
-            var topLeft: XY = this.transform.calc(this.x, this.y);
-            var topRight: XY = this.transform.calc(this.x + this.w, this.y);
-            var bottomLeft: XY = this.transform.calc(this.x, this.y + this.h);
-            var bottomRight: XY = this.transform.calc(this.x + this.w, this.y + this.h);
-
-            this.bounds.x1 = arrayMin([topLeft.x, topRight.x, bottomLeft.x, bottomRight.x]);
-            this.bounds.y1 = arrayMin([topLeft.y, topRight.y, bottomLeft.y, bottomRight.y]);
-            this.bounds.x2 = arrayMax([topLeft.x, topRight.x, bottomLeft.x, bottomRight.x]);
-            this.bounds.y2 = arrayMax([topLeft.y, topRight.y, bottomLeft.y, bottomRight.y]);
+            // TODO fix for non-centered pivots
+            this.bounds.rotate = this.transform.rotate;
+            var hw = this.w * 0.5;
+            var hh = this.h * 0.5;
+            this.bounds.hw = Math.abs(hw);
+            this.bounds.hh = Math.abs(hh);
+            this.bounds.cx = this.x + hw;
+            this.bounds.cy = this.y + hh;
         }
     }
 
@@ -313,29 +388,19 @@ module LayoutEditor {
             transform.pivot.x = this.x + this.rx;
             transform.pivot.y = this.y + this.ry;
 
-            // TODO handle the case where the pivot is not the center
-            var ux: number = this.rx * Math.cos(transform.rotate);
-            var uy: number = this.rx * Math.sin(transform.rotate);
-            var vx: number = this.ry * Math.cos(transform.rotate + Math.PI * 0.5);
-            var vy: number = this.ry * Math.sin(transform.rotate + Math.PI * 0.5);
-
-            var rrx = Math.sqrt(ux * ux + vx * vx);
-            var rry = Math.sqrt(uy * uy + vy * vy);
-            var cx = this.x + this.rx;
-            var cy = this.y + this.ry;
-
-            var topLeft: XY = transform.calc(cx - rrx, cy - rry);
-            var bottomRight: XY = transform.calc(this.x + 2 * this.rx, this.y + 2 * this.ry);
-
-            this.bounds.x1 = arrayMin([cx - rrx, cx + rrx]);
-            this.bounds.y1 = arrayMin([cy - rry, cy + rry]);
-            this.bounds.x2 = arrayMax([cx - rrx, cx + rrx]);
-            this.bounds.y2 = arrayMax([cy - rry, cy + rry]);
+            // TODO fix for non-centered pivots
+            this.bounds.rotate = this.transform.rotate;
+            var hw = this.rx;
+            var hh = this.ry;
+            this.bounds.hw = Math.abs(hw);
+            this.bounds.hh = Math.abs(hh);
+            this.bounds.cx = this.x + hw;
+            this.bounds.cy = this.y + hh;
         }
     }
 
     // cannot transform!!!
-    class BoundsShape extends Shape {
+    class AABBShape extends Shape {
         public x1: number;
         public y1: number;
         public x2: number;
@@ -345,9 +410,9 @@ module LayoutEditor {
             super();
         }
 
-        copy(base ? : BoundsShape): BoundsShape {
+        copy(base ? : AABBShape): AABBShape {
             if (!base)
-                base = new BoundsShape();
+                base = new AABBShape();
             super.copy(base);
             extend(base, this);
             return base;
@@ -356,30 +421,20 @@ module LayoutEditor {
         buildPath(ctx) {
             // don't apply transform!
             ctx.beginPath();
-            var x1 = this.bounds.x1;
-            var x2 = this.bounds.x2;
-            var y1 = this.bounds.y1;
-            var y2 = this.bounds.y2;
-            ctx.rect(x1, y1, x2 - x1, y2 - y1);
+            var x1 = this.bounds.cx - this.bounds.hw;
+            var y1 = this.bounds.cy - this.bounds.hh;
+            ctx.rect(x1, y1, this.bounds.hw * 2, this.bounds.hh * 2);
         }
 
         calculateBounds() {
             this.transform.pivot.x = (this.x1 + this.x2) * 0.5;
             this.transform.pivot.y = (this.y1 + this.y2) * 0.5;
-            if (this.x1 < this.x2) {
-                this.bounds.x1 = this.x1;
-                this.bounds.x2 = this.x2;
-            } else {
-                this.bounds.x1 = this.x2;
-                this.bounds.x2 = this.x1;
-            }
-            if (this.y1 < this.y2) {
-                this.bounds.y1 = this.y1;
-                this.bounds.y2 = this.y2;
-            } else {
-                this.bounds.y1 = this.y2;
-                this.bounds.y2 = this.y1;
-            }
+            var hw = (this.x2 - this.x1) * 0.5;
+            var hh = (this.y2 - this.y1) * 0.5;
+            this.bounds.cx = this.x1 + hw;
+            this.bounds.cy = this.y1 + hh;
+            this.bounds.hw = Math.abs(hw);
+            this.bounds.hh = Math.abs(hh);
         }
     }
 
@@ -479,8 +534,10 @@ module LayoutEditor {
 
             for (var i: number = this.shapes.length - 1; i >= 0; --i) {
                 var shape: Shape = this.shapes[i];
-                if (shape.isOverlap(bounds))
+                if (shape.isOverlapBounds(bounds)) {
+                    shape.isOverlapBounds(bounds);
                     shapes.push(shape);
+                }
             }
 
             return shapes;
@@ -772,32 +829,33 @@ module LayoutEditor {
     }
 
     class SelectTool implements Tool {
-        private boundsShape: BoundsShape = new BoundsShape();
+        private aabbShape: AABBShape = new AABBShape();
         private y1: number;
         private x2: number;
         private y2: number;
 
         constructor() {
-            this.boundsShape.style = g_selectStyle;
+            this.aabbShape.style = g_selectStyle;
         }
 
         onPointer(e: InteractionHelper.Event) {
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.boundsShape.x1 = e.x;
-                    this.boundsShape.y1 = e.y;
-                    this.boundsShape.x2 = e.x;
-                    this.boundsShape.y2 = e.y;
-                    this.boundsShape.calculateBounds();
+                    this.aabbShape.x1 = e.x;
+                    this.aabbShape.y1 = e.y;
+                    this.aabbShape.x2 = e.x;
+                    this.aabbShape.y2 = e.y;
+                    this.aabbShape.calculateBounds();
                     break;
                 case InteractionHelper.State.Move:
-                    this.boundsShape.x2 = e.x;
-                    this.boundsShape.y2 = e.y;
+                    this.aabbShape.x2 = e.x;
+                    this.aabbShape.y2 = e.y;
+                    this.aabbShape.calculateBounds();
                     this.drawBounds();
                     break;
                 case InteractionHelper.State.End:
                     this.clear();
-                    var shapes: Shape[] = g_shapeList.getShapesInBounds(this.boundsShape.bounds);
+                    var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.bounds);
                     if (shapes.length > 0)
                         g_commandList.addCommand(new SelectCommand(shapes));
                     break;
@@ -811,11 +869,10 @@ module LayoutEditor {
         private drawBounds() {
             this.clear();
 
-            this.boundsShape.calculateBounds();
-            this.boundsShape.draw(g_toolCtx);
+            this.aabbShape.draw(g_toolCtx);
 
             g_shapeList.selectedStyle.draw(g_toolCtx);
-            var shapes: Shape[] = g_shapeList.getShapesInBounds(this.boundsShape.bounds);
+            var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.bounds);
             for (var i = 0; i < shapes.length; ++i) {
                 shapes[i].drawSelect(g_toolCtx);
             }
@@ -823,75 +880,82 @@ module LayoutEditor {
     }
 
     class ResizeTool implements Tool {
-        boundsShape: BoundsShape = new BoundsShape();
+        resizeShape: Shape = null;
         shape: Shape = null;
         handle: ResizeTool.HandleFlag = ResizeTool.HandleFlag.None;
         handleSize: number = 20;
         canUse: boolean = false;
 
         constructor() {
-            this.boundsShape.style = g_selectStyle;
+            this.resizeShape.style = g_selectStyle;
         }
 
         onPointer(e: InteractionHelper.Event) {
-            switch (e.state) {
-                case InteractionHelper.State.Start:
-                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
-                    this.handle = ResizeTool.HandleFlag.None;
+            // switch (e.state) {
+            //     case InteractionHelper.State.Start:
+            //         this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+            //         this.handle = ResizeTool.HandleFlag.None;
 
-                    if (this.shape) {
-                        var x1 = this.shape.bounds.x1;
-                        var y1 = this.shape.bounds.y1;
-                        var x2 = this.shape.bounds.x2;
-                        var y2 = this.shape.bounds.y2;
+            //         if (this.shape) {
+            //             this.resizeShape = this.shape.copy();
+            //             this.resizeShape.style = g_selectStyle;
 
-                        if (e.x - x1 < this.handleSize)
-                            this.handle = (this.handle | ResizeTool.HandleFlag.Left);
-                        else if (x2 - e.x < this.handleSize)
-                            this.handle = (this.handle | ResizeTool.HandleFlag.Right);
+            //             var localPos: XY = this.shape.transform.inv(e.x, e.y);
+            //             var x1 = this.shape.bounds.x1;
+            //             var y1 = this.shape.bounds.y1;
+            //             var x2 = this.shape.bounds.x2;
+            //             var y2 = this.shape.bounds.y2;
 
-                        if (e.y - y1 < this.handleSize)
-                            this.handle = (this.handle | ResizeTool.HandleFlag.Top);
-                        else if (y2 - e.y < this.handleSize)
-                            this.handle = (this.handle | ResizeTool.HandleFlag.Bottom);
+            //             if (localPos.x - x1 < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Left);
+            //             else if (x2 - localPos.x < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Right);
 
-                        if (this.handle === ResizeTool.HandleFlag.None)
-                            this.handle = ResizeTool.HandleFlag.Middle;
+            //             if (localPos.y - y1 < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Top);
+            //             else if (y2 - localPos.y < this.handleSize)
+            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Bottom);
 
-                        this.boundsShape.x1 = x1;
-                        this.boundsShape.y1 = y1;
-                        this.boundsShape.x2 = x2;
-                        this.boundsShape.y2 = y2;
-                    }
-                    break;
+            //             if (this.handle === ResizeTool.HandleFlag.None)
+            //                 this.handle = ResizeTool.HandleFlag.Middle;
 
-                case InteractionHelper.State.Move:
-                    if (this.handle & ResizeTool.HandleFlag.Left)
-                        this.boundsShape.x1 += e.deltaX;
-                    if (this.handle & ResizeTool.HandleFlag.Right)
-                        this.boundsShape.x2 += e.deltaX;
-                    if (this.handle & ResizeTool.HandleFlag.Top)
-                        this.boundsShape.y1 += e.deltaY;
-                    if (this.handle & ResizeTool.HandleFlag.Bottom)
-                        this.boundsShape.y2 += e.deltaY;
-                    if (this.handle === ResizeTool.HandleFlag.Middle) {
-                        this.boundsShape.x1 += e.deltaX;
-                        this.boundsShape.y1 += e.deltaY;
-                        this.boundsShape.x2 += e.deltaX;
-                        this.boundsShape.y2 += e.deltaY;
-                    }
-                    this.canUse = this.handle !== ResizeTool.HandleFlag.None;
-                    this.drawBounds();
-                    break;
+            //             this.aabbShape.x1 = x1;
+            //             this.aabbShape.y1 = y1;
+            //             this.aabbShape.x2 = x2;
+            //             this.aabbShape.y2 = y2;
+            //         }
+            //         break;
 
-                case InteractionHelper.State.End:
-                    if (this.canUse) {
-                        //var newCommand = new TransformCommand();
-                        this.canUse = false;
-                    }
-                    this.shape = null;
-                    break;
-            }
+            //     case InteractionHelper.State.Move:
+            //         // var cr = Math.cos(this.rotate);
+            //         // var sr = Math.sin(this.rotate);
+
+            //         if (this.handle & ResizeTool.HandleFlag.Left)
+            //             this.aabbShape.x1 += e.deltaX;
+            //         if (this.handle & ResizeTool.HandleFlag.Right)
+            //             this.aabbShape.x2 += e.deltaX;
+            //         if (this.handle & ResizeTool.HandleFlag.Top)
+            //             this.aabbShape.y1 += e.deltaY;
+            //         if (this.handle & ResizeTool.HandleFlag.Bottom)
+            //             this.aabbShape.y2 += e.deltaY;
+            //         if (this.handle === ResizeTool.HandleFlag.Middle) {
+            //             this.aabbShape.x1 += e.deltaX;
+            //             this.aabbShape.y1 += e.deltaY;
+            //             this.aabbShape.x2 += e.deltaX;
+            //             this.aabbShape.y2 += e.deltaY;
+            //         }
+            //         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
+            //         this.drawBounds();
+            //         break;
+
+            //     case InteractionHelper.State.End:
+            //         if (this.canUse) {
+            //             //var newCommand = new TransformCommand();
+            //             this.canUse = false;
+            //         }
+            //         this.shape = null;
+            //         break;
+            // }
         }
 
         private clear() {
@@ -901,8 +965,8 @@ module LayoutEditor {
         private drawBounds() {
             this.clear();
 
-            this.boundsShape.calculateBounds();
-            this.boundsShape.draw(g_toolCtx);
+            this.resizeShape.calculateBounds();
+            this.resizeShape.draw(g_toolCtx);
         }
     }
 

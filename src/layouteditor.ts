@@ -190,11 +190,17 @@ module LayoutEditor {
                 lx = newPos.x / cr;
                 ly = newPos.y / cr;
             } else {
-                lx = (newPos.x * cr + newPos.y) / (cr * cr + sr);
+                lx = (newPos.x * cr + newPos.y * sr) / (cr * cr + sr * sr);
                 ly = (newPos.y - lx * sr) / cr;
             }
 
-            return newPos;
+            lx /= this.scale.x;
+            ly /= this.scale.y;
+
+            return {
+                x: lx,
+                y: ly
+            };
         }
     }
 
@@ -309,14 +315,19 @@ module LayoutEditor {
         buildPath(ctx) {
             var transform = this.transform;
 
+            var cx = transform.pivot.x + transform.translate.x;
+            var cy = transform.pivot.y + transform.translate.y;
+            ctx.strokeRect(cx - 2, cy - 2, 4, 4);
+
             ctx.save();
-            ctx.scale(transform.scale.x, transform.scale.y);
-            ctx.translate(transform.pivot.x, transform.pivot.y);
+            // inverse order for ctx
+            ctx.translate(transform.pivot.x + transform.translate.x, transform.pivot.y + transform.translate.y);
             ctx.rotate(transform.rotate);
-            ctx.translate(transform.translate.x + this.x, transform.translate.y + this.y);
+            ctx.scale(transform.scale.x, transform.scale.y);
+            //ctx.translate(transform.translate.x, transform.translate.y);
 
             ctx.beginPath();
-            ctx.rect(-transform.pivot.x, -transform.pivot.y, this.w, this.h);
+            ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
             ctx.restore();
         }
 
@@ -365,14 +376,24 @@ module LayoutEditor {
             }
 
             ctx.save();
-            ctx.scale(transform.scale.x, transform.scale.y);
-            ctx.translate(transform.pivot.x, transform.pivot.y);
+            ctx.translate(transform.pivot.x + transform.translate.x, transform.pivot.y + transform.translate.y);
             ctx.rotate(transform.rotate);
-            ctx.translate(transform.translate.x + x + rx, transform.translate.y + y + ry);
+            ctx.scale(transform.scale.x, transform.scale.y);
+
+            var kappa = .5522848,
+                ox = rx * kappa, // control point offset horizontal
+                oy = ry * kappa; // control point offset vertical
 
             ctx.beginPath();
-            ctx.ellipse(-transform.pivot.x, -transform.pivot.y, rx, ry, 0, 0, 2 * Math.PI);
-            ctx.restore(); // restore before stroke so lines is not stretched
+            ctx.moveTo(-rx, 0);
+            ctx.bezierCurveTo(-rx, -oy, -ox, -ry, 0, -ry);
+            ctx.bezierCurveTo(ox, -ry, rx, -oy, rx, 0);
+            ctx.bezierCurveTo(rx, oy, ox, ry, 0, ry);
+            ctx.bezierCurveTo(-ox, ry, -rx, oy, -rx, 0);
+
+            // ctx.beginPath();
+            // ctx.ellipse(0, 0, rx, ry, 0, 0, 2 * Math.PI);
+            ctx.restore();
         }
 
         copy(base ? : EllipseShape): EllipseShape {
@@ -676,6 +697,10 @@ module LayoutEditor {
                 g_tool = new ResizeTool();
                 break;
 
+            case "moveTool":
+                g_tool = new MoveTool();
+                break;
+
             case "rectTool":
                 g_tool = new RectTool();
                 break;
@@ -723,6 +748,7 @@ module LayoutEditor {
 
         public draw() {
             this.clear();
+            this.shape.calculateBounds();
             this.shape.draw(g_toolCtx);
         }
 
@@ -819,7 +845,7 @@ module LayoutEditor {
             }
         }
 
-        drawShape() {
+        private drawShape() {
             this.ellipseShape.x = this.x1;
             this.ellipseShape.y = this.y1;
             this.ellipseShape.rx = (this.x2 - this.x1) * 0.5;
@@ -851,7 +877,7 @@ module LayoutEditor {
                     this.aabbShape.x2 = e.x;
                     this.aabbShape.y2 = e.y;
                     this.aabbShape.calculateBounds();
-                    this.drawBounds();
+                    this.drawSelect();
                     break;
                 case InteractionHelper.State.End:
                     this.clear();
@@ -866,7 +892,7 @@ module LayoutEditor {
             g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
         }
 
-        private drawBounds() {
+        private drawSelect() {
             this.clear();
 
             this.aabbShape.draw(g_toolCtx);
@@ -885,89 +911,111 @@ module LayoutEditor {
         handle: ResizeTool.HandleFlag = ResizeTool.HandleFlag.None;
         handleSize: number = 20;
         canUse: boolean = false;
+        startLocalPos: XY = null;
 
-        constructor() {
-            this.resizeShape.style = g_selectStyle;
-        }
+        constructor() {}
 
         onPointer(e: InteractionHelper.Event) {
-            // switch (e.state) {
-            //     case InteractionHelper.State.Start:
-            //         this.shape = g_shapeList.getShapeInXY(e.x, e.y);
-            //         this.handle = ResizeTool.HandleFlag.None;
+            switch (e.state) {
+                case InteractionHelper.State.Start:
+                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    this.handle = ResizeTool.HandleFlag.None;
 
-            //         if (this.shape) {
-            //             this.resizeShape = this.shape.copy();
-            //             this.resizeShape.style = g_selectStyle;
+                    if (this.shape) {
+                        this.resizeShape = this.shape.copy();
+                        this.resizeShape.style = g_selectStyle;
 
-            //             var localPos: XY = this.shape.transform.inv(e.x, e.y);
-            //             var x1 = this.shape.bounds.x1;
-            //             var y1 = this.shape.bounds.y1;
-            //             var x2 = this.shape.bounds.x2;
-            //             var y2 = this.shape.bounds.y2;
+                        var transform = this.shape.transform;
+                        var localPos: XY = transform.inv(e.x, e.y);
+                        var bounds: Bounds = this.shape.bounds;
+                        var handleX = this.handleSize / transform.scale.x;
+                        var handleY = this.handleSize / transform.scale.y;
 
-            //             if (localPos.x - x1 < this.handleSize)
-            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Left);
-            //             else if (x2 - localPos.x < this.handleSize)
-            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Right);
+                        if (localPos.x + bounds.hw < handleX)
+                            this.handle = (this.handle | ResizeTool.HandleFlag.Left);
+                        else if (bounds.hw - localPos.x < handleX)
+                            this.handle = (this.handle | ResizeTool.HandleFlag.Right);
 
-            //             if (localPos.y - y1 < this.handleSize)
-            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Top);
-            //             else if (y2 - localPos.y < this.handleSize)
-            //                 this.handle = (this.handle | ResizeTool.HandleFlag.Bottom);
+                        if (localPos.y + bounds.hh < handleY)
+                            this.handle = (this.handle | ResizeTool.HandleFlag.Top);
+                        else if (bounds.hh - localPos.y < handleY)
+                            this.handle = (this.handle | ResizeTool.HandleFlag.Bottom);
 
-            //             if (this.handle === ResizeTool.HandleFlag.None)
-            //                 this.handle = ResizeTool.HandleFlag.Middle;
+                        if (this.handle === ResizeTool.HandleFlag.None)
+                            this.handle = ResizeTool.HandleFlag.Middle;
 
-            //             this.aabbShape.x1 = x1;
-            //             this.aabbShape.y1 = y1;
-            //             this.aabbShape.x2 = x2;
-            //             this.aabbShape.y2 = y2;
-            //         }
-            //         break;
+                        this.startLocalPos = localPos;
+                    }
+                    break;
 
-            //     case InteractionHelper.State.Move:
-            //         // var cr = Math.cos(this.rotate);
-            //         // var sr = Math.sin(this.rotate);
+                case InteractionHelper.State.Move:
+                    if (this.shape) {
+                        var transform = this.resizeShape.transform;
+                        var oldTransform = this.shape.transform;
+                        var localPos: XY = oldTransform.inv(e.x, e.y);
+                        var dx = (localPos.x - this.startLocalPos.x) * oldTransform.scale.x;
+                        var dy = (localPos.y - this.startLocalPos.y) * oldTransform.scale.y;
+                        var sx = dx / (this.resizeShape.bounds.hw * 2);
+                        var sy = dy / (this.resizeShape.bounds.hh * 2);
+                        var cr = Math.cos(oldTransform.rotate);
+                        var sr = Math.sin(oldTransform.rotate);
 
-            //         if (this.handle & ResizeTool.HandleFlag.Left)
-            //             this.aabbShape.x1 += e.deltaX;
-            //         if (this.handle & ResizeTool.HandleFlag.Right)
-            //             this.aabbShape.x2 += e.deltaX;
-            //         if (this.handle & ResizeTool.HandleFlag.Top)
-            //             this.aabbShape.y1 += e.deltaY;
-            //         if (this.handle & ResizeTool.HandleFlag.Bottom)
-            //             this.aabbShape.y2 += e.deltaY;
-            //         if (this.handle === ResizeTool.HandleFlag.Middle) {
-            //             this.aabbShape.x1 += e.deltaX;
-            //             this.aabbShape.y1 += e.deltaY;
-            //             this.aabbShape.x2 += e.deltaX;
-            //             this.aabbShape.y2 += e.deltaY;
-            //         }
-            //         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
-            //         this.drawBounds();
-            //         break;
+                        if (this.handle & ResizeTool.HandleFlag.Left) {
+                            transform.translate.x = oldTransform.translate.x + dx * cr * 0.5;
+                            transform.translate.y = oldTransform.translate.y + dx * sr * 0.5;
+                            transform.scale.x = oldTransform.scale.x - sx;
+                        }
+                        if (this.handle & ResizeTool.HandleFlag.Right) {
+                            transform.translate.x = oldTransform.translate.x + dx * cr * 0.5;
+                            transform.translate.y = oldTransform.translate.y + dx * sr * 0.5;
+                            transform.scale.x = oldTransform.scale.x + sx;
+                        }
+                        if (this.handle & ResizeTool.HandleFlag.Top) {
+                            transform.translate.x = oldTransform.translate.x - dy * sr * 0.5;
+                            transform.translate.y = oldTransform.translate.y + dy * cr * 0.5;
+                            transform.scale.y = oldTransform.scale.y - sy;
+                        }
+                        if (this.handle & ResizeTool.HandleFlag.Bottom) {
+                            transform.translate.x = oldTransform.translate.x - dy * sr * 0.5;
+                            transform.translate.y = oldTransform.translate.y + dy * cr * 0.5;
+                            transform.scale.y = oldTransform.scale.y + sy;
+                        }
+                        if (this.handle === ResizeTool.HandleFlag.Middle) {
+                            transform.translate.x += e.deltaX;
+                            transform.translate.y += e.deltaY;
+                        }
+                        this.canUse = this.handle !== ResizeTool.HandleFlag.None;
+                        this.drawResize();
+                    }
+                    break;
 
-            //     case InteractionHelper.State.End:
-            //         if (this.canUse) {
-            //             //var newCommand = new TransformCommand();
-            //             this.canUse = false;
-            //         }
-            //         this.shape = null;
-            //         break;
-            // }
+                case InteractionHelper.State.End:
+                    if (this.shape && this.canUse) {
+                        var newCommand = new TransformCommand(this.shape, this.resizeShape.transform);
+                        g_commandList.addCommand(newCommand);
+                    }
+                    this.clear();
+                    this.canUse = false;
+                    this.shape = null;
+                    break;
+            }
         }
 
         private clear() {
             g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
         }
 
-        private drawBounds() {
+        private drawResize() {
             this.clear();
 
-            this.resizeShape.calculateBounds();
             this.resizeShape.draw(g_toolCtx);
         }
+    }
+
+    module ResizeTool {
+        export enum HandleFlag {
+            None = 0, Left = 1, Right = 2, Top = 4, Bottom = 8, Middle = 16
+        };
     }
 
     class RotateTool implements Tool {
@@ -1003,11 +1051,11 @@ module LayoutEditor {
                     if (this.rotateShape) {
                         var newCommand = new TransformCommand(this.shape, this.rotateShape.transform);
                         g_commandList.addCommand(newCommand);
-
-                        this.clear();
-                        this.rotateShape = null;
-                        this.shape = null;
                     }
+
+                    this.clear();
+                    this.rotateShape = null;
+                    this.shape = null;
                     break;
             }
         }
@@ -1033,10 +1081,54 @@ module LayoutEditor {
         }
     }
 
-    module ResizeTool {
-        export enum HandleFlag {
-            None = 0, Left = 1, Right = 2, Top = 4, Bottom = 8, Middle = 16
-        };
+    class MoveTool implements Tool {
+        moveShape: Shape = null;
+        shape: Shape = null;
+        canUse: boolean = false;
+
+        constructor() {}
+
+        onPointer(e: InteractionHelper.Event) {
+            switch (e.state) {
+                case InteractionHelper.State.Start:
+                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+
+                    if (this.shape) {
+                        this.moveShape = this.shape.copy();
+                        this.moveShape.style = g_selectStyle;
+                    }
+                    break;
+
+                case InteractionHelper.State.Move:
+                    if (this.shape) {
+                        var transform = this.moveShape.transform;
+                        transform.translate.x += e.deltaX;
+                        transform.translate.y += e.deltaY;
+                        this.canUse = true;
+                        this.drawMove();
+                    }
+                    break;
+
+                case InteractionHelper.State.End:
+                    if (this.shape && this.canUse) {
+                        var newCommand = new TransformCommand(this.shape, this.moveShape.transform);
+                        g_commandList.addCommand(newCommand);
+                    }
+                    this.canUse = false;
+                    this.shape = null;
+                    break;
+            }
+        }
+
+        private clear() {
+            g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
+        }
+
+        private drawMove() {
+            this.clear();
+
+            this.moveShape.draw(g_toolCtx);
+        }
     }
 
     //------------------------------

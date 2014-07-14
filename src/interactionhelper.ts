@@ -315,7 +315,7 @@ module InteractionHelper {
             e.preventDefault();
             if (e.touches.length === 0) {
                 document.removeEventListener("touchmove", this.touchMoveHandler);
-                document.removeEventListener("touchup", this.touchEndHandler);
+                document.removeEventListener("touchend", this.touchEndHandler);
             }
 
             var x: number = e.pageX - this.elem.offsetLeft;

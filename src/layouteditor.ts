@@ -113,7 +113,7 @@ module LayoutEditor {
     //------------------------------
     class Style {
         strokeStyle: string = "black";
-        fillStyle: string = "white";
+        fillStyle: string = "none";
         lineWidth: number = 1;
         lineDash: number[] = [];
 
@@ -130,12 +130,13 @@ module LayoutEditor {
     var g_defaultStyle: Style = new Style();
     var g_drawStyle: Style = new Style();
     var g_selectStyle: Style = new Style();
+    var g_snapStyle: Style = new Style();
+    g_defaultStyle.fillStyle = "white";
     g_drawStyle.strokeStyle = "red";
     g_drawStyle.lineDash = [2, 2];
-    g_drawStyle.fillStyle = "none";
     g_selectStyle.strokeStyle = "blue";
     g_selectStyle.lineDash = [5, 5];
-    g_selectStyle.fillStyle = "none"
+    g_snapStyle.strokeStyle = "red";
 
     var g_style: Style = g_defaultStyle;
 
@@ -362,7 +363,6 @@ module LayoutEditor {
     class RectShape extends Shape {
         constructor(public w: number, public h: number) {
             super();
-            this.calculateBounds();
         }
 
         buildPath(ctx) {
@@ -423,7 +423,6 @@ module LayoutEditor {
     class EllipseShape extends Shape {
         constructor(public rx: number, public ry: number) {
             super();
-            this.calculateBounds();
         }
 
         buildPath(ctx) {
@@ -654,8 +653,8 @@ module LayoutEditor {
         xTabs: number[] = [];
         yTabs: number[] = [];
         shapeGravity: number = 10;
-        snapToX: number = -1;
-        snapToY: number = -1;
+        snappedX: number = -1;
+        snappedY: number = -1;
 
         constructor() {
 
@@ -700,18 +699,18 @@ module LayoutEditor {
                 i = this.getClosestIndex(this.xTabs, pos.x, i);
                 if (Math.abs(this.xTabs[i] - pos.x) < this.shapeGravity) {
                     pos.x = this.xTabs[i];
-                    this.snapToX = pos.x;
+                    this.snappedX = pos.x;
                 } else {
-                    this.snapToX = -1;
+                    this.snappedX = -1;
                 }
 
                 var j = getIndexOfSorted(this.yTabs, pos.y);
                 j = this.getClosestIndex(this.yTabs, pos.y, j);
                 if (Math.abs(this.yTabs[j] - pos.y) < this.shapeGravity) {
                     pos.y = this.yTabs[j];
-                    this.snapToY = pos.y;
+                    this.snappedY = pos.y;
                 } else {
-                    this.snapToY = -1;
+                    this.snappedY = -1;
                 }
             }
 
@@ -818,25 +817,27 @@ module LayoutEditor {
 
     class RectCommand extends ShapeCommand {
 
-        constructor(public x: number, public y: number, public w: number, public h: number) {
+        constructor(cx: number, cy: number, w: number, h: number) {
             super();
 
-            this.shape = new RectShape(this.w, this.h);
-            this.shape.transform.translate.x = this.x;
-            this.shape.transform.translate.y = this.y;
+            this.shape = new RectShape(w, h);
+            this.shape.transform.translate.x = cx;
+            this.shape.transform.translate.y = cy;
             this.shape.setStyle(g_style);
+            this.shape.calculateBounds();
         }
     }
 
     class EllipseCommand extends ShapeCommand {
 
-        constructor(public x: number, public y: number, public rx: number, public ry: number) {
+        constructor(cx: number, cy: number, rx: number, ry: number) {
             super();
 
-            this.shape = new EllipseShape(this.rx, this.ry);
-            this.shape.transform.translate.x = this.x;
-            this.shape.transform.translate.y = this.y;
+            this.shape = new EllipseShape(rx, ry);
+            this.shape.transform.translate.x = cx;
+            this.shape.transform.translate.y = cy;
             this.shape.setStyle(g_style);
+            this.shape.calculateBounds();
         }
     }
 
@@ -1007,6 +1008,16 @@ module LayoutEditor {
                 Math.abs(this.y2 - this.y1));
 
             this.draw();
+
+            if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
+                g_toolCtx.beginPath();
+                g_snapStyle.draw(g_toolCtx);
+                g_toolCtx.moveTo(g_grid.snappedX, 0);
+                g_toolCtx.lineTo(g_grid.snappedX, 1000);
+                g_toolCtx.moveTo(0, g_grid.snappedY);
+                g_toolCtx.lineTo(1000, g_grid.snappedY);
+                g_toolCtx.stroke();
+            }
         }
     }
 
@@ -1060,6 +1071,16 @@ module LayoutEditor {
                 Math.abs(this.x2 - this.x1),
                 Math.abs(this.y2 - this.y1));
             this.draw();
+
+            if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
+                g_toolCtx.beginPath();
+                g_snapStyle.draw(g_toolCtx);
+                g_toolCtx.moveTo(g_grid.snappedX, 0);
+                g_toolCtx.lineTo(g_grid.snappedX, 1000);
+                g_toolCtx.moveTo(0, g_grid.snappedY);
+                g_toolCtx.lineTo(1000, g_grid.snappedY);
+                g_toolCtx.stroke();
+            }
         }
     }
 
@@ -1131,6 +1152,7 @@ module LayoutEditor {
                     this.handle = ResizeTool.HandleFlag.None;
 
                     if (this.shape) {
+                        g_grid.rebuildTabs();
                         this.resizeShape = this.shape.copy();
                         this.resizeShape.style = g_selectStyle;
 
@@ -1296,9 +1318,13 @@ module LayoutEditor {
     }
 
     class MoveTool implements Tool {
-        moveShape: Shape = null;
-        shape: Shape = null;
-        canUse: boolean = false;
+        private moveShape: Shape = null;
+        private shape: Shape = null;
+        private canUse: boolean = false;
+        private deltaX: number = 0;
+        private deltaY: number = 0;
+        private snappedX: number = 0;
+        private snappedY: number = 0;
 
         constructor() {}
 
@@ -1310,15 +1336,22 @@ module LayoutEditor {
                     if (this.shape) {
                         this.moveShape = this.shape.copy();
                         this.moveShape.style = g_selectStyle;
+                        this.deltaX = 0;
+                        this.deltaY = 0;
                     }
                     break;
 
                 case InteractionHelper.State.Move:
                     if (this.shape) {
                         var transform = this.moveShape.transform;
-                        transform.translate.x += e.deltaX;
-                        transform.translate.y += e.deltaY;
-                        this.moveShape.calculateBounds();
+                        var oldTransform = this.shape.transform;
+
+                        this.deltaX += e.deltaX;
+                        this.deltaY += e.deltaY;
+                        transform.translate.x = oldTransform.translate.x + this.deltaX;
+                        transform.translate.y = oldTransform.translate.y + this.deltaY;
+
+                        this.snapAABBToGrid();
                         this.canUse = true;
                         this.drawMove();
                     }
@@ -1347,6 +1380,59 @@ module LayoutEditor {
             this.moveShape.drawSelect(g_toolCtx);
             g_toolCtx.strokeStyle = "violet";
             this.moveShape.drawAABB(g_toolCtx);
+
+            if (this.snappedX > -1 || this.snappedY > -1) {
+                g_toolCtx.beginPath();
+                g_snapStyle.draw(g_toolCtx);
+                g_toolCtx.moveTo(this.snappedX, 0);
+                g_toolCtx.lineTo(this.snappedX, 1000);
+                g_toolCtx.moveTo(0, this.snappedY);
+                g_toolCtx.lineTo(1000, this.snappedY);
+                g_toolCtx.stroke();
+            }
+        }
+
+        private snapAABBToGrid() {
+            this.moveShape.calculateBounds();
+
+            var aabb = this.moveShape.aabb;
+            var translate = this.moveShape.transform.translate;
+
+            var left = aabb.cx - aabb.hw;
+            var top = aabb.cy - aabb.hh;
+            var right = aabb.cx + aabb.hw;
+            var bottom = aabb.cy + aabb.hh;
+
+            var snapTopLeft = g_grid.snapXY(left, top);
+            var snapBottomRight = g_grid.snapXY(right, bottom);
+            var snapCenter = g_grid.snapXY(aabb.cx, aabb.cy);
+
+            this.snappedX = -1;
+            if (left !== snapTopLeft.x) {
+                translate.x += snapTopLeft.x - left;
+                this.snappedX = snapTopLeft.x;
+            } else if (right !== snapBottomRight.x) {
+                translate.x += snapBottomRight.x - right;
+                this.snappedX = snapBottomRight.x;
+            } else if (aabb.cx !== snapCenter.x) {
+                translate.x += snapCenter.x - aabb.cx;
+                this.snappedX = snapCenter.x;
+            }
+
+            this.snappedY = -1;
+            if (top !== snapTopLeft.y) {
+                translate.y += snapTopLeft.y - top;
+                this.snappedY = snapTopLeft.y;
+            } else if (bottom !== snapBottomRight.y) {
+                translate.y += snapBottomRight.y - bottom;
+                this.snappedY = snapBottomRight.y;
+            } else if (aabb.cy !== snapCenter.y) {
+                translate.y += snapCenter.y - aabb.cy;
+                this.snappedY = snapCenter.y;
+            }
+
+            if (this.snappedY >= 1 || this.snappedX >= -1)
+                this.moveShape.calculateBounds();
         }
     }
 

@@ -124,7 +124,7 @@ var LayoutEditor;
     var Style = (function () {
         function Style() {
             this.strokeStyle = "black";
-            this.fillStyle = "white";
+            this.fillStyle = "none";
             this.lineWidth = 1;
             this.lineDash = [];
         }
@@ -142,12 +142,13 @@ var LayoutEditor;
     var g_defaultStyle = new Style();
     var g_drawStyle = new Style();
     var g_selectStyle = new Style();
+    var g_snapStyle = new Style();
+    g_defaultStyle.fillStyle = "white";
     g_drawStyle.strokeStyle = "red";
     g_drawStyle.lineDash = [2, 2];
-    g_drawStyle.fillStyle = "none";
     g_selectStyle.strokeStyle = "blue";
     g_selectStyle.lineDash = [5, 5];
-    g_selectStyle.fillStyle = "none";
+    g_snapStyle.strokeStyle = "red";
 
     var g_style = g_defaultStyle;
 
@@ -368,7 +369,6 @@ var LayoutEditor;
             _super.call(this);
             this.w = w;
             this.h = h;
-            this.calculateBounds();
         }
         RectShape.prototype.buildPath = function (ctx) {
             var transform = this.transform;
@@ -433,7 +433,6 @@ var LayoutEditor;
             _super.call(this);
             this.rx = rx;
             this.ry = ry;
-            this.calculateBounds();
         }
         EllipseShape.prototype.buildPath = function (ctx) {
             var transform = this.transform;
@@ -659,8 +658,8 @@ var LayoutEditor;
             this.xTabs = [];
             this.yTabs = [];
             this.shapeGravity = 10;
-            this.snapToX = -1;
-            this.snapToY = -1;
+            this.snappedX = -1;
+            this.snappedY = -1;
         }
         Grid.prototype.getClosestIndex = function (list, value, index) {
             var bestDist = Math.abs(value - list[index]);
@@ -701,18 +700,18 @@ var LayoutEditor;
                 i = this.getClosestIndex(this.xTabs, pos.x, i);
                 if (Math.abs(this.xTabs[i] - pos.x) < this.shapeGravity) {
                     pos.x = this.xTabs[i];
-                    this.snapToX = pos.x;
+                    this.snappedX = pos.x;
                 } else {
-                    this.snapToX = -1;
+                    this.snappedX = -1;
                 }
 
                 var j = getIndexOfSorted(this.yTabs, pos.y);
                 j = this.getClosestIndex(this.yTabs, pos.y, j);
                 if (Math.abs(this.yTabs[j] - pos.y) < this.shapeGravity) {
                     pos.y = this.yTabs[j];
-                    this.snapToY = pos.y;
+                    this.snappedY = pos.y;
                 } else {
-                    this.snapToY = -1;
+                    this.snappedY = -1;
                 }
             }
 
@@ -817,34 +816,28 @@ var LayoutEditor;
 
     var RectCommand = (function (_super) {
         __extends(RectCommand, _super);
-        function RectCommand(x, y, w, h) {
+        function RectCommand(cx, cy, w, h) {
             _super.call(this);
-            this.x = x;
-            this.y = y;
-            this.w = w;
-            this.h = h;
 
-            this.shape = new RectShape(this.w, this.h);
-            this.shape.transform.translate.x = this.x;
-            this.shape.transform.translate.y = this.y;
+            this.shape = new RectShape(w, h);
+            this.shape.transform.translate.x = cx;
+            this.shape.transform.translate.y = cy;
             this.shape.setStyle(g_style);
+            this.shape.calculateBounds();
         }
         return RectCommand;
     })(ShapeCommand);
 
     var EllipseCommand = (function (_super) {
         __extends(EllipseCommand, _super);
-        function EllipseCommand(x, y, rx, ry) {
+        function EllipseCommand(cx, cy, rx, ry) {
             _super.call(this);
-            this.x = x;
-            this.y = y;
-            this.rx = rx;
-            this.ry = ry;
 
-            this.shape = new EllipseShape(this.rx, this.ry);
-            this.shape.transform.translate.x = this.x;
-            this.shape.transform.translate.y = this.y;
+            this.shape = new EllipseShape(rx, ry);
+            this.shape.transform.translate.x = cx;
+            this.shape.transform.translate.y = cy;
             this.shape.setStyle(g_style);
+            this.shape.calculateBounds();
         }
         return EllipseCommand;
     })(ShapeCommand);
@@ -1005,6 +998,16 @@ var LayoutEditor;
             this.rectShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
 
             this.draw();
+
+            if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
+                g_toolCtx.beginPath();
+                g_snapStyle.draw(g_toolCtx);
+                g_toolCtx.moveTo(g_grid.snappedX, 0);
+                g_toolCtx.lineTo(g_grid.snappedX, 1000);
+                g_toolCtx.moveTo(0, g_grid.snappedY);
+                g_toolCtx.lineTo(1000, g_grid.snappedY);
+                g_toolCtx.stroke();
+            }
         };
         return RectTool;
     })(DrawTool);
@@ -1046,6 +1049,16 @@ var LayoutEditor;
         EllipseTool.prototype.drawShape = function () {
             this.ellipseShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
             this.draw();
+
+            if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
+                g_toolCtx.beginPath();
+                g_snapStyle.draw(g_toolCtx);
+                g_toolCtx.moveTo(g_grid.snappedX, 0);
+                g_toolCtx.lineTo(g_grid.snappedX, 1000);
+                g_toolCtx.moveTo(0, g_grid.snappedY);
+                g_toolCtx.lineTo(1000, g_grid.snappedY);
+                g_toolCtx.stroke();
+            }
         };
         return EllipseTool;
     })(DrawTool);
@@ -1113,6 +1126,7 @@ var LayoutEditor;
                     this.handle = 0 /* None */;
 
                     if (this.shape) {
+                        g_grid.rebuildTabs();
                         this.resizeShape = this.shape.copy();
                         this.resizeShape.style = g_selectStyle;
 
@@ -1289,6 +1303,10 @@ var LayoutEditor;
             this.moveShape = null;
             this.shape = null;
             this.canUse = false;
+            this.deltaX = 0;
+            this.deltaY = 0;
+            this.snappedX = 0;
+            this.snappedY = 0;
         }
         MoveTool.prototype.onPointer = function (e) {
             switch (e.state) {
@@ -1298,15 +1316,22 @@ var LayoutEditor;
                     if (this.shape) {
                         this.moveShape = this.shape.copy();
                         this.moveShape.style = g_selectStyle;
+                        this.deltaX = 0;
+                        this.deltaY = 0;
                     }
                     break;
 
                 case InteractionHelper.State.Move:
                     if (this.shape) {
                         var transform = this.moveShape.transform;
-                        transform.translate.x += e.deltaX;
-                        transform.translate.y += e.deltaY;
-                        this.moveShape.calculateBounds();
+                        var oldTransform = this.shape.transform;
+
+                        this.deltaX += e.deltaX;
+                        this.deltaY += e.deltaY;
+                        transform.translate.x = oldTransform.translate.x + this.deltaX;
+                        transform.translate.y = oldTransform.translate.y + this.deltaY;
+
+                        this.snapAABBToGrid();
                         this.canUse = true;
                         this.drawMove();
                     }
@@ -1335,6 +1360,59 @@ var LayoutEditor;
             this.moveShape.drawSelect(g_toolCtx);
             g_toolCtx.strokeStyle = "violet";
             this.moveShape.drawAABB(g_toolCtx);
+
+            if (this.snappedX > -1 || this.snappedY > -1) {
+                g_toolCtx.beginPath();
+                g_snapStyle.draw(g_toolCtx);
+                g_toolCtx.moveTo(this.snappedX, 0);
+                g_toolCtx.lineTo(this.snappedX, 1000);
+                g_toolCtx.moveTo(0, this.snappedY);
+                g_toolCtx.lineTo(1000, this.snappedY);
+                g_toolCtx.stroke();
+            }
+        };
+
+        MoveTool.prototype.snapAABBToGrid = function () {
+            this.moveShape.calculateBounds();
+
+            var aabb = this.moveShape.aabb;
+            var translate = this.moveShape.transform.translate;
+
+            var left = aabb.cx - aabb.hw;
+            var top = aabb.cy - aabb.hh;
+            var right = aabb.cx + aabb.hw;
+            var bottom = aabb.cy + aabb.hh;
+
+            var snapTopLeft = g_grid.snapXY(left, top);
+            var snapBottomRight = g_grid.snapXY(right, bottom);
+            var snapCenter = g_grid.snapXY(aabb.cx, aabb.cy);
+
+            this.snappedX = -1;
+            if (left !== snapTopLeft.x) {
+                translate.x += snapTopLeft.x - left;
+                this.snappedX = snapTopLeft.x;
+            } else if (right !== snapBottomRight.x) {
+                translate.x += snapBottomRight.x - right;
+                this.snappedX = snapBottomRight.x;
+            } else if (aabb.cx !== snapCenter.x) {
+                translate.x += snapCenter.x - aabb.cx;
+                this.snappedX = snapCenter.x;
+            }
+
+            this.snappedY = -1;
+            if (top !== snapTopLeft.y) {
+                translate.y += snapTopLeft.y - top;
+                this.snappedY = snapTopLeft.y;
+            } else if (bottom !== snapBottomRight.y) {
+                translate.y += snapBottomRight.y - bottom;
+                this.snappedY = snapBottomRight.y;
+            } else if (aabb.cy !== snapCenter.y) {
+                translate.y += snapCenter.y - aabb.cy;
+                this.snappedY = snapCenter.y;
+            }
+
+            if (this.snappedY >= 1 || this.snappedX >= -1)
+                this.moveShape.calculateBounds();
         };
         return MoveTool;
     })();

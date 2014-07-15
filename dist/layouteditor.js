@@ -95,7 +95,7 @@ var LayoutEditor;
             list.splice(mid + 1, 0, value);
     }
 
-    function binarySearch(list, value) {
+    function getIndexOfSorted(list, value) {
         var numList = list.length;
         if (numList === 0)
             return -1;
@@ -200,10 +200,6 @@ var LayoutEditor;
                 x: 0,
                 y: 0
             };
-            this.pivot = {
-                x: 0,
-                y: 0
-            };
         }
         Transform.prototype.calc = function (x, y) {
             var newPos = {
@@ -213,13 +209,10 @@ var LayoutEditor;
             var sr = Math.sin(this.rotate);
             var cr = Math.cos(this.rotate);
 
-            var lx = (x - this.pivot.x - this.translate.x) * this.scale.x;
-            var ly = (y - this.pivot.y - this.translate.y) * this.scale.y;
+            var lx = (x - this.translate.x) * this.scale.x;
+            var ly = (y - this.translate.y) * this.scale.y;
             newPos.x = (lx * cr - ly * sr) + this.translate.x;
             newPos.y = (lx * sr + ly * cr) + this.translate.y;
-
-            newPos.x += this.pivot.x;
-            newPos.y += this.pivot.y;
 
             return newPos;
         };
@@ -233,8 +226,8 @@ var LayoutEditor;
             var sr = Math.sin(this.rotate);
             var cr = Math.cos(this.rotate);
 
-            newPos.x = x - this.pivot.x - this.translate.x;
-            newPos.y = y - this.pivot.y - this.translate.y;
+            newPos.x = x - this.translate.x;
+            newPos.y = y - this.translate.y;
 
             var lx = 0;
             var ly = 0;
@@ -371,10 +364,8 @@ var LayoutEditor;
 
     var RectShape = (function (_super) {
         __extends(RectShape, _super);
-        function RectShape(x, y, w, h) {
+        function RectShape(w, h) {
             _super.call(this);
-            this.x = x;
-            this.y = y;
             this.w = w;
             this.h = h;
             this.calculateBounds();
@@ -382,18 +373,13 @@ var LayoutEditor;
         RectShape.prototype.buildPath = function (ctx) {
             var transform = this.transform;
 
-            var cx = transform.pivot.x + transform.translate.x;
-            var cy = transform.pivot.y + transform.translate.y;
-            ctx.strokeRect(cx - 2, cy - 2, 4, 4);
-
             ctx.save();
 
             // inverse order for ctx
-            ctx.translate(transform.pivot.x + transform.translate.x, transform.pivot.y + transform.translate.y);
+            ctx.translate(transform.translate.x, transform.translate.y);
             ctx.rotate(transform.rotate);
             ctx.scale(transform.scale.x, transform.scale.y);
 
-            //ctx.translate(transform.translate.x, transform.translate.y);
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
             ctx.restore();
@@ -401,10 +387,18 @@ var LayoutEditor;
 
         RectShape.prototype.copy = function (base) {
             if (!base)
-                base = new RectShape(this.x, this.y, this.w, this.h);
+                base = new RectShape(this.w, this.h);
             _super.prototype.copy.call(this, base);
             extend(base, this);
             return base;
+        };
+
+        RectShape.prototype.fromRect = function (x, y, w, h) {
+            this.transform.translate.x = x + w * 0.5;
+            this.transform.translate.y = y + h * 0.5;
+            this.w = w;
+            this.h = h;
+            this.calculateBounds();
         };
 
         RectShape.prototype.calculateBounds = function () {
@@ -412,14 +406,11 @@ var LayoutEditor;
             var dx = this.w * 0.5;
             var dy = this.h * 0.5;
 
-            transform.pivot.x = this.x + dx;
-            transform.pivot.y = this.y + dy;
-
             this.oabb.rotate = transform.rotate;
             this.oabb.hw = Math.abs(dx) * transform.scale.x;
             this.oabb.hh = Math.abs(dy) * transform.scale.y;
-            this.oabb.cx = transform.pivot.x + transform.translate.x;
-            this.oabb.cy = transform.pivot.y + transform.translate.y;
+            this.oabb.cx = transform.translate.x;
+            this.oabb.cy = transform.translate.y;
 
             var polygon = this.oabb.toPolygon();
             var x1 = arrayMin(polygon, 0, 2);
@@ -438,31 +429,19 @@ var LayoutEditor;
 
     var EllipseShape = (function (_super) {
         __extends(EllipseShape, _super);
-        function EllipseShape(x, y, rx, ry) {
+        function EllipseShape(rx, ry) {
             _super.call(this);
-            this.x = x;
-            this.y = y;
             this.rx = rx;
             this.ry = ry;
             this.calculateBounds();
         }
         EllipseShape.prototype.buildPath = function (ctx) {
             var transform = this.transform;
-            var x = this.x;
-            var y = this.y;
-            var rx = this.rx;
-            var ry = this.ry;
-            if (rx < 0) {
-                x += 2 * rx;
-                rx = -rx;
-            }
-            if (ry < 0) {
-                y += 2 * ry;
-                ry = -ry;
-            }
+            var rx = Math.abs(this.rx);
+            var ry = Math.abs(this.ry);
 
             ctx.save();
-            ctx.translate(transform.pivot.x + transform.translate.x, transform.pivot.y + transform.translate.y);
+            ctx.translate(transform.translate.x, transform.translate.y);
             ctx.rotate(transform.rotate);
             ctx.scale(transform.scale.x, transform.scale.y);
 
@@ -476,22 +455,28 @@ var LayoutEditor;
             ctx.bezierCurveTo(-ox, ry, -rx, oy, -rx, 0);
 
             // ctx.beginPath();
-            // ctx.ellipse(0, 0, rx, ry, 0, 0, 2 * Math.PI);
+            // ctx.ellipse(0, 0, rx, ry, 0, 0, 2 * Math.PI);    chrome only
             ctx.restore();
         };
 
         EllipseShape.prototype.copy = function (base) {
             if (!base)
-                base = new EllipseShape(this.x, this.y, this.rx, this.ry);
+                base = new EllipseShape(this.rx, this.ry);
             _super.prototype.copy.call(this, base);
             extend(base, this);
             return base;
         };
 
+        EllipseShape.prototype.fromRect = function (x, y, w, h) {
+            this.transform.translate.x = x + w * 0.5;
+            this.transform.translate.y = y + h * 0.5;
+            this.rx = w * 0.5;
+            this.ry = h * 0.5;
+            this.calculateBounds();
+        };
+
         EllipseShape.prototype.calculateBounds = function () {
             var transform = this.transform;
-            transform.pivot.x = this.x + this.rx;
-            transform.pivot.y = this.y + this.ry;
 
             var hw = this.rx * transform.scale.x;
             var hh = this.ry * transform.scale.y;
@@ -499,8 +484,8 @@ var LayoutEditor;
             this.oabb.rotate = transform.rotate;
             this.oabb.hw = hw;
             this.oabb.hh = hh;
-            this.oabb.cx = transform.pivot.x + transform.translate.x;
-            this.oabb.cy = transform.pivot.y + transform.translate.y;
+            this.oabb.cx = transform.translate.x;
+            this.oabb.cy = transform.translate.y;
 
             this.aabb.rotate = 0;
 
@@ -712,7 +697,7 @@ var LayoutEditor;
                 pos.x = pos.x % this.gridSize;
                 pos.y = pos.y % this.gridSize;
             } else if (this.snapToShape) {
-                var i = binarySearch(this.xTabs, pos.x);
+                var i = getIndexOfSorted(this.xTabs, pos.x);
                 i = this.getClosestIndex(this.xTabs, pos.x, i);
                 if (Math.abs(this.xTabs[i] - pos.x) < this.shapeGravity) {
                     pos.x = this.xTabs[i];
@@ -721,7 +706,7 @@ var LayoutEditor;
                     this.snapToX = -1;
                 }
 
-                var j = binarySearch(this.yTabs, pos.y);
+                var j = getIndexOfSorted(this.yTabs, pos.y);
                 j = this.getClosestIndex(this.yTabs, pos.y, j);
                 if (Math.abs(this.yTabs[j] - pos.y) < this.shapeGravity) {
                     pos.y = this.yTabs[j];
@@ -744,7 +729,7 @@ var LayoutEditor;
 
             for (var i = 0; i < g_shapeList.shapes.length; ++i) {
                 var shape = g_shapeList.shapes[i];
-                if (excludeShapes.indexOf(shape) !== -1)
+                if (shape.isDeleted || excludeShapes.indexOf(shape) !== -1)
                     continue;
 
                 var polygon = shape.aabb.toPolygon();
@@ -761,31 +746,17 @@ var LayoutEditor;
                 insertSortedUnique(this.yTabs, y1);
                 insertSortedUnique(this.yTabs, y2);
                 insertSortedUnique(this.yTabs, cy);
-                // g_toolCtx.beginPath();
-                // g_toolCtx.moveTo(x1, 0);
-                // g_toolCtx.lineTo(x1, 1000);
-                // g_toolCtx.stroke();
-                // g_toolCtx.beginPath();
-                // g_toolCtx.moveTo(x2, 0);
-                // g_toolCtx.lineTo(x2, 1000);
-                // g_toolCtx.stroke();
-                // g_toolCtx.beginPath();
-                // g_toolCtx.moveTo(cx, 0);
-                // g_toolCtx.lineTo(cx, 1000);
-                // g_toolCtx.stroke();
-                // g_toolCtx.beginPath();
-                // g_toolCtx.moveTo(0, y1);
-                // g_toolCtx.lineTo(1000, y1);
-                // g_toolCtx.stroke();
-                // g_toolCtx.beginPath();
-                // g_toolCtx.moveTo(0, y2);
-                // g_toolCtx.lineTo(1000, y2);
-                // g_toolCtx.stroke();
-                // g_toolCtx.beginPath();
-                // g_toolCtx.moveTo(0, cy);
-                // g_toolCtx.lineTo(1000, cy);
-                // g_toolCtx.stroke();
             }
+            // g_toolCtx.beginPath();
+            // for (var i = 0; i < this.xTabs.length; ++i) {
+            //     g_toolCtx.moveTo(this.xTabs[i], 0);
+            //     g_toolCtx.lineTo(this.xTabs[i], 1000);
+            // }
+            // for (var i = 0; i < this.yTabs.length; ++i) {
+            //     g_toolCtx.moveTo(0, this.yTabs[i]);
+            //     g_toolCtx.lineTo(1000, this.yTabs[i]);
+            // }
+            // g_toolCtx.stroke();
         };
         return Grid;
     })();
@@ -853,7 +824,9 @@ var LayoutEditor;
             this.w = w;
             this.h = h;
 
-            this.shape = new RectShape(this.x, this.y, this.w, this.h);
+            this.shape = new RectShape(this.w, this.h);
+            this.shape.transform.translate.x = this.x;
+            this.shape.transform.translate.y = this.y;
             this.shape.setStyle(g_style);
         }
         return RectCommand;
@@ -868,7 +841,9 @@ var LayoutEditor;
             this.rx = rx;
             this.ry = ry;
 
-            this.shape = new EllipseShape(this.x, this.y, this.rx, this.ry);
+            this.shape = new EllipseShape(this.rx, this.ry);
+            this.shape.transform.translate.x = this.x;
+            this.shape.transform.translate.y = this.y;
             this.shape.setStyle(g_style);
         }
         return EllipseCommand;
@@ -990,7 +965,7 @@ var LayoutEditor;
         __extends(RectTool, _super);
         function RectTool() {
             _super.call(this);
-            this.rectShape = new RectShape(0, 0, 0, 0);
+            this.rectShape = new RectShape(0, 0);
             this.x1 = -1;
             this.y1 = -1;
             this.x2 = -1;
@@ -1018,7 +993,7 @@ var LayoutEditor;
                 case InteractionHelper.State.End:
                     this.clear();
                     if (this.canUse) {
-                        var newCommand = new RectCommand(this.rectShape.x, this.rectShape.y, this.rectShape.w, this.rectShape.h);
+                        var newCommand = new RectCommand(this.rectShape.transform.translate.x, this.rectShape.transform.translate.y, this.rectShape.w, this.rectShape.h);
                         g_commandList.addCommand(newCommand);
                         this.canUse = false;
                     }
@@ -1027,10 +1002,7 @@ var LayoutEditor;
         };
 
         RectTool.prototype.drawShape = function () {
-            this.rectShape.x = Math.min(this.x1, this.x2);
-            this.rectShape.y = Math.min(this.y1, this.y2);
-            this.rectShape.w = Math.abs(this.x2 - this.x1);
-            this.rectShape.h = Math.abs(this.y2 - this.y1);
+            this.rectShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
 
             this.draw();
         };
@@ -1041,7 +1013,7 @@ var LayoutEditor;
         __extends(EllipseTool, _super);
         function EllipseTool() {
             _super.call(this);
-            this.ellipseShape = new EllipseShape(0, 0, 0, 0);
+            this.ellipseShape = new EllipseShape(0, 0);
             this.shape = this.ellipseShape;
             this.ellipseShape.style = g_drawStyle;
         }
@@ -1063,7 +1035,7 @@ var LayoutEditor;
                 case InteractionHelper.State.End:
                     this.clear();
                     if (this.canUse) {
-                        var newCommand = new EllipseCommand(this.ellipseShape.x, this.ellipseShape.y, this.ellipseShape.rx, this.ellipseShape.ry);
+                        var newCommand = new EllipseCommand(this.ellipseShape.transform.translate.x, this.ellipseShape.transform.translate.y, this.ellipseShape.rx, this.ellipseShape.ry);
                         g_commandList.addCommand(newCommand);
                         this.canUse = false;
                     }
@@ -1072,10 +1044,7 @@ var LayoutEditor;
         };
 
         EllipseTool.prototype.drawShape = function () {
-            this.ellipseShape.x = this.x1;
-            this.ellipseShape.y = this.y1;
-            this.ellipseShape.rx = (this.x2 - this.x1) * 0.5;
-            this.ellipseShape.ry = (this.y2 - this.y1) * 0.5;
+            this.ellipseShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
             this.draw();
         };
         return EllipseTool;
@@ -1266,9 +1235,7 @@ var LayoutEditor;
                     if (this.shape) {
                         this.rotateShape = this.shape.copy();
                         this.rotateShape.style = g_selectStyle;
-                        var transform = this.rotateShape.transform;
-                        this.pivot.x = transform.pivot.x + transform.translate.x;
-                        this.pivot.y = transform.pivot.y + transform.translate.y;
+                        this.pivot = this.rotateShape.transform.translate;
                         this.lastAngle = this.getAngle(e.x, e.y, this.pivot);
                     }
                     break;

@@ -31,12 +31,12 @@ module LayoutEditor {
         return obj;
     }
 
-    function arrayMin(list: number[]): number {
-        if (list.length === 0)
+    function arrayMin(list: number[], offset: number = 0, stride: number = 1): number {
+        if (list.length <= offset)
             return 0;
 
-        var min = list[0];
-        for (var i: number = list.length - 1; i > 0; --i) {
+        var min = list[offset];
+        for (var i: number = offset + stride; i < list.length; i += stride) {
             var val = list[i];
             if (val < min)
                 min = val;
@@ -44,17 +44,70 @@ module LayoutEditor {
         return min;
     }
 
-    function arrayMax(list: number[]): number {
-        if (list.length === 0)
+    function arrayMax(list: number[], offset: number = 0, stride: number = 1): number {
+        if (list.length <= offset)
             return 0;
 
-        var max = list[0];
-        for (var i: number = list.length - 1; i > 0; --i) {
+        var max = list[offset];
+        for (var i: number = offset + stride; i < list.length; i += stride) {
             var val = list[i];
             if (val > max)
                 max = val;
         }
         return max;
+    }
+
+    function insertSortedUnique(list: number[], value: number) {
+        var numList: number = list.length;
+        if (numList === 0)
+            return list.splice(0, 0, value);
+
+        var i: number = 0;
+        var j: number = numList - 1;
+        var mid: number = 0;
+        var midValue: number = 0;
+        do {
+            mid = (i + j) >> 1;
+            midValue = list[mid];
+            if (value === midValue)
+                return; // value already in the list
+
+            if (value < midValue) {
+                j = mid - 1;
+            } else {
+                i = mid + 1;
+            }
+        } while (i <= j);
+
+        if (value < midValue)
+            list.splice(mid, 0, value);
+        else
+            list.splice(mid + 1, 0, value);
+    }
+
+    function binarySearch(list: number[], value: number): number {
+        var numList: number = list.length;
+        if (numList === 0)
+            return -1;
+
+        var i: number = 0;
+        var j: number = numList - 1;
+        var mid: number = 0;
+        var midValue: number = 0;
+        do {
+            mid = (i + j) >> 1;
+            midValue = list[mid];
+            if (value === midValue)
+                return mid; // found the value
+
+            if (value < midValue) {
+                j = mid - 1;
+            } else {
+                i = mid + 1;
+            }
+        } while (i <= j);
+
+        return mid;
     }
 
     //------------------------------
@@ -97,7 +150,7 @@ module LayoutEditor {
 
         constructor() {}
 
-        asPolygon(): number[] {
+        toPolygon(): number[] {
             var cr = Math.cos(this.rotate);
             var sr = Math.sin(this.rotate);
 
@@ -208,7 +261,8 @@ module LayoutEditor {
     class Shape {
         style: Style = g_defaultStyle;
         isDeleted: boolean = false;
-        bounds: Bounds = new Bounds();
+        oabb: Bounds = new Bounds();
+        aabb: Bounds = new Bounds();
         transform: Transform = new Transform();
 
         constructor() {}
@@ -231,11 +285,20 @@ module LayoutEditor {
         public buildPath(ctx) {}
 
         drawSelect(ctx) {
+            var oabb = this.oabb;
             ctx.save();
-            ctx.translate(this.bounds.cx, this.bounds.cy);
-            ctx.rotate(this.bounds.rotate);
-            ctx.strokeRect(-this.bounds.hw, -this.bounds.hh, this.bounds.hw * 2, this.bounds.hh * 2);
+            ctx.translate(oabb.cx, oabb.cy);
+            ctx.rotate(oabb.rotate);
+            ctx.strokeRect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
             ctx.restore();
+
+            // var aabb = this.aabb;
+            // ctx.strokeRect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
+        }
+
+        drawAABB(ctx) {
+            var aabb = this.aabb;
+            ctx.strokeRect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
         }
 
         // performed by the derived class
@@ -247,8 +310,8 @@ module LayoutEditor {
         }
 
         isOverlapBounds(bounds: Bounds): boolean {
-            var polygonA: number[] = this.bounds.asPolygon();
-            var polygonB: number[] = bounds.asPolygon();
+            var polygonA: number[] = this.aabb.toPolygon();
+            var polygonB: number[] = bounds.toPolygon();
 
             //drawPolygon(g_toolCtx, polygonA);
             //drawPolygon(g_toolCtx, polygonB);
@@ -344,13 +407,25 @@ module LayoutEditor {
             this.transform.pivot.y = this.y + this.h * 0.5;
 
             // TODO fix for non-centered pivots
-            this.bounds.rotate = this.transform.rotate;
+            this.oabb.rotate = this.transform.rotate;
             var hw = this.w * 0.5;
             var hh = this.h * 0.5;
-            this.bounds.hw = Math.abs(hw);
-            this.bounds.hh = Math.abs(hh);
-            this.bounds.cx = this.x + hw;
-            this.bounds.cy = this.y + hh;
+            this.oabb.hw = Math.abs(hw);
+            this.oabb.hh = Math.abs(hh);
+            this.oabb.cx = this.x + hw;
+            this.oabb.cy = this.y + hh;
+
+            var polygon: number[] = this.oabb.toPolygon();
+            var x1: number = arrayMin(polygon, 0, 2);
+            var x2: number = arrayMax(polygon, 0, 2);
+            var y1: number = arrayMin(polygon, 1, 2);
+            var y2: number = arrayMax(polygon, 1, 2);
+
+            this.aabb.rotate = 0;
+            this.aabb.hw = (x2 - x1) * 0.5;
+            this.aabb.hh = (y2 - y1) * 0.5;
+            this.aabb.cx = (x1 + x2) * 0.5;
+            this.aabb.cy = (y1 + y2) * 0.5;
         }
     }
 
@@ -410,13 +485,29 @@ module LayoutEditor {
             transform.pivot.y = this.y + this.ry;
 
             // TODO fix for non-centered pivots
-            this.bounds.rotate = this.transform.rotate;
+            this.oabb.rotate = this.transform.rotate;
             var hw = this.rx;
             var hh = this.ry;
-            this.bounds.hw = Math.abs(hw);
-            this.bounds.hh = Math.abs(hh);
-            this.bounds.cx = this.x + hw;
-            this.bounds.cy = this.y + hh;
+            this.oabb.hw = Math.abs(hw);
+            this.oabb.hh = Math.abs(hh);
+            this.oabb.cx = this.x + hw;
+            this.oabb.cy = this.y + hh;
+
+            this.aabb.rotate = 0;
+
+            var rot = this.transform.rotate
+            var ux = hw * Math.cos(rot);
+            var uy = hw * Math.sin(rot);
+            var vx = hh * Math.cos(rot + Math.PI * 0.5);
+            var vy = hh * Math.sin(rot + Math.PI * 0.5);
+
+            var rotatedHW = Math.sqrt(ux * ux + vx * vx);
+            var rotatedHH = Math.sqrt(uy * uy + vy * vy);
+
+            this.aabb.cx = this.oabb.cx;
+            this.aabb.cy = this.oabb.cy;
+            this.aabb.hw = rotatedHW;
+            this.aabb.hh = rotatedHH;
         }
     }
 
@@ -442,9 +533,9 @@ module LayoutEditor {
         buildPath(ctx) {
             // don't apply transform!
             ctx.beginPath();
-            var x1 = this.bounds.cx - this.bounds.hw;
-            var y1 = this.bounds.cy - this.bounds.hh;
-            ctx.rect(x1, y1, this.bounds.hw * 2, this.bounds.hh * 2);
+            var x1 = this.oabb.cx - this.oabb.hw;
+            var y1 = this.oabb.cy - this.oabb.hh;
+            ctx.rect(x1, y1, this.oabb.hw * 2, this.oabb.hh * 2);
         }
 
         calculateBounds() {
@@ -452,10 +543,13 @@ module LayoutEditor {
             this.transform.pivot.y = (this.y1 + this.y2) * 0.5;
             var hw = (this.x2 - this.x1) * 0.5;
             var hh = (this.y2 - this.y1) * 0.5;
-            this.bounds.cx = this.x1 + hw;
-            this.bounds.cy = this.y1 + hh;
-            this.bounds.hw = Math.abs(hw);
-            this.bounds.hh = Math.abs(hh);
+            this.oabb.rotate = 0;
+            this.oabb.cx = this.x1 + hw;
+            this.oabb.cy = this.y1 + hh;
+            this.oabb.hw = Math.abs(hw);
+            this.oabb.hh = Math.abs(hh);
+
+            this.aabb = this.oabb;
         }
     }
 
@@ -565,6 +659,136 @@ module LayoutEditor {
         }
     }
     var g_shapeList: ShapeList = new ShapeList();
+
+    //------------------------------
+    class Grid {
+        snapToGrid: boolean = false;
+        gridSize: number = 10;
+        snapToShape: boolean = true;
+        xTabs: number[] = [];
+        yTabs: number[] = [];
+        shapeGravity: number = 10;
+        snapToX: number = -1;
+        snapToY: number = -1;
+
+        constructor() {
+
+        }
+
+        private getClosestIndex(list: number[], value: number, index: number): number {
+            var bestDist: number = Math.abs(value - list[index]);
+            var bestIndex: number = index;
+            var leftIndex: number = index - 1;
+            var rightIndex: number = index + 1;
+
+            if (rightIndex < list.length) {
+                var dist = Math.abs(value - list[rightIndex]);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIndex = rightIndex;
+                }
+            }
+
+            if (leftIndex >= 0) {
+                var dist = Math.abs(value - list[leftIndex]);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIndex = leftIndex;
+                }
+            }
+
+            return bestIndex;
+        }
+
+        snapXY(x: number, y: number): XY {
+            var pos: XY = {
+                x: x,
+                y: y
+            };
+
+            if (this.snapToGrid) {
+                pos.x = pos.x % this.gridSize;
+                pos.y = pos.y % this.gridSize;
+            } else if (this.snapToShape) {
+                var i = binarySearch(this.xTabs, pos.x);
+                i = this.getClosestIndex(this.xTabs, pos.x, i);
+                if (Math.abs(this.xTabs[i] - pos.x) < this.shapeGravity) {
+                    pos.x = this.xTabs[i];
+                    this.snapToX = pos.x;
+                } else {
+                    this.snapToX = -1;
+                }
+
+                var j = binarySearch(this.yTabs, pos.y);
+                j = this.getClosestIndex(this.yTabs, pos.y, j);
+                if (Math.abs(this.yTabs[j] - pos.y) < this.shapeGravity) {
+                    pos.y = this.yTabs[j];
+                    this.snapToY = pos.y;
+                } else {
+                    this.snapToY = -1;
+                }
+            }
+
+            return pos;
+        }
+
+        rebuildTabs(excludeShapes: Shape[] = []) {
+            if (!this.snapToShape)
+                return;
+
+            this.xTabs.length = 0;
+            this.yTabs.length = 0;
+
+            for (var i: number = 0; i < g_shapeList.shapes.length; ++i) {
+                var shape: Shape = g_shapeList.shapes[i];
+                if (excludeShapes.indexOf(shape) !== -1)
+                    continue;
+
+                var polygon: number[] = shape.aabb.toPolygon();
+                var x1: number = arrayMin(polygon, 0, 2);
+                var x2: number = arrayMax(polygon, 0, 2);
+                var y1: number = arrayMin(polygon, 1, 2);
+                var y2: number = arrayMax(polygon, 1, 2);
+                var cx: number = (x1 + x2) * 0.5;
+                var cy: number = (y1 + y2) * 0.5;
+
+                insertSortedUnique(this.xTabs, x1);
+                insertSortedUnique(this.xTabs, x2);
+                insertSortedUnique(this.xTabs, cx);
+                insertSortedUnique(this.yTabs, y1);
+                insertSortedUnique(this.yTabs, y2);
+                insertSortedUnique(this.yTabs, cy);
+
+                // g_toolCtx.beginPath();
+                // g_toolCtx.moveTo(x1, 0);
+                // g_toolCtx.lineTo(x1, 1000);
+                // g_toolCtx.stroke();
+                // g_toolCtx.beginPath();
+                // g_toolCtx.moveTo(x2, 0);
+                // g_toolCtx.lineTo(x2, 1000);
+                // g_toolCtx.stroke();
+                // g_toolCtx.beginPath();
+                // g_toolCtx.moveTo(cx, 0);
+                // g_toolCtx.lineTo(cx, 1000);
+                // g_toolCtx.stroke();
+
+                // g_toolCtx.beginPath();
+                // g_toolCtx.moveTo(0, y1);
+                // g_toolCtx.lineTo(1000, y1);
+                // g_toolCtx.stroke();
+                // g_toolCtx.beginPath();
+                // g_toolCtx.moveTo(0, y2);
+                // g_toolCtx.lineTo(1000, y2);
+                // g_toolCtx.stroke();
+                // g_toolCtx.beginPath();
+                // g_toolCtx.moveTo(0, cy);
+                // g_toolCtx.lineTo(1000, cy);
+                // g_toolCtx.stroke();
+            }
+        }
+
+    }
+    var g_grid: Grid = new Grid();
 
     //------------------------------
     interface Command {
@@ -771,15 +995,20 @@ module LayoutEditor {
         onPointer(e: InteractionHelper.Event) {
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.x1 = e.x;
-                    this.y1 = e.y;
+                    g_grid.rebuildTabs();
+                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    this.x1 = pos.x;
+                    this.y1 = pos.y;
                     break;
+
                 case InteractionHelper.State.Move:
-                    this.x2 = e.x;
-                    this.y2 = e.y;
+                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    this.x2 = pos.x;
+                    this.y2 = pos.y;
                     this.canUse = true;
                     this.drawShape();
                     break;
+
                 case InteractionHelper.State.End:
                     this.clear();
                     if (this.canUse) {
@@ -821,12 +1050,15 @@ module LayoutEditor {
         onPointer(e: InteractionHelper.Event) {
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.x1 = e.x;
-                    this.y1 = e.y;
+                    g_grid.rebuildTabs();
+                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    this.x1 = pos.x;
+                    this.y1 = pos.y;
                     break;
                 case InteractionHelper.State.Move:
-                    this.x2 = e.x;
-                    this.y2 = e.y;
+                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    this.x2 = pos.x;
+                    this.y2 = pos.y;
                     this.canUse = true;
                     this.drawShape();
                     break;
@@ -881,7 +1113,7 @@ module LayoutEditor {
                     break;
                 case InteractionHelper.State.End:
                     this.clear();
-                    var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.bounds);
+                    var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
                     if (shapes.length > 0)
                         g_commandList.addCommand(new SelectCommand(shapes));
                     break;
@@ -898,7 +1130,7 @@ module LayoutEditor {
             this.aabbShape.draw(g_toolCtx);
 
             g_shapeList.selectedStyle.draw(g_toolCtx);
-            var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.bounds);
+            var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
             for (var i = 0; i < shapes.length; ++i) {
                 shapes[i].drawSelect(g_toolCtx);
             }
@@ -927,18 +1159,18 @@ module LayoutEditor {
 
                         var transform = this.shape.transform;
                         var localPos: XY = transform.inv(e.x, e.y);
-                        var bounds: Bounds = this.shape.bounds;
+                        var oabb: Bounds = this.shape.oabb;
                         var handleX = this.handleSize / transform.scale.x;
                         var handleY = this.handleSize / transform.scale.y;
 
-                        if (localPos.x + bounds.hw < handleX)
+                        if (localPos.x + oabb.hw < handleX)
                             this.handle = (this.handle | ResizeTool.HandleFlag.Left);
-                        else if (bounds.hw - localPos.x < handleX)
+                        else if (oabb.hw - localPos.x < handleX)
                             this.handle = (this.handle | ResizeTool.HandleFlag.Right);
 
-                        if (localPos.y + bounds.hh < handleY)
+                        if (localPos.y + oabb.hh < handleY)
                             this.handle = (this.handle | ResizeTool.HandleFlag.Top);
-                        else if (bounds.hh - localPos.y < handleY)
+                        else if (oabb.hh - localPos.y < handleY)
                             this.handle = (this.handle | ResizeTool.HandleFlag.Bottom);
 
                         if (this.handle === ResizeTool.HandleFlag.None)
@@ -955,8 +1187,8 @@ module LayoutEditor {
                         var localPos: XY = oldTransform.inv(e.x, e.y);
                         var dx = (localPos.x - this.startLocalPos.x) * oldTransform.scale.x;
                         var dy = (localPos.y - this.startLocalPos.y) * oldTransform.scale.y;
-                        var sx = dx / (this.resizeShape.bounds.hw * 2);
-                        var sy = dy / (this.resizeShape.bounds.hh * 2);
+                        var sx = dx / (this.resizeShape.oabb.hw * 2);
+                        var sy = dy / (this.resizeShape.oabb.hh * 2);
                         var cr = Math.cos(oldTransform.rotate);
                         var sr = Math.sin(oldTransform.rotate);
 

@@ -210,8 +210,8 @@ module LayoutEditor {
             var sr: number = Math.sin(this.rotate);
             var cr: number = Math.cos(this.rotate);
 
-            var lx: number = (x - this.pivot.x) * this.scale.x;
-            var ly: number = (y - this.pivot.y) * this.scale.y;
+            var lx: number = (x - this.pivot.x - this.translate.x) * this.scale.x;
+            var ly: number = (y - this.pivot.y - this.translate.y) * this.scale.y;
             newPos.x = (lx * cr - ly * sr) + this.translate.x;
             newPos.y = (lx * sr + ly * cr) + this.translate.y;
 
@@ -291,9 +291,6 @@ module LayoutEditor {
             ctx.rotate(oabb.rotate);
             ctx.strokeRect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
             ctx.restore();
-
-            // var aabb = this.aabb;
-            // ctx.strokeRect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
         }
 
         drawAABB(ctx) {
@@ -403,17 +400,18 @@ module LayoutEditor {
         }
 
         calculateBounds() {
-            this.transform.pivot.x = this.x + this.w * 0.5;
-            this.transform.pivot.y = this.y + this.h * 0.5;
+            var transform = this.transform;
+            var dx = this.w * 0.5;
+            var dy = this.h * 0.5;
 
-            // TODO fix for non-centered pivots
-            this.oabb.rotate = this.transform.rotate;
-            var hw = this.w * 0.5;
-            var hh = this.h * 0.5;
-            this.oabb.hw = Math.abs(hw);
-            this.oabb.hh = Math.abs(hh);
-            this.oabb.cx = this.x + hw;
-            this.oabb.cy = this.y + hh;
+            transform.pivot.x = this.x + dx;
+            transform.pivot.y = this.y + dy;
+
+            this.oabb.rotate = transform.rotate;
+            this.oabb.hw = Math.abs(dx) * transform.scale.x;
+            this.oabb.hh = Math.abs(dy) * transform.scale.y;
+            this.oabb.cx = transform.pivot.x + transform.translate.x;
+            this.oabb.cy = transform.pivot.y + transform.translate.y;
 
             var polygon: number[] = this.oabb.toPolygon();
             var x1: number = arrayMin(polygon, 0, 2);
@@ -484,14 +482,14 @@ module LayoutEditor {
             transform.pivot.x = this.x + this.rx;
             transform.pivot.y = this.y + this.ry;
 
-            // TODO fix for non-centered pivots
-            this.oabb.rotate = this.transform.rotate;
-            var hw = this.rx;
-            var hh = this.ry;
-            this.oabb.hw = Math.abs(hw);
-            this.oabb.hh = Math.abs(hh);
-            this.oabb.cx = this.x + hw;
-            this.oabb.cy = this.y + hh;
+            var hw = this.rx * transform.scale.x;
+            var hh = this.ry * transform.scale.y;
+
+            this.oabb.rotate = transform.rotate;
+            this.oabb.hw = hw;
+            this.oabb.hh = hh;
+            this.oabb.cx = transform.pivot.x + transform.translate.x;
+            this.oabb.cy = transform.pivot.y + transform.translate.y;
 
             this.aabb.rotate = 0;
 
@@ -539,10 +537,9 @@ module LayoutEditor {
         }
 
         calculateBounds() {
-            this.transform.pivot.x = (this.x1 + this.x2) * 0.5;
-            this.transform.pivot.y = (this.y1 + this.y2) * 0.5;
             var hw = (this.x2 - this.x1) * 0.5;
             var hh = (this.y2 - this.y1) * 0.5;
+
             this.oabb.rotate = 0;
             this.oabb.cx = this.x1 + hw;
             this.oabb.cy = this.y1 + hh;
@@ -637,7 +634,7 @@ module LayoutEditor {
             // in reverse as the last shapes are drawn on top
             for (var i: number = this.shapes.length - 1; i >= 0; --i) {
                 var shape: Shape = this.shapes[i];
-                if (shape.isInsideXY(x, y))
+                if (!shape.isDeleted && shape.isInsideXY(x, y))
                     return shape;
             }
 
@@ -649,7 +646,7 @@ module LayoutEditor {
 
             for (var i: number = this.shapes.length - 1; i >= 0; --i) {
                 var shape: Shape = this.shapes[i];
-                if (shape.isOverlapBounds(bounds)) {
+                if (!shape.isDeleted && shape.isOverlapBounds(bounds)) {
                     shape.isOverlapBounds(bounds);
                     shapes.push(shape);
                 }
@@ -1254,6 +1251,10 @@ module LayoutEditor {
         shape: Shape = null;
         lastAngle: number = 0;
         rotateShape: Shape = null;
+        pivot: XY = {
+            x: 0,
+            y: 0
+        };
 
         constructor() {
 
@@ -1266,13 +1267,16 @@ module LayoutEditor {
                     if (this.shape) {
                         this.rotateShape = this.shape.copy();
                         this.rotateShape.style = g_selectStyle;
-                        this.lastAngle = this.getAngle(e.x, e.y, this.rotateShape.transform.pivot);
+                        var transform = this.rotateShape.transform;
+                        this.pivot.x = transform.pivot.x + transform.translate.x;
+                        this.pivot.y = transform.pivot.y + transform.translate.y;
+                        this.lastAngle = this.getAngle(e.x, e.y, this.pivot);
                     }
                     break;
 
                 case InteractionHelper.State.Move:
                     if (this.rotateShape) {
-                        var newAngle = this.getAngle(e.x, e.y, this.rotateShape.transform.pivot);
+                        var newAngle = this.getAngle(e.x, e.y, this.pivot);
                         this.rotateShape.transform.rotate += newAngle - this.lastAngle;
                         this.lastAngle = newAngle;
                         this.drawRotate();
@@ -1336,6 +1340,7 @@ module LayoutEditor {
                         var transform = this.moveShape.transform;
                         transform.translate.x += e.deltaX;
                         transform.translate.y += e.deltaY;
+                        this.moveShape.calculateBounds();
                         this.canUse = true;
                         this.drawMove();
                     }
@@ -1360,6 +1365,10 @@ module LayoutEditor {
             this.clear();
 
             this.moveShape.draw(g_toolCtx);
+            g_toolCtx.strokeStyle = "orange";
+            this.moveShape.drawSelect(g_toolCtx);
+            g_toolCtx.strokeStyle = "violet";
+            this.moveShape.drawAABB(g_toolCtx);
         }
     }
 

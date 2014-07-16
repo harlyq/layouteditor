@@ -121,6 +121,76 @@ var LayoutEditor;
     }
 
     //------------------------------
+    var PanZoom = (function () {
+        function PanZoom() {
+            this.pan = {
+                x: 0,
+                y: 0
+            };
+            this.zoom = 1;
+        }
+        PanZoom.prototype.reset = function () {
+            this.pan.x = 0;
+            this.pan.y = 0;
+            this.zoom = 1;
+        };
+
+        PanZoom.prototype.toX = function (x) {
+            return (x - this.pan.x) / this.zoom;
+        };
+        PanZoom.prototype.toY = function (y) {
+            return (y - this.pan.y) / this.zoom;
+        };
+        PanZoom.prototype.toH = function (h) {
+            return h / this.zoom;
+        };
+        PanZoom.prototype.toW = function (w) {
+            return w / this.zoom;
+        };
+
+        PanZoom.prototype.calcXY = function (x, y) {
+            var newPos = {
+                x: 0,
+                y: 0
+            };
+            newPos.x = x * this.zoom + this.pan.x;
+            newPos.y = y * this.zoom + this.pan.y;
+            return newPos;
+        };
+
+        PanZoom.prototype.invXY = function (x, y) {
+            var invPos = {
+                x: 0,
+                y: 0
+            };
+            invPos.x = (x - this.pan.x) / this.zoom;
+            invPos.y = (y - this.pan.y) / this.zoom;
+            return invPos;
+        };
+
+        PanZoom.prototype.translate = function (ctx, x, y) {
+            ctx.translate(x * this.zoom + this.pan.x, y * this.zoom + this.pan.y);
+        };
+
+        PanZoom.prototype.scale = function (ctx, x, y) {
+            ctx.scale(x * this.zoom, y * this.zoom);
+        };
+
+        PanZoom.prototype.transform = function (ctx, translateX, translateY, rotate, scaleX, scaleY) {
+            if (typeof translateX === "undefined") { translateX = 0; }
+            if (typeof translateY === "undefined") { translateY = 0; }
+            if (typeof rotate === "undefined") { rotate = 0; }
+            if (typeof scaleX === "undefined") { scaleX = 1; }
+            if (typeof scaleY === "undefined") { scaleY = 1; }
+            ctx.translate(translateX * this.zoom + this.pan.x, translateY * this.zoom + this.pan.y);
+            ctx.rotate(rotate);
+            ctx.scale(scaleX * this.zoom, scaleY * this.zoom);
+        };
+        return PanZoom;
+    })();
+    var g_panZoom = new PanZoom();
+
+    //------------------------------
     var Style = (function () {
         function Style() {
             this.strokeStyle = "black";
@@ -285,15 +355,21 @@ var LayoutEditor;
         Shape.prototype.drawSelect = function (ctx) {
             var oabb = this.oabb;
             ctx.save();
-            ctx.translate(oabb.cx, oabb.cy);
-            ctx.rotate(oabb.rotate);
-            ctx.strokeRect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
+            g_panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
+            ctx.beginPath();
+            ctx.rect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
             ctx.restore();
+            ctx.stroke();
         };
 
         Shape.prototype.drawAABB = function (ctx) {
             var aabb = this.aabb;
-            ctx.strokeRect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
+            ctx.save();
+            g_panZoom.transform(ctx);
+            ctx.beginPath();
+            ctx.rect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
+            ctx.restore();
+            ctx.stroke();
         };
 
         // performed by the derived class
@@ -301,8 +377,11 @@ var LayoutEditor;
         };
 
         Shape.prototype.isInsideXY = function (x, y) {
+            var u = x * g_panZoom.zoom + g_panZoom.pan.x;
+            var v = y * g_panZoom.zoom + g_panZoom.pan.y;
+
             this.buildPath(g_toolCtx);
-            return g_toolCtx.isPointInPath(x, y);
+            return g_toolCtx.isPointInPath(u, v);
         };
 
         Shape.prototype.isOverlapBounds = function (bounds) {
@@ -374,11 +453,7 @@ var LayoutEditor;
             var transform = this.transform;
 
             ctx.save();
-
-            // inverse order for ctx
-            ctx.translate(transform.translate.x, transform.translate.y);
-            ctx.rotate(transform.rotate);
-            ctx.scale(transform.scale.x, transform.scale.y);
+            g_panZoom.transform(ctx, transform.translate.x, transform.translate.y, transform.rotate, transform.scale.x, transform.scale.y);
 
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
@@ -440,9 +515,7 @@ var LayoutEditor;
             var ry = Math.abs(this.ry);
 
             ctx.save();
-            ctx.translate(transform.translate.x, transform.translate.y);
-            ctx.rotate(transform.rotate);
-            ctx.scale(transform.scale.x, transform.scale.y);
+            g_panZoom.transform(ctx, transform.translate.x, transform.translate.y, transform.rotate, transform.scale.x, transform.scale.y);
 
             var kappa = .5522848, ox = rx * kappa, oy = ry * kappa;
 
@@ -521,10 +594,13 @@ var LayoutEditor;
 
         AABBShape.prototype.buildPath = function (ctx) {
             // don't apply transform!
-            ctx.beginPath();
             var x1 = this.oabb.cx - this.oabb.hw;
             var y1 = this.oabb.cy - this.oabb.hh;
+            ctx.save();
+            g_panZoom.transform(ctx);
+            ctx.beginPath();
             ctx.rect(x1, y1, this.oabb.hw * 2, this.oabb.hh * 2);
+            ctx.restore();
         };
 
         AABBShape.prototype.calculateBounds = function () {
@@ -746,6 +822,8 @@ var LayoutEditor;
                 insertSortedUnique(this.yTabs, y2);
                 insertSortedUnique(this.yTabs, cy);
             }
+            // ctx.save();
+            // g_panZoom.transform(g_toolCtx);
             // g_toolCtx.beginPath();
             // for (var i = 0; i < this.xTabs.length; ++i) {
             //     g_toolCtx.moveTo(this.xTabs[i], 0);
@@ -756,6 +834,7 @@ var LayoutEditor;
             //     g_toolCtx.lineTo(1000, this.yTabs[i]);
             // }
             // g_toolCtx.stroke();
+            // ctx.restore();
         };
         return Grid;
     })();
@@ -911,6 +990,10 @@ var LayoutEditor;
             case "rotateTool":
                 g_tool = new RotateTool();
                 break;
+
+            case "panZoomTool":
+                g_tool = new PanZoomTool();
+                break;
         }
 
         if (g_tool !== oldTool) {
@@ -1000,6 +1083,8 @@ var LayoutEditor;
             this.draw();
 
             if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
+                g_toolCtx.save();
+                g_panZoom.transform(g_toolCtx);
                 g_toolCtx.beginPath();
                 g_snapStyle.draw(g_toolCtx);
                 g_toolCtx.moveTo(g_grid.snappedX, 0);
@@ -1007,6 +1092,7 @@ var LayoutEditor;
                 g_toolCtx.moveTo(0, g_grid.snappedY);
                 g_toolCtx.lineTo(1000, g_grid.snappedY);
                 g_toolCtx.stroke();
+                g_toolCtx.restore();
             }
         };
         return RectTool;
@@ -1051,6 +1137,8 @@ var LayoutEditor;
             this.draw();
 
             if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
+                g_toolCtx.save();
+                g_panZoom.transform(g_toolCtx);
                 g_toolCtx.beginPath();
                 g_snapStyle.draw(g_toolCtx);
                 g_toolCtx.moveTo(g_grid.snappedX, 0);
@@ -1058,6 +1146,7 @@ var LayoutEditor;
                 g_toolCtx.moveTo(0, g_grid.snappedY);
                 g_toolCtx.lineTo(1000, g_grid.snappedY);
                 g_toolCtx.stroke();
+                g_toolCtx.restore();
             }
         };
         return EllipseTool;
@@ -1362,6 +1451,8 @@ var LayoutEditor;
             this.moveShape.drawAABB(g_toolCtx);
 
             if (this.snappedX > -1 || this.snappedY > -1) {
+                g_toolCtx.save();
+                g_panZoom.transform(g_toolCtx);
                 g_toolCtx.beginPath();
                 g_snapStyle.draw(g_toolCtx);
                 g_toolCtx.moveTo(this.snappedX, 0);
@@ -1369,6 +1460,7 @@ var LayoutEditor;
                 g_toolCtx.moveTo(0, this.snappedY);
                 g_toolCtx.lineTo(1000, this.snappedY);
                 g_toolCtx.stroke();
+                g_toolCtx.restore();
             }
         };
 
@@ -1417,6 +1509,40 @@ var LayoutEditor;
         return MoveTool;
     })();
 
+    var PanZoomTool = (function () {
+        function PanZoomTool() {
+        }
+        PanZoomTool.prototype.onPointer = function (e) {
+            switch (e.state) {
+                case InteractionHelper.State.Start:
+                    break;
+
+                case InteractionHelper.State.Move:
+                    g_panZoom.pan.x += g_panZoom.deltaX;
+                    g_panZoom.pan.y += g_panZoom.deltaY;
+                    this.drawPanZoom();
+                    break;
+
+                case InteractionHelper.State.MouseWheel:
+                    var scale = (g_panZoom.deltaY > 0 ? 0.5 : 2);
+                    g_panZoom.pan.x += e.x * g_panZoom.zoom * (1 - scale);
+                    g_panZoom.pan.y += e.y * g_panZoom.zoom * (1 - scale);
+                    g_panZoom.zoom *= scale;
+
+                    this.drawPanZoom();
+                    break;
+
+                case InteractionHelper.State.End:
+                    break;
+            }
+        };
+
+        PanZoomTool.prototype.drawPanZoom = function () {
+            g_shapeList.requestDraw();
+        };
+        return PanZoomTool;
+    })();
+
     //------------------------------
     function toolButtonClick(e) {
         setTool(e.target.id);
@@ -1444,6 +1570,18 @@ var LayoutEditor;
         setTool("rectTool");
 
         var watchCanvas = new InteractionHelper.Watch(g_toolCanvas, function (e) {
+            g_panZoom.x = e.x;
+            g_panZoom.y = e.y;
+            g_panZoom.deltaX = e.deltaX;
+            g_panZoom.deltaY = e.deltaY;
+            g_panZoom.pinchDistance = e.pinchDistance;
+
+            e.x = g_panZoom.toX(e.x);
+            e.y = g_panZoom.toY(e.y);
+            e.deltaX = g_panZoom.toW(e.deltaX);
+            e.deltaY = g_panZoom.toH(e.deltaY);
+            e.pinchDistance *= g_panZoom.zoom;
+
             g_tool.onPointer(e);
         });
     });

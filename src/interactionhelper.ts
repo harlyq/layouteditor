@@ -21,7 +21,7 @@ module InteractionHelper {
     }
 
     export enum State {
-        Invalid, Start, Move, End, DoubleTap, Held
+        Invalid, Start, Move, End, DoubleTap, Held, MouseWheel
     }
 
     export class Event {
@@ -48,6 +48,8 @@ module InteractionHelper {
         private lastX: number = 0;
         private lastY: number = 0;
         private moveStarted: boolean = false;
+        private mouseX: number = 0;
+        private mouseY: number = 0;
 
         private mouseUpHandler = null;
         private mouseMoveHandler = null;
@@ -66,6 +68,13 @@ module InteractionHelper {
             });
             elem.addEventListener("touchstart", function(e) {
                 self.touchStart(e);
+            });
+            elem.addEventListener("mousewheel", function(e) {
+                self.mouseWheel(e);
+            });
+            elem.addEventListener("mousemove", function(e) {
+                self.mouseX = e.pageX - self.elem.offsetLeft;
+                self.mouseY = e.pageY - self.elem.offsetTop;
             });
         }
 
@@ -91,6 +100,21 @@ module InteractionHelper {
         private stopHeldTimer() {
             clearTimeout(this.heldID);
             this.heldID = 0;
+        }
+
+        private mouseWheel(e) {
+            e.preventDefault();
+
+            var event = new Event();
+            event.x = this.mouseX;
+            event.y = this.mouseY;
+            event.deltaX = e.deltaX;
+            event.deltaY = e.deltaY;
+            event.state = State.MouseWheel;
+            event.target = e.target;
+            event.origin = this.elem;
+
+            this.onPointerFunc(event);
         }
 
         private mouseDown(e) {

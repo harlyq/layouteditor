@@ -21,6 +21,7 @@ var InteractionHelper;
         State[State["End"] = 3] = "End";
         State[State["DoubleTap"] = 4] = "DoubleTap";
         State[State["Held"] = 5] = "Held";
+        State[State["MouseWheel"] = 6] = "MouseWheel";
     })(InteractionHelper.State || (InteractionHelper.State = {}));
     var State = InteractionHelper.State;
 
@@ -53,6 +54,8 @@ var InteractionHelper;
             this.lastX = 0;
             this.lastY = 0;
             this.moveStarted = false;
+            this.mouseX = 0;
+            this.mouseY = 0;
             this.mouseUpHandler = null;
             this.mouseMoveHandler = null;
             this.touchEndHandler = null;
@@ -68,6 +71,13 @@ var InteractionHelper;
             });
             elem.addEventListener("touchstart", function (e) {
                 self.touchStart(e);
+            });
+            elem.addEventListener("mousewheel", function (e) {
+                self.mouseWheel(e);
+            });
+            elem.addEventListener("mousemove", function (e) {
+                self.mouseX = e.pageX - self.elem.offsetLeft;
+                self.mouseY = e.pageY - self.elem.offsetTop;
             });
         }
         Watch.prototype.heldTimeout = function () {
@@ -92,6 +102,21 @@ var InteractionHelper;
         Watch.prototype.stopHeldTimer = function () {
             clearTimeout(this.heldID);
             this.heldID = 0;
+        };
+
+        Watch.prototype.mouseWheel = function (e) {
+            e.preventDefault();
+
+            var event = new Event();
+            event.x = this.mouseX;
+            event.y = this.mouseY;
+            event.deltaX = e.deltaX;
+            event.deltaY = e.deltaY;
+            event.state = 6 /* MouseWheel */;
+            event.target = e.target;
+            event.origin = this.elem;
+
+            this.onPointerFunc(event);
         };
 
         Watch.prototype.mouseDown = function (e) {

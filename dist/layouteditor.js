@@ -128,11 +128,15 @@ var LayoutEditor;
                 y: 0
             };
             this.zoom = 1;
+            // raw input values
+            this.x = 0;
+            this.y = 0;
+            this.deltaX = 0;
+            this.deltaY = 0;
+            this.pinchDistance = 0;
         }
         PanZoom.prototype.reset = function () {
-            this.pan.x = 0;
-            this.pan.y = 0;
-            this.zoom = 1;
+            this.constructor();
         };
 
         PanZoom.prototype.toX = function (x) {
@@ -185,6 +189,23 @@ var LayoutEditor;
             ctx.translate(translateX * this.zoom + this.pan.x, translateY * this.zoom + this.pan.y);
             ctx.rotate(rotate);
             ctx.scale(scaleX * this.zoom, scaleY * this.zoom);
+        };
+
+        PanZoom.prototype.save = function () {
+            return {
+                type: "PanZoom",
+                pan: {
+                    x: this.pan.x,
+                    y: this.pan.y
+                },
+                zoom: this.zoom
+            };
+        };
+
+        PanZoom.prototype.load = function (obj) {
+            assert(obj.type === "PanZoom");
+            this.reset();
+            extend(this, obj);
         };
         return PanZoom;
     })();
@@ -439,6 +460,16 @@ var LayoutEditor;
             extend(base, this);
             return base;
         };
+
+        Shape.prototype.save = function () {
+            return {
+                transform: this.transform
+            };
+        };
+
+        Shape.prototype.load = function (obj) {
+            extend(this.transform, obj.transform);
+        };
         return Shape;
     })();
 
@@ -498,6 +529,21 @@ var LayoutEditor;
             this.aabb.hh = (y2 - y1) * 0.5;
             this.aabb.cx = (x1 + x2) * 0.5;
             this.aabb.cy = (y1 + y2) * 0.5;
+        };
+
+        RectShape.prototype.save = function () {
+            var obj = _super.prototype.save.call(this);
+            obj.type = "RectShape";
+            obj.w = this.w;
+            obj.h = this.h;
+            return obj;
+        };
+
+        RectShape.prototype.load = function (obj) {
+            assert(obj.type === "RectShape");
+            this.w = obj.w;
+            this.h = obj.h;
+            _super.prototype.load.call(this, obj);
         };
         return RectShape;
     })(Shape);
@@ -575,6 +621,21 @@ var LayoutEditor;
             this.aabb.hw = rotatedHW;
             this.aabb.hh = rotatedHH;
         };
+
+        EllipseShape.prototype.save = function () {
+            var obj = _super.prototype.save.call(this);
+            obj.type = "EllipseShape";
+            obj.rx = this.rx;
+            obj.ry = this.ry;
+            return obj;
+        };
+
+        EllipseShape.prototype.load = function (obj) {
+            assert(obj.type === "EllipseShape");
+            this.rx = obj.rx;
+            this.ry = obj.ry;
+            _super.prototype.load.call(this, obj);
+        };
         return EllipseShape;
     })(Shape);
 
@@ -615,6 +676,25 @@ var LayoutEditor;
 
             this.aabb = this.oabb;
         };
+
+        AABBShape.prototype.save = function () {
+            var obj = _super.prototype.save.call(this);
+            obj.type = "AABBShape";
+            obj.x1 = this.x1;
+            obj.y1 = this.y1;
+            obj.x2 = this.x2;
+            obj.y2 = this.y2;
+            return obj;
+        };
+
+        AABBShape.prototype.load = function (obj) {
+            assert(obj.type === "AABBShape");
+            this.x1 = obj.x1;
+            this.y1 = obj.y1;
+            this.x2 = obj.x2;
+            this.y2 = obj.y2;
+            _super.prototype.load.call(this, obj);
+        };
         return AABBShape;
     })(Shape);
 
@@ -629,6 +709,11 @@ var LayoutEditor;
             this.selectedStyle.lineWidth = 2;
             this.selectedStyle.lineDash = [5, 5];
         }
+        ShapeList.prototype.reset = function () {
+            this.shapes.length = 0;
+            this.selectedShapes.length = 0;
+        };
+
         ShapeList.prototype.addShape = function (shape) {
             shape.isDeleted = false;
             this.shapes.push(shape);
@@ -720,6 +805,41 @@ var LayoutEditor;
             }
 
             return shapes;
+        };
+
+        ShapeList.prototype.create = function (type) {
+            switch (type) {
+                case "RectShape":
+                    return new RectShape(0, 0);
+                case "EllipseShape":
+                    return new EllipseShape(0, 0);
+                case "AABBShape":
+                    return new AABBShape();
+            }
+        };
+
+        ShapeList.prototype.save = function () {
+            var obj = {
+                shapes: []
+            };
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                if (!shape.isDeleted) {
+                    obj.shapes.push(shape.save());
+                }
+            }
+            return obj;
+        };
+
+        ShapeList.prototype.load = function (obj) {
+            this.reset();
+            for (var i = 0; i < obj.shapes.length; ++i) {
+                var shapeSave = obj.shapes[i];
+                var newShape = this.create(shapeSave.type);
+                newShape.load(shapeSave);
+                newShape.calculateBounds();
+                g_shapeList.addShape(newShape);
+            }
         };
         return ShapeList;
     })();
@@ -854,8 +974,9 @@ var LayoutEditor;
             command.redo();
         };
 
-        CommandList.prototype.clear = function () {
+        CommandList.prototype.reset = function () {
             this.commands.length = 0;
+            this.currentIndex = 0;
         };
 
         CommandList.prototype.undo = function () {
@@ -1548,6 +1669,28 @@ var LayoutEditor;
         setTool(e.target.id);
     }
 
+    function save() {
+        var obj = {
+            shapeList: g_shapeList.save(),
+            panZoom: g_panZoom.save()
+        };
+        localStorage['layouteditor'] = JSON.stringify(obj);
+    }
+
+    function load() {
+        var obj = JSON.parse(localStorage['layouteditor']);
+        reset();
+        g_shapeList.load(obj.shapeList);
+        g_panZoom.load(obj.panZoom);
+    }
+
+    function reset() {
+        g_commandList.reset();
+        g_shapeList.reset();
+        g_shapeList.requestDraw();
+        g_panZoom.reset();
+    }
+
     window.addEventListener("load", function () {
         g_canvas = document.getElementById("layoutbase");
         g_toolCanvas = document.getElementById("layouttool");
@@ -1566,6 +1709,9 @@ var LayoutEditor;
         document.getElementById("redo").addEventListener("click", function () {
             g_commandList.redo();
         });
+        document.getElementById("clear").addEventListener("click", reset);
+        document.getElementById("save").addEventListener("click", save);
+        document.getElementById("load").addEventListener("click", load);
 
         setTool("rectTool");
 

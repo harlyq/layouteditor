@@ -119,18 +119,16 @@ module LayoutEditor {
         zoom: number = 1;
 
         // raw input values
-        x: number;
-        y: number;
-        deltaX: number;
-        deltaY: number;
-        pinchDistance: number;
+        x: number = 0;
+        y: number = 0;
+        deltaX: number = 0;
+        deltaY: number = 0;
+        pinchDistance: number = 0;
 
         constructor() {}
 
         reset() {
-            this.pan.x = 0;
-            this.pan.y = 0;
-            this.zoom = 1;
+            this.constructor();
         }
 
         toX(x: number): number {
@@ -178,6 +176,23 @@ module LayoutEditor {
             ctx.translate(translateX * this.zoom + this.pan.x, translateY * this.zoom + this.pan.y);
             ctx.rotate(rotate);
             ctx.scale(scaleX * this.zoom, scaleY * this.zoom);
+        }
+
+        save(): any {
+            return {
+                type: "PanZoom",
+                pan: {
+                    x: this.pan.x,
+                    y: this.pan.y
+                },
+                zoom: this.zoom
+            };
+        }
+
+        load(obj: any) {
+            assert(obj.type === "PanZoom");
+            this.reset();
+            extend(this, obj);
         }
     }
     var g_panZoom: PanZoom = new PanZoom();
@@ -439,6 +454,16 @@ module LayoutEditor {
             extend(base, this);
             return base;
         }
+
+        save(): any {
+            return {
+                transform: this.transform
+            };
+        }
+
+        load(obj: any) {
+            extend(this.transform, obj.transform);
+        }
     }
 
     class RectShape extends Shape {
@@ -496,6 +521,21 @@ module LayoutEditor {
             this.aabb.hh = (y2 - y1) * 0.5;
             this.aabb.cx = (x1 + x2) * 0.5;
             this.aabb.cy = (y1 + y2) * 0.5;
+        }
+
+        save(): any {
+            var obj: any = super.save();
+            obj.type = "RectShape";
+            obj.w = this.w;
+            obj.h = this.h;
+            return obj;
+        }
+
+        load(obj: any) {
+            assert(obj.type === "RectShape");
+            this.w = obj.w;
+            this.h = obj.h;
+            super.load(obj);
         }
     }
 
@@ -573,6 +613,21 @@ module LayoutEditor {
             this.aabb.hw = rotatedHW;
             this.aabb.hh = rotatedHH;
         }
+
+        save(): any {
+            var obj: any = super.save();
+            obj.type = "EllipseShape";
+            obj.rx = this.rx;
+            obj.ry = this.ry;
+            return obj;
+        }
+
+        load(obj: any) {
+            assert(obj.type === "EllipseShape");
+            this.rx = obj.rx;
+            this.ry = obj.ry;
+            super.load(obj);
+        }
     }
 
     // cannot transform!!!
@@ -617,6 +672,25 @@ module LayoutEditor {
 
             this.aabb = this.oabb;
         }
+
+        save(): any {
+            var obj: any = super.save();
+            obj.type = "AABBShape";
+            obj.x1 = this.x1;
+            obj.y1 = this.y1;
+            obj.x2 = this.x2;
+            obj.y2 = this.y2;
+            return obj;
+        }
+
+        load(obj: any) {
+            assert(obj.type === "AABBShape");
+            this.x1 = obj.x1;
+            this.y1 = obj.y1;
+            this.x2 = obj.x2;
+            this.y2 = obj.y2;
+            super.load(obj);
+        }
     }
 
     //------------------------------
@@ -630,6 +704,11 @@ module LayoutEditor {
             this.selectedStyle.fillStyle = "none";
             this.selectedStyle.lineWidth = 2;
             this.selectedStyle.lineDash = [5, 5];
+        }
+
+        reset() {
+            this.shapes.length = 0;
+            this.selectedShapes.length = 0;
         }
 
         addShape(shape: Shape) {
@@ -722,6 +801,41 @@ module LayoutEditor {
             }
 
             return shapes;
+        }
+
+        create(type: string): Shape {
+            switch (type) {
+                case "RectShape":
+                    return new RectShape(0, 0);
+                case "EllipseShape":
+                    return new EllipseShape(0, 0);
+                case "AABBShape":
+                    return new AABBShape();
+            }
+        }
+
+        save() {
+            var obj = {
+                shapes: []
+            };
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                var shape: Shape = this.shapes[i];
+                if (!shape.isDeleted) {
+                    obj.shapes.push(shape.save());
+                }
+            }
+            return obj;
+        }
+
+        load(obj) {
+            this.reset();
+            for (var i: number = 0; i < obj.shapes.length; ++i) {
+                var shapeSave = obj.shapes[i];
+                var newShape: Shape = this.create(shapeSave.type);
+                newShape.load(shapeSave);
+                newShape.calculateBounds();
+                g_shapeList.addShape(newShape);
+            }
         }
     }
     var g_shapeList: ShapeList = new ShapeList();
@@ -863,8 +977,9 @@ module LayoutEditor {
             command.redo();
         }
 
-        clear() {
+        reset() {
             this.commands.length = 0;
+            this.currentIndex = 0;
         }
 
         undo() {
@@ -1573,6 +1688,28 @@ module LayoutEditor {
         setTool(e.target.id);
     }
 
+    function save() {
+        var obj: any = {
+            shapeList: g_shapeList.save(),
+            panZoom: g_panZoom.save()
+        };
+        localStorage['layouteditor'] = JSON.stringify(obj);
+    }
+
+    function load() {
+        var obj: any = JSON.parse(localStorage['layouteditor']);
+        reset();
+        g_shapeList.load(obj.shapeList);
+        g_panZoom.load(obj.panZoom);
+    }
+
+    function reset() {
+        g_commandList.reset();
+        g_shapeList.reset();
+        g_shapeList.requestDraw();
+        g_panZoom.reset();
+    }
+
     window.addEventListener("load", function() {
         g_canvas = document.getElementById("layoutbase");
         g_toolCanvas = document.getElementById("layouttool");
@@ -1591,6 +1728,9 @@ module LayoutEditor {
         document.getElementById("redo").addEventListener("click", function() {
             g_commandList.redo();
         });
+        document.getElementById("clear").addEventListener("click", reset);
+        document.getElementById("save").addEventListener("click", save);
+        document.getElementById("load").addEventListener("click", load);
 
         setTool("rectTool");
 

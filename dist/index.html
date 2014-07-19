@@ -2,6 +2,9 @@
 <html>
 
 <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
     <script src="interactionhelper.js" type="text/javascript"></script>
     <script src="layouteditor.js" type="text/javascript"></script>
     <link href="layouteditor.css" rel="stylesheet" type="text/css"></link>
@@ -15,12 +18,17 @@
     <button id="rotateTool" class="tool">ROTATE</button>
     <button id="rectTool" class="tool">RECT</button>
     <button id="ellipseTool" class="tool">ELLIPSE</button>
+    <button id="textTool" class="tool">TEXT</button>
+    <button id="editTool" class="tool">EDIT</button>
     <div></div>
     <button id="undo">UNDO</button>
     <button id="redo">REDO</button>
     <button id="clear">CLEAR</button>
     <button id="save">SAVE</button>
     <button id="load">LOAD</button>
+    <div></div>
+    <!--input type="text" id="inputText"></input-->
+    <textarea cols="20" rows "1" id="inputText"></textarea>
     <div></div>
     <canvas id="layoutbase" class="layout" width="500px" height="500px"></canvas>
     <canvas id="layouttool" class="layout" width="500px" height="500px"></canvas>

@@ -10,6 +10,7 @@ module LayoutEditor {
     var g_div = null;
     var g_toolCanvas = null;
     var g_toolCtx = null;
+    var g_inputText = null;
 
     function assert(cond: boolean) {
         if (!cond)
@@ -203,6 +204,13 @@ module LayoutEditor {
         fillStyle: string = "none";
         lineWidth: number = 1;
         lineDash: number[] = [];
+        textAlign: string = "right";
+        textBaseline: string = "bottom";
+        fontSize: number = 20;
+        fontFamily: string = "arial";
+        fontWeight: string = "normal";
+        fontStyle: string = "black";
+        fontSpacing: number = 1;
 
         draw(ctx) {
             if (ctx.strokeStyle !== this.strokeStyle)
@@ -212,6 +220,13 @@ module LayoutEditor {
             if (ctx.lineWidth !== this.lineWidth.toString())
                 ctx.lineWidth = this.lineWidth.toString();
             ctx.setLineDash(this.lineDash);
+            if (ctx.textAlign !== this.textAlign)
+                ctx.textAlign = this.textAlign;
+            if (ctx.textBaseline !== this.textBaseline)
+                ctx.textBaseline = this.textBaseline;
+            var font = this.fontWeight + " " + this.fontSize + "px " + this.fontFamily;
+            if (ctx.font !== font)
+                ctx.font = font;
         }
     }
     var g_defaultStyle: Style = new Style();
@@ -345,8 +360,12 @@ module LayoutEditor {
         oabb: Bounds = new Bounds();
         aabb: Bounds = new Bounds();
         transform: Transform = new Transform();
+        name: string = "";
+        static uniqueID: number = 0;
 
-        constructor() {}
+        constructor() {
+            this.name = "Shape" + Shape.uniqueID++;
+        }
 
         setStyle(style: Style) {
             this.style = style;
@@ -360,6 +379,8 @@ module LayoutEditor {
             if (this.style.fillStyle !== "none")
                 ctx.fill();
             ctx.stroke();
+
+            this.drawText(ctx);
         }
 
         // implemented in the derived class
@@ -383,6 +404,10 @@ module LayoutEditor {
             ctx.rect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
             ctx.restore();
             ctx.stroke();
+        }
+
+        drawText(ctx) {
+
         }
 
         // performed by the derived class
@@ -455,18 +480,24 @@ module LayoutEditor {
             return base;
         }
 
+        // overloaded by specific shape
         save(): any {
             return {
+                name: this.name,
                 transform: this.transform
             };
         }
 
+        // overloaded by specific shape
         load(obj: any) {
+            this.name = obj.name;
             extend(this.transform, obj.transform);
         }
     }
 
     class RectShape extends Shape {
+        text: string = "got to get\nmy red rags on\ndo dah";
+
         constructor(public w: number, public h: number) {
             super();
         }
@@ -480,6 +511,62 @@ module LayoutEditor {
 
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
+            ctx.restore();
+        }
+
+        drawText(ctx) {
+            if (this.text.length === 0)
+                return;
+
+            var transform = this.transform;
+
+            ctx.save();
+            g_panZoom.transform(ctx, transform.translate.x, transform.translate.y,
+                transform.rotate);
+
+            var textLines: string[] = this.text.split("\n");
+            var lineHeight: number = this.style.fontSize * this.style.fontSpacing;
+            var textWidth: number = 0;
+            var textHeight: number = textLines.length * lineHeight;
+            for (var i: number = 0; i < textLines.length; ++i) {
+                var lineWidth = ctx.measureText(textLines[i]).width;
+                if (lineWidth > textWidth)
+                    textWidth = lineWidth;
+            }
+
+            var hh: number = this.h * transform.scale.y * 0.5;
+            var hw: number = this.w * transform.scale.x * 0.5;
+            var x: number = 0;
+            var y: number = 0;
+            switch (this.style.textBaseline) {
+                case "top":
+                    y = -hh;
+                    break
+                case "middle":
+                    y = (lineHeight - textHeight) * 0.5;
+                    break;
+                case "bottom":
+                    y = hh - textHeight + lineHeight;
+                    break
+            }
+
+            switch (this.style.textAlign) {
+                case "left":
+                    x = -hw;
+                    break
+                case "right":
+                    x = hw;
+                    break
+            }
+
+            if (ctx.fillStlye !== this.style.fontStyle)
+                ctx.fillStyle = this.style.fontStyle;
+
+            for (var i: number = 0; i < textLines.length; ++i) {
+                ctx.fillText(textLines[i], x, y);
+                y += lineHeight;
+            }
+
             ctx.restore();
         }
 
@@ -528,6 +615,7 @@ module LayoutEditor {
             obj.type = "RectShape";
             obj.w = this.w;
             obj.h = this.h;
+            obj.text = this.text;
             return obj;
         }
 
@@ -535,6 +623,7 @@ module LayoutEditor {
             assert(obj.type === "RectShape");
             this.w = obj.w;
             this.h = obj.h;
+            this.text = obj.text;
             super.load(obj);
         }
     }
@@ -689,6 +778,102 @@ module LayoutEditor {
             this.y1 = obj.y1;
             this.x2 = obj.x2;
             this.y2 = obj.y2;
+            super.load(obj);
+        }
+    }
+
+    class TextShape extends Shape {
+        constructor(public w: number, public h: number, public text: string) {
+            super();
+        }
+
+        buildPath(ctx) {
+            var transform = this.transform;
+
+            ctx.save();
+            g_panZoom.transform(ctx, transform.translate.x, transform.translate.y,
+                transform.rotate, transform.scale.x, transform.scale.y);
+
+            ctx.beginPath();
+            ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
+
+            var x: number = 0;
+            var y: number = 0;
+            switch (this.style.textBaseline) {
+                case "top":
+                    y = -this.h * 0.5;
+                    break
+                case "bottom":
+                    y = this.h * 0.5;
+                    break
+                case "left":
+                    x = -this.w * 0.5;
+                    break
+                case "right":
+                    x = this.w * 0.5 - ctx.measureText(this.text).width;
+                    break
+            }
+            if (ctx.fillStlye !== this.style.fontStyle)
+                ctx.fillStyle = this.style.fontStyle;
+            ctx.fillText(this.text, x, y);
+
+            ctx.restore();
+        }
+
+        copy(base ? : TextShape): TextShape {
+            if (!base)
+                base = new TextShape(this.w, this.h, this.text);
+            super.copy(base);
+            extend(base, this);
+            return base;
+        }
+
+        fromRect(x: number, y: number, w: number, h: number) {
+            this.transform.translate.x = x + w * 0.5;
+            this.transform.translate.y = y + h * 0.5;
+            this.w = w;
+            this.h = h;
+            this.calculateBounds();
+        }
+
+        calculateBounds() {
+            var transform = this.transform;
+            var dx = this.w * 0.5;
+            var dy = this.h * 0.5;
+
+            this.oabb.rotate = transform.rotate;
+            this.oabb.hw = Math.abs(dx) * transform.scale.x;
+            this.oabb.hh = Math.abs(dy) * transform.scale.y;
+            this.oabb.cx = transform.translate.x;
+            this.oabb.cy = transform.translate.y;
+
+            var polygon: number[] = this.oabb.toPolygon();
+            var x1: number = arrayMin(polygon, 0, 2);
+            var x2: number = arrayMax(polygon, 0, 2);
+            var y1: number = arrayMin(polygon, 1, 2);
+            var y2: number = arrayMax(polygon, 1, 2);
+
+            this.aabb.rotate = 0;
+            this.aabb.hw = (x2 - x1) * 0.5;
+            this.aabb.hh = (y2 - y1) * 0.5;
+            this.aabb.cx = (x1 + x2) * 0.5;
+            this.aabb.cy = (y1 + y2) * 0.5;
+        }
+
+        save(): any {
+            var obj: any = super.save();
+            obj.type = "TextShape";
+            obj.w = this.w;
+            obj.h = this.h;
+            obj.text = this.text;
+            return obj;
+        }
+
+        load(obj: any) {
+            assert(obj.type === "TextShape");
+            this.w = obj.w;
+            this.h = obj.h;
+            this.text = obj.text;
             super.load(obj);
         }
     }
@@ -1040,6 +1225,19 @@ module LayoutEditor {
         }
     }
 
+    class TextCommand extends ShapeCommand {
+
+        constructor(cx: number, cy: number, w: number, h: number, text: string) {
+            super();
+
+            this.shape = new TextShape(w, h, text);
+            this.shape.transform.translate.x = cx;
+            this.shape.transform.translate.y = cy;
+            this.shape.setStyle(g_style);
+            this.shape.calculateBounds();
+        }
+    }
+
     class TransformCommand implements Command {
         originalTransform: Transform = new Transform();
 
@@ -1079,6 +1277,26 @@ module LayoutEditor {
         }
     }
 
+    class EditTextCommand implements Command {
+        oldText: string;
+        rectShape: RectShape;
+
+        constructor(public shape: Shape, public text: string) {
+            this.rectShape = < RectShape > shape;
+            this.oldText = this.rectShape.text;
+        }
+
+        redo() {
+            this.rectShape.text = this.text;
+            g_shapeList.requestDraw();
+        }
+
+        undo() {
+            this.rectShape.text = this.oldText;
+            g_shapeList.requestDraw();
+        }
+    }
+
     //------------------------------
     interface Tool {
         onPointer(e: InteractionHelper.Event);
@@ -1104,6 +1322,10 @@ module LayoutEditor {
                 g_tool = new RectTool();
                 break;
 
+            case "textTool":
+                g_tool = new TextTool();
+                break;
+
             case "ellipseTool":
                 g_tool = new EllipseTool();
                 break;
@@ -1114,6 +1336,10 @@ module LayoutEditor {
 
             case "panZoomTool":
                 g_tool = new PanZoomTool();
+                break;
+
+            case "editTool":
+                g_tool = new EditTool();
                 break;
         }
 
@@ -1185,7 +1411,7 @@ module LayoutEditor {
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    this.drawShape();
+                    this.drawRect();
                     break;
 
                 case InteractionHelper.State.End:
@@ -1203,7 +1429,7 @@ module LayoutEditor {
             }
         }
 
-        private drawShape() {
+        private drawRect() {
             this.rectShape.fromRect(
                 Math.min(this.x1, this.x2),
                 Math.min(this.y1, this.y2),
@@ -1253,7 +1479,7 @@ module LayoutEditor {
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    this.drawShape();
+                    this.drawEllipse();
                     break;
                 case InteractionHelper.State.End:
                     this.clear();
@@ -1270,12 +1496,82 @@ module LayoutEditor {
             }
         }
 
-        private drawShape() {
+        private drawEllipse() {
             this.ellipseShape.fromRect(
                 Math.min(this.x1, this.x2),
                 Math.min(this.y1, this.y2),
                 Math.abs(this.x2 - this.x1),
                 Math.abs(this.y2 - this.y1));
+            this.draw();
+
+            if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
+                g_toolCtx.save();
+                g_panZoom.transform(g_toolCtx);
+                g_toolCtx.beginPath();
+                g_snapStyle.draw(g_toolCtx);
+                g_toolCtx.moveTo(g_grid.snappedX, 0);
+                g_toolCtx.lineTo(g_grid.snappedX, 1000);
+                g_toolCtx.moveTo(0, g_grid.snappedY);
+                g_toolCtx.lineTo(1000, g_grid.snappedY);
+                g_toolCtx.stroke();
+                g_toolCtx.restore();
+            }
+        }
+    }
+
+    class TextTool extends DrawTool {
+        private textShape: TextShape = new TextShape(0, 0, "Alj013");
+        private x1: number = -1;
+        private y1: number = -1;
+        private x2: number = -1;
+        private y2: number = -1;
+
+        constructor() {
+            super();
+            this.shape = this.textShape;
+            this.textShape.style = g_drawStyle;
+        }
+
+        onPointer(e: InteractionHelper.Event) {
+            switch (e.state) {
+                case InteractionHelper.State.Start:
+                    g_grid.rebuildTabs();
+                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    this.x1 = pos.x;
+                    this.y1 = pos.y;
+                    break;
+
+                case InteractionHelper.State.Move:
+                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    this.x2 = pos.x;
+                    this.y2 = pos.y;
+                    this.canUse = true;
+                    this.drawText();
+                    break;
+
+                case InteractionHelper.State.End:
+                    this.clear();
+                    if (this.canUse) {
+                        var newCommand = new TextCommand(
+                            this.textShape.transform.translate.x,
+                            this.textShape.transform.translate.y,
+                            this.textShape.w,
+                            this.textShape.h,
+                            this.textShape.text);
+                        g_commandList.addCommand(newCommand);
+                        this.canUse = false;
+                    }
+                    break;
+            }
+        }
+
+        private drawText() {
+            this.textShape.fromRect(
+                Math.min(this.x1, this.x2),
+                Math.min(this.y1, this.y2),
+                Math.abs(this.x2 - this.x1),
+                Math.abs(this.y2 - this.y1));
+
             this.draw();
 
             if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
@@ -1683,6 +1979,62 @@ module LayoutEditor {
         }
     }
 
+    class EditTool implements Tool {
+        shape: Shape = null;
+        editShape: RectShape = null;
+        inputListener: any = null;
+
+        constructor() {
+            var self = this;
+            g_inputText.addEventListener('input', function(e) {
+                self.onInput(e);
+            });
+        }
+
+        onPointer(e: InteractionHelper.Event) {
+            switch (e.state) {
+                case InteractionHelper.State.DoubleClick:
+                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    if (this.shape) {
+                        this.editShape = < RectShape > this.shape.copy();
+                        g_inputText.value = this.editShape.text;
+                        g_inputText.focus();
+                    }
+                    break;
+
+                case InteractionHelper.State.Start:
+                    if (this.shape && g_shapeList.getShapeInXY(e.x, e.y) !== this.shape) {
+                        var newCommand = new EditTextCommand(this.shape, this.editShape.text);
+                        g_commandList.addCommand(newCommand);
+                        this.shape = null;
+                        g_inputText.value = "";
+                    }
+                    //     if (g_shapeList.getShapeInXY(e.x, e.y) === this.shape) {
+                    //         // setup selection
+                    //         g_inputText.selectionStart = 
+                    //     }
+            }
+        }
+
+        clear() {
+            g_toolCtx.clearRect(0, 0, g_toolCanvas.width, g_toolCanvas.height);
+        }
+
+        onInput(e) {
+            if (this.shape === null)
+                return;
+
+            this.editShape.text = g_inputText.value;
+            this.drawPanZoom();
+        }
+
+        drawPanZoom() {
+            this.clear();
+
+            this.editShape.draw(g_toolCtx);
+        }
+    }
+
     //------------------------------
     function toolButtonClick(e) {
         setTool(e.target.id);
@@ -1731,6 +2083,7 @@ module LayoutEditor {
         document.getElementById("clear").addEventListener("click", reset);
         document.getElementById("save").addEventListener("click", save);
         document.getElementById("load").addEventListener("click", load);
+        g_inputText = document.getElementById("inputText");
 
         setTool("rectTool");
 

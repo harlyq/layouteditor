@@ -14,14 +14,14 @@ module InteractionHelper {
     }
 
     export class Options {
-        DoubleTapTimeMS: number = 800;
+        DoubleClickTimeMS: number = 800;
         MouseCancelTapDistance: number = 10;
         TouchCancelTapDistance: number = 30;
         HoldTimeMS: number = 500;
     }
 
     export enum State {
-        Invalid, Start, Move, End, DoubleTap, Held, MouseWheel
+        Invalid, Start, Move, End, DoubleClick, Held, MouseWheel
     }
 
     export class Event {
@@ -133,13 +133,13 @@ module InteractionHelper {
             var x: number = e.pageX - this.elem.offsetLeft;
             var y: number = e.pageY - this.elem.offsetTop;
 
-            var doubleTap: boolean = false;
+            var DoubleClick: boolean = false;
             var timeMS: number = Date.now();
 
-            if (timeMS - this.tapTimeMS < this.options.DoubleTapTimeMS) {
+            if (timeMS - this.tapTimeMS < this.options.DoubleClickTimeMS) {
                 if (Math.abs(this.tapPosition.x - x) < this.options.MouseCancelTapDistance &&
                     Math.abs(this.tapPosition.y - y) < this.options.MouseCancelTapDistance) {
-                    doubleTap = true;
+                    DoubleClick = true;
                     timeMS = 0;
                 } else {
                     if (this.tapTimeMS !== 0) {
@@ -162,8 +162,8 @@ module InteractionHelper {
 
             this.onPointerFunc(event);
 
-            if (doubleTap) {
-                event.state = State.DoubleTap;
+            if (DoubleClick) {
+                event.state = State.DoubleClick;
                 this.onPointerFunc(event);
             }
 
@@ -264,13 +264,13 @@ module InteractionHelper {
             document.addEventListener("touchend", this.touchEndHandler);
 
             var pinch: PinchInfo = this.getPinchInfo(e);
-            var doubleTap: boolean = false;
+            var DoubleClick: boolean = false;
             var timeMS: number = Date.now();
 
-            if (timeMS - this.tapTimeMS < this.options.DoubleTapTimeMS) {
+            if (timeMS - this.tapTimeMS < this.options.DoubleClickTimeMS) {
                 if (Math.abs(this.tapPosition.x - pinch.x) < this.options.TouchCancelTapDistance &&
                     Math.abs(this.tapPosition.y - pinch.y) < this.options.TouchCancelTapDistance) {
-                    doubleTap = true;
+                    DoubleClick = true;
                     timeMS = 0;
                 } else {
                     if (this.tapTimeMS !== 0)
@@ -295,8 +295,8 @@ module InteractionHelper {
 
             this.onPointerFunc(event);
 
-            if (doubleTap) {
-                event.state = State.DoubleTap;
+            if (DoubleClick) {
+                event.state = State.DoubleClick;
                 this.onPointerFunc(event);
             }
 

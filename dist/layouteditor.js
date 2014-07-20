@@ -277,6 +277,38 @@ var LayoutEditor;
 
             return polygon;
         };
+
+        Bounds.prototype.invXY = function (x, y) {
+            var newPos = {
+                x: 0,
+                y: 0
+            };
+
+            var sr = Math.sin(this.rotate);
+            var cr = Math.cos(this.rotate);
+
+            newPos.x = x - this.cx;
+            newPos.y = y - this.cy;
+
+            var lx = 0;
+            var ly = 0;
+
+            if (Math.abs(cr) < EPSILON) {
+                lx = newPos.y / sr;
+                ly = -newPos.x / sr;
+            } else if (Math.abs(sr) < EPSILON) {
+                lx = newPos.x / cr;
+                ly = newPos.y / cr;
+            } else {
+                lx = (newPos.x * cr + newPos.y * sr) / (cr * cr + sr * sr);
+                ly = (newPos.y - lx * sr) / cr;
+            }
+
+            return {
+                x: lx,
+                y: ly
+            };
+        };
         return Bounds;
     })();
 
@@ -308,7 +340,7 @@ var LayoutEditor;
                 y: 0
             };
         }
-        Transform.prototype.calc = function (x, y) {
+        Transform.prototype.calcXY = function (x, y) {
             var newPos = {
                 x: 0,
                 y: 0
@@ -324,7 +356,7 @@ var LayoutEditor;
             return newPos;
         };
 
-        Transform.prototype.inv = function (x, y) {
+        Transform.prototype.invXY = function (x, y) {
             var newPos = {
                 x: 0,
                 y: 0
@@ -417,11 +449,10 @@ var LayoutEditor;
             if (this.text.length === 0)
                 return;
 
-            var transform = this.transform;
             var oabb = this.oabb;
 
             ctx.save();
-            g_panZoom.transform(ctx, transform.translate.x, transform.translate.y, transform.rotate);
+            g_panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
 
             var textLines = this.text.split("\n");
             var lineHeight = this.style.fontSize * this.style.fontSpacing;
@@ -434,8 +465,8 @@ var LayoutEditor;
                     textWidth = lineWidth;
             }
 
-            var hh = oabb.hh * transform.scale.y;
-            var hw = oabb.hw * transform.scale.x;
+            var hh = oabb.hh;
+            var hw = oabb.hw;
             var x = 0;
             var y = 0;
             switch (this.style.textBaseline) {
@@ -1449,20 +1480,19 @@ var LayoutEditor;
                         this.resizeShape = this.shape.copy();
                         this.resizeShape.style = g_selectStyle;
 
-                        var transform = this.shape.transform;
-                        var localPos = transform.inv(e.x, e.y);
-                        var oabb = this.shape.oabb;
-                        var handleX = this.handleSize / transform.scale.x;
-                        var handleY = this.handleSize / transform.scale.y;
+                        var oldOABB = this.shape.oabb;
+                        var localPos = oldOABB.invXY(e.x, e.y);
+                        var handleX = this.handleSize;
+                        var handleY = this.handleSize;
 
-                        if (localPos.x + oabb.hw < handleX)
+                        if (localPos.x + oldOABB.hw < handleX)
                             this.handle = (this.handle | 1 /* Left */);
-                        else if (oabb.hw - localPos.x < handleX)
+                        else if (oldOABB.hw - localPos.x < handleX)
                             this.handle = (this.handle | 2 /* Right */);
 
-                        if (localPos.y + oabb.hh < handleY)
+                        if (localPos.y + oldOABB.hh < handleY)
                             this.handle = (this.handle | 4 /* Top */);
-                        else if (oabb.hh - localPos.y < handleY)
+                        else if (oldOABB.hh - localPos.y < handleY)
                             this.handle = (this.handle | 8 /* Bottom */);
 
                         if (this.handle === 0 /* None */)
@@ -1476,38 +1506,46 @@ var LayoutEditor;
                     if (this.shape) {
                         var transform = this.resizeShape.transform;
                         var oldTransform = this.shape.transform;
-                        var localPos = oldTransform.inv(e.x, e.y);
-                        var dx = (localPos.x - this.startLocalPos.x) * oldTransform.scale.x;
-                        var dy = (localPos.y - this.startLocalPos.y) * oldTransform.scale.y;
-                        var sx = dx / (this.resizeShape.oabb.hw * 2);
-                        var sy = dy / (this.resizeShape.oabb.hh * 2);
-                        var cr = Math.cos(oldTransform.rotate);
-                        var sr = Math.sin(oldTransform.rotate);
+                        var oldOABB = this.shape.oabb;
 
+                        var localPos = oldOABB.invXY(e.x, e.y);
+                        var dx = (localPos.x - this.startLocalPos.x);
+                        var dy = (localPos.y - this.startLocalPos.y);
+                        var sx = dx * oldTransform.scale.x / (oldOABB.hw * 2);
+                        var sy = dy * oldTransform.scale.y / (oldOABB.hh * 2);
+                        var cr = Math.cos(oldOABB.rotate);
+                        var sr = Math.sin(oldOABB.rotate);
+
+                        var newX = oldTransform.translate.x;
+                        var newY = oldTransform.translate.y;
                         if (this.handle & 1 /* Left */) {
-                            transform.translate.x = oldTransform.translate.x + dx * cr * 0.5;
-                            transform.translate.y = oldTransform.translate.y + dx * sr * 0.5;
+                            newX += dx * cr * 0.5;
+                            newY += dx * sr * 0.5;
                             transform.scale.x = oldTransform.scale.x - sx;
-                        }
-                        if (this.handle & 2 /* Right */) {
-                            transform.translate.x = oldTransform.translate.x + dx * cr * 0.5;
-                            transform.translate.y = oldTransform.translate.y + dx * sr * 0.5;
+                        } else if (this.handle & 2 /* Right */) {
+                            newX += dx * cr * 0.5;
+                            newY += dx * sr * 0.5;
                             transform.scale.x = oldTransform.scale.x + sx;
                         }
+
                         if (this.handle & 4 /* Top */) {
-                            transform.translate.x = oldTransform.translate.x - dy * sr * 0.5;
-                            transform.translate.y = oldTransform.translate.y + dy * cr * 0.5;
+                            newX -= dy * sr * 0.5;
+                            newY += dy * cr * 0.5;
                             transform.scale.y = oldTransform.scale.y - sy;
-                        }
-                        if (this.handle & 8 /* Bottom */) {
-                            transform.translate.x = oldTransform.translate.x - dy * sr * 0.5;
-                            transform.translate.y = oldTransform.translate.y + dy * cr * 0.5;
+                        } else if (this.handle & 8 /* Bottom */) {
+                            newX -= dy * sr * 0.5;
+                            newY += dy * cr * 0.5;
                             transform.scale.y = oldTransform.scale.y + sy;
                         }
+
                         if (this.handle === 16 /* Middle */) {
                             transform.translate.x += e.deltaX;
                             transform.translate.y += e.deltaY;
+                        } else {
+                            transform.translate.x = newX;
+                            transform.translate.y = newY;
                         }
+
                         this.canUse = this.handle !== 0 /* None */;
                         this.drawResize();
                     }
@@ -1633,6 +1671,7 @@ var LayoutEditor;
                     this.shape = g_shapeList.getShapeInXY(e.x, e.y);
 
                     if (this.shape) {
+                        g_grid.rebuildTabs();
                         this.moveShape = this.shape.copy();
                         this.moveShape.style = g_selectStyle;
                         this.deltaX = 0;

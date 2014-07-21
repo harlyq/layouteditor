@@ -11,11 +11,15 @@ var LayoutEditor;
     "use strict";
 
     var EPSILON = 0.001;
+
     var g_canvas = null;
     var g_ctx = null;
-    var g_div = null;
     var g_toolCanvas = null;
     var g_toolCtx = null;
+    var g_propertyCtx = null;
+    var g_propertyCanvas = null;
+    var g_interactionCanvas = null;
+
     var g_inputText = null;
 
     function assert(cond) {
@@ -219,8 +223,8 @@ var LayoutEditor;
             this.fillStyle = "none";
             this.lineWidth = 1;
             this.lineDash = [];
-            this.textAlign = "right";
-            this.textBaseline = "bottom";
+            this.textAlign = "center";
+            this.textBaseline = "middle";
             this.fontSize = 20;
             this.fontFamily = "arial";
             this.fontWeight = "normal";
@@ -249,12 +253,19 @@ var LayoutEditor;
     var g_drawStyle = new Style();
     var g_selectStyle = new Style();
     var g_snapStyle = new Style();
+    var g_propertyStyle = new Style();
+
     g_defaultStyle.fillStyle = "white";
     g_drawStyle.strokeStyle = "red";
     g_drawStyle.lineDash = [2, 2];
     g_selectStyle.strokeStyle = "blue";
     g_selectStyle.lineDash = [5, 5];
     g_snapStyle.strokeStyle = "red";
+    g_propertyStyle.strokeStyle = "none";
+    g_propertyStyle.fillStyle = "#c0c0c0";
+    g_propertyStyle.textBaseline = "top";
+    g_propertyStyle.textAlign = "left";
+    g_propertyStyle.fontSize = 12;
 
     var g_style = g_defaultStyle;
 
@@ -594,7 +605,6 @@ var LayoutEditor;
             _super.call(this);
             this.w = w;
             this.h = h;
-            this.text = "got to get\nmy red rags on\ndo dah";
         }
         RectShape.prototype.buildPath = function (ctx) {
             var transform = this.transform;
@@ -1123,11 +1133,15 @@ var LayoutEditor;
         ShapeCommand.prototype.redo = function () {
             g_shapeList.addShape(this.shape);
             g_shapeList.requestDraw();
+
+            g_propertyPanel.setObject(this.shape);
+            g_propertyPanel.requestDraw();
         };
 
         ShapeCommand.prototype.undo = function () {
             g_shapeList.removeShape(this.shape);
             g_shapeList.requestDraw();
+            // what do we set the property panel to display?
         };
         return ShapeCommand;
     })();
@@ -1864,6 +1878,116 @@ var LayoutEditor;
     })();
 
     //------------------------------
+    var PropertyItem = (function () {
+        function PropertyItem(name, type) {
+            this.name = name;
+            this.type = type;
+        }
+        return PropertyItem;
+    })();
+
+    var PropertyList = (function () {
+        function PropertyList(isA) {
+            this.isA = isA;
+            this.items = [];
+        }
+        return PropertyList;
+    })();
+    var g_shapePropertyList = new PropertyList(function (obj) {
+        return obj instanceof Shape;
+    });
+    g_shapePropertyList.items.push(new PropertyItem("name", "string"));
+
+    // g_shapePropertyList.items.push(new PropertyItem("cx", "number"))
+    // g_shapePropertyList.items.push(new PropertyItem("cy", "number"))
+    var PropertyPanel = (function () {
+        function PropertyPanel(width) {
+            if (typeof width === "undefined") { width = 100; }
+            this.width = width;
+            this.propertyLists = [];
+            this.nameWidth = 0;
+            this.object = null;
+            this.nameWidth = width * 0.5;
+        }
+        PropertyPanel.prototype.setObject = function (obj) {
+            this.object = obj;
+        };
+
+        PropertyPanel.prototype.addPropertyList = function (propertyList) {
+            this.propertyLists.push(propertyList);
+            this.requestDraw();
+        };
+
+        PropertyPanel.prototype.getPropertyList = function (obj) {
+            var propertyList = null;
+            for (var i = 0; i < this.propertyLists.length; ++i) {
+                if (this.propertyLists[i].isA(obj))
+                    return this.propertyLists[i];
+            }
+        };
+
+        PropertyPanel.prototype.draw = function (ctx) {
+            if (this.object === null)
+                return;
+
+            g_propertyStyle.draw(ctx);
+
+            var propertyList = this.getPropertyList(this.object);
+
+            var x = g_propertyCanvas.width - this.width;
+            var y = 0;
+            var dy = g_propertyStyle.fontSize;
+
+            ctx.fillRect(x, y, this.width, g_propertyCanvas.height);
+
+            if (ctx.fillStyle !== g_propertyStyle.fontStyle)
+                ctx.fillStyle = g_propertyStyle.fontStyle;
+
+            // property names
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, 0, this.nameWidth, g_propertyCanvas.height);
+            ctx.clip();
+
+            for (var i = 0; i < propertyList.items.length; ++i) {
+                var propItem = propertyList.items[i];
+                var value = this.object[propItem.name];
+
+                ctx.fillText(propItem.name, x, y);
+                y += dy;
+            }
+            ctx.restore();
+
+            // values
+            y = 0;
+            x = g_propertyCanvas.width - this.nameWidth;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, this.width - this.nameWidth, g_propertyCanvas.height);
+            ctx.clip();
+
+            for (var i = 0; i < propertyList.items.length; ++i) {
+                var propItem = propertyList.items[i];
+                var value = this.object[propItem.name];
+
+                ctx.fillText(value, x, y);
+                y += dy;
+            }
+            ctx.restore();
+        };
+
+        PropertyPanel.prototype.requestDraw = function () {
+            var self = this;
+            requestAnimationFrame(function () {
+                self.draw(g_propertyCtx);
+            });
+        };
+        return PropertyPanel;
+    })();
+    var g_propertyPanel = new PropertyPanel();
+
+    //------------------------------
     function toolButtonClick(e) {
         setTool(e.target.id);
     }
@@ -1893,9 +2017,12 @@ var LayoutEditor;
     window.addEventListener("load", function () {
         g_canvas = document.getElementById("layoutbase");
         g_toolCanvas = document.getElementById("layouttool");
+        g_propertyCanvas = document.getElementById("property");
+        g_interactionCanvas = document.getElementById("interaction");
 
         g_ctx = g_canvas.getContext("2d");
         g_toolCtx = g_toolCanvas.getContext("2d");
+        g_propertyCtx = g_propertyCanvas.getContext("2d");
 
         var toolElems = document.querySelectorAll(".tool");
         for (var i = 0; i < toolElems.length; ++i) {
@@ -1913,9 +2040,11 @@ var LayoutEditor;
         document.getElementById("load").addEventListener("click", load);
         g_inputText = document.getElementById("inputText");
 
+        g_propertyPanel.addPropertyList(g_shapePropertyList);
+
         setTool("rectTool");
 
-        var watchCanvas = new InteractionHelper.Watch(g_toolCanvas, function (e) {
+        var watchCanvas = new InteractionHelper.Watch(g_interactionCanvas, function (e) {
             g_panZoom.x = e.x;
             g_panZoom.y = e.y;
             g_panZoom.deltaX = e.deltaX;

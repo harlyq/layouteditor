@@ -5,11 +5,15 @@ module LayoutEditor {
     "use strict";
 
     var EPSILON = 0.001;
+
     var g_canvas = null;
     var g_ctx = null;
-    var g_div = null;
     var g_toolCanvas = null;
     var g_toolCtx = null;
+    var g_propertyCtx = null;
+    var g_propertyCanvas = null;
+    var g_interactionCanvas = null;
+
     var g_inputText = null;
 
     function assert(cond: boolean) {
@@ -204,8 +208,8 @@ module LayoutEditor {
         fillStyle: string = "none";
         lineWidth: number = 1;
         lineDash: number[] = [];
-        textAlign: string = "right";
-        textBaseline: string = "bottom";
+        textAlign: string = "center";
+        textBaseline: string = "middle";
         fontSize: number = 20;
         fontFamily: string = "arial";
         fontWeight: string = "normal";
@@ -233,12 +237,19 @@ module LayoutEditor {
     var g_drawStyle: Style = new Style();
     var g_selectStyle: Style = new Style();
     var g_snapStyle: Style = new Style();
+    var g_propertyStyle: Style = new Style();
+
     g_defaultStyle.fillStyle = "white";
     g_drawStyle.strokeStyle = "red";
     g_drawStyle.lineDash = [2, 2];
     g_selectStyle.strokeStyle = "blue";
     g_selectStyle.lineDash = [5, 5];
     g_snapStyle.strokeStyle = "red";
+    g_propertyStyle.strokeStyle = "none";
+    g_propertyStyle.fillStyle = "#c0c0c0";
+    g_propertyStyle.textBaseline = "top";
+    g_propertyStyle.textAlign = "left";
+    g_propertyStyle.fontSize = 12;
 
     var g_style: Style = g_defaultStyle;
 
@@ -460,8 +471,8 @@ module LayoutEditor {
                     textWidth = lineWidth;
             }
 
-            var hh: number = oabb.hh;   // already scaled
-            var hw: number = oabb.hw;   // already scaled
+            var hh: number = oabb.hh; // already scaled
+            var hw: number = oabb.hw; // already scaled
             var x: number = 0;
             var y: number = 0;
             switch (this.style.textBaseline) {
@@ -584,8 +595,6 @@ module LayoutEditor {
     }
 
     class RectShape extends Shape {
-        text: string = "got to get\nmy red rags on\ndo dah";
-
         constructor(public w: number, public h: number) {
             super();
         }
@@ -1127,11 +1136,16 @@ module LayoutEditor {
         redo() {
             g_shapeList.addShape(this.shape);
             g_shapeList.requestDraw();
+
+            g_propertyPanel.setObject(this.shape);
+            g_propertyPanel.requestDraw();
         }
 
         undo() {
             g_shapeList.removeShape(this.shape);
             g_shapeList.requestDraw();
+
+            // what do we set the property panel to display?
         }
     }
 
@@ -1539,8 +1553,8 @@ module LayoutEditor {
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
                         var dx = (localPos.x - this.startLocalPos.x);
                         var dy = (localPos.y - this.startLocalPos.y);
-                        var sx = dx * oldTransform.scale.x / (oldOABB.hw * 2);  // unscaled delta
-                        var sy = dy * oldTransform.scale.y / (oldOABB.hh * 2);  // unscaled delta
+                        var sx = dx * oldTransform.scale.x / (oldOABB.hw * 2); // unscaled delta
+                        var sy = dy * oldTransform.scale.y / (oldOABB.hh * 2); // unscaled delta
                         var cr = Math.cos(oldOABB.rotate);
                         var sr = Math.sin(oldOABB.rotate);
 
@@ -1573,7 +1587,7 @@ module LayoutEditor {
                             transform.translate.x = newX;
                             transform.translate.y = newY;
                         }
-                        
+
                         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
                         this.drawResize();
                     }
@@ -1887,6 +1901,114 @@ module LayoutEditor {
     }
 
     //------------------------------
+    class PropertyItem {
+        constructor(public name: string, public type: string) {
+
+        }
+    }
+
+    class PropertyList {
+        items: PropertyItem[] = [];
+
+        constructor(public isA: (obj: any) => boolean) {
+
+        }
+    }
+    var g_shapePropertyList: PropertyList = new PropertyList(function(obj: any) {
+        return obj instanceof Shape;
+    });
+    g_shapePropertyList.items.push(new PropertyItem("name", "string"));
+    // g_shapePropertyList.items.push(new PropertyItem("cx", "number"))
+    // g_shapePropertyList.items.push(new PropertyItem("cy", "number"))
+
+    class PropertyPanel {
+        propertyLists: PropertyList[] = [];
+        private nameWidth: number = 0;
+        object: any = null;
+
+        constructor(public width: number = 100) {
+            this.nameWidth = width * 0.5;
+        }
+
+        setObject(obj: any) {
+            this.object = obj;
+        }
+
+        addPropertyList(propertyList: PropertyList) {
+            this.propertyLists.push(propertyList);
+            this.requestDraw();
+        }
+
+        getPropertyList(obj: any) {
+            var propertyList: PropertyList = null;
+            for (var i = 0; i < this.propertyLists.length; ++i) {
+                if (this.propertyLists[i].isA(obj))
+                    return this.propertyLists[i];
+            }
+
+        }
+
+        draw(ctx) {
+            if (this.object === null)
+                return;
+
+            g_propertyStyle.draw(ctx);
+
+            var propertyList = this.getPropertyList(this.object);
+
+            var x: number = g_propertyCanvas.width - this.width;
+            var y: number = 0;
+            var dy: number = g_propertyStyle.fontSize;
+
+            ctx.fillRect(x, y, this.width, g_propertyCanvas.height);
+
+            if (ctx.fillStyle !== g_propertyStyle.fontStyle)
+                ctx.fillStyle = g_propertyStyle.fontStyle;
+
+            // property names
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, 0, this.nameWidth, g_propertyCanvas.height);
+            ctx.clip();
+
+            for (var i = 0; i < propertyList.items.length; ++i) {
+                var propItem: PropertyItem = propertyList.items[i];
+                var value = this.object[propItem.name];
+
+                ctx.fillText(propItem.name, x, y);
+                y += dy;
+            }
+            ctx.restore();
+
+            // values
+            y = 0;
+            x = g_propertyCanvas.width - this.nameWidth;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, this.width - this.nameWidth, g_propertyCanvas.height);
+            ctx.clip();
+
+            for (var i = 0; i < propertyList.items.length; ++i) {
+                var propItem: PropertyItem = propertyList.items[i];
+                var value = this.object[propItem.name];
+
+                ctx.fillText(value, x, y);
+                y += dy;
+            }
+            ctx.restore();
+        }
+
+        requestDraw() {
+            var self = this;
+            requestAnimationFrame(function() {
+                self.draw(g_propertyCtx);
+            });
+        }
+    }
+    var g_propertyPanel: PropertyPanel = new PropertyPanel();
+
+    //------------------------------
     function toolButtonClick(e) {
         setTool(e.target.id);
     }
@@ -1916,9 +2038,12 @@ module LayoutEditor {
     window.addEventListener("load", function() {
         g_canvas = document.getElementById("layoutbase");
         g_toolCanvas = document.getElementById("layouttool");
+        g_propertyCanvas = document.getElementById("property");
+        g_interactionCanvas = document.getElementById("interaction");
 
         g_ctx = g_canvas.getContext("2d");
         g_toolCtx = g_toolCanvas.getContext("2d");
+        g_propertyCtx = g_propertyCanvas.getContext("2d");
 
         var toolElems = document.querySelectorAll(".tool");
         for (var i: number = 0; i < toolElems.length; ++i) {
@@ -1936,9 +2061,11 @@ module LayoutEditor {
         document.getElementById("load").addEventListener("click", load);
         g_inputText = document.getElementById("inputText");
 
+        g_propertyPanel.addPropertyList(g_shapePropertyList);
+
         setTool("rectTool");
 
-        var watchCanvas = new InteractionHelper.Watch(g_toolCanvas, function(e: InteractionHelper.Event) {
+        var watchCanvas = new InteractionHelper.Watch(g_interactionCanvas, function(e: InteractionHelper.Event) {
             g_panZoom.x = e.x;
             g_panZoom.y = e.y;
             g_panZoom.deltaX = e.deltaX;

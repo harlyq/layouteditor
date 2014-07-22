@@ -3,6 +3,8 @@ var gulp = require('gulp');
 var tsc = require('gulp-typescript-compiler');
 var uglify = require('gulp-uglify');
 var less = require('gulp-less');
+var concat = require('gulp-concat');
+var run = require('gulp-run');
 
 gulp.task('less', function() {
     return gulp
@@ -12,19 +14,13 @@ gulp.task('less', function() {
 });
 
 gulp.task('typescript', function() {
-    return gulp
-        .src('src/*.ts')
-        .pipe(tsc({
-            module: '',
-            sourcemap: false,
-            logErrors: true
-        }))
-        .pipe(gulp.dest('dist'));
+    run('tsc.cmd --out dist/layouteditor.js src/layouteditor.ts').exec();
 });
 
 gulp.task('typescript_final', function() {
     return gulp
         .src('src/*.ts')
+        .pipe(concat('layout.ts'))
         .pipe(tsc({
             module: '',
             sourcemap: false,

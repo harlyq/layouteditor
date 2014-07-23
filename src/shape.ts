@@ -152,6 +152,10 @@ module LayoutEditor {
         static uniqueID: number = 0;
 
         constructor() {
+            this.makeUnique();
+        }
+
+        makeUnique() {
             this.name = "Shape" + Shape.uniqueID++;
         }
 
@@ -569,102 +573,81 @@ module LayoutEditor {
     //------------------------------
     export class ShapeList {
         shapes: Shape[] = [];
-        selectedShapes: Shape[] = [];
-        selectedStyle: Style = new Style();
+        deletedShapes: Shape[] = [];
         private hitCtx;
 
         constructor() {
             this.hitCtx = document.createElement("canvas").getContext("2d");
-
-            this.selectedStyle.strokeStyle = "blue";
-            this.selectedStyle.fillStyle = "none";
-            this.selectedStyle.lineWidth = 2;
-            this.selectedStyle.lineDash = [5, 5];
         }
 
         reset() {
             this.shapes.length = 0;
-            this.selectedShapes.length = 0;
+            this.deletedShapes.length = 0;
+        }
+
+        addShapes(shapes: Shape[]) {
+            for (var i: number = 0; i < shapes.length; ++i)
+                this.addShape(shapes[i]);
+        }
+
+        removeShapes(shapes: Shape[]) {
+            for (var i: number = 0; i < shapes.length; ++i)
+                this.removeShape(shapes[i]);
         }
 
         addShape(shape: Shape) {
             shape.isDeleted = false;
-            this.shapes.push(shape);
+
+            // add the shape if not already present
+            var shapeIndex: number = this.shapes.indexOf(shape);
+            if (shapeIndex === -1)
+                this.shapes.push(shape);
+
+            // undelete the shape if necessary
+            var deletedIndex: number = this.deletedShapes.indexOf(shape);
+            if (deletedIndex !== -1)
+                this.deletedShapes.splice(deletedIndex, 1);
+
+            g_draw(this);
         }
 
         removeShape(shape: Shape) {
             shape.isDeleted = true;
+
+            var shapeIndex: number = this.shapes.indexOf(shape);
+            if (shapeIndex !== -1)
+                this.shapes.splice(shapeIndex, 1);
+
+            var deletedIndex: number = this.deletedShapes.indexOf(shape);
+            if (deletedIndex === -1)
+                this.deletedShapes.push(shape);
+
+            g_selectList.removeSelected(shape); // TODO should we remove this dependency?
+            g_draw(this);
         }
 
-        toggleSelected(shapes: Shape[]) {
-            for (var i: number = 0; i < shapes.length; ++i) {
-                var shape: Shape = shapes[i];
-                var index: number = this.selectedShapes.indexOf(shape);
-                if (index === -1)
-                    this.selectedShapes.push(shape);
-                else
-                    this.selectedShapes.splice(index, 1);
-            }
-        }
+        duplicateShape(shape: Shape): Shape {
+            var newShape: Shape = shape.copy();
+            newShape.makeUnique();
 
-        setSelectedShapes(shapes: Shape[]) {
-            this.selectedShapes = shapes.slice(); // copy
-        }
-
-        getSelectedShapes(): Shape[] {
-            return this.selectedShapes;
-        }
-
-        clearSelectedShapes() {
-            this.selectedShapes.length = 0;
-        }
-
-        requestDraw(ctx) {
-            var self = this;
-            requestAnimationFrame(function() {
-                self.draw(ctx);
-            })
-        }
-
-        requestDrawSelect(ctx) {
-            var self = this;
-            requestAnimationFrame(function() {
-                self.drawSelect(ctx);
-            })
+            this.addShape(newShape);
+            return newShape;
         }
 
         draw(ctx) {
-            this.clear(ctx);
             // normal shapes
             var numShapes: number = this.shapes.length;
             for (var i: number = 0; i < numShapes; ++i) {
                 var shape: Shape = this.shapes[i];
-                if (!shape.isDeleted)
-                    shape.draw(ctx);
+                shape.draw(ctx);
             }
-        }
-
-        drawSelect(ctx) {
-            this.selectedStyle.draw(ctx);
-            this.clear(ctx);
-            // selected shapes
-            var numSelectedShapes: number = this.selectedShapes.length;
-            for (var i: number = 0; i < numSelectedShapes; ++i) {
-                var shape: Shape = this.selectedShapes[i];
-                Helper.assert(!shape.isDeleted);
-                shape.drawSelect(ctx);
-            }
-        }
-
-        clear(ctx) {
-            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         }
 
         getShapeInXY(x: number, y: number): Shape {
             // in reverse as the last shapes are drawn on top
             for (var i: number = this.shapes.length - 1; i >= 0; --i) {
                 var shape: Shape = this.shapes[i];
-                if (!shape.isDeleted && shape.isInsideXY(this.hitCtx, x, y))
+                if (shape.isInsideXY(this.hitCtx, x, y))
                     return shape;
             }
 
@@ -676,7 +659,7 @@ module LayoutEditor {
 
             for (var i: number = this.shapes.length - 1; i >= 0; --i) {
                 var shape: Shape = this.shapes[i];
-                if (!shape.isDeleted && shape.isOverlapBounds(bounds)) {
+                if (shape.isOverlapBounds(bounds)) {
                     shape.isOverlapBounds(bounds);
                     shapes.push(shape);
                 }
@@ -702,9 +685,7 @@ module LayoutEditor {
             };
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 var shape: Shape = this.shapes[i];
-                if (!shape.isDeleted) {
-                    obj.shapes.push(shape.saveData());
-                }
+                obj.shapes.push(shape.saveData());
             }
             return obj;
         }
@@ -720,6 +701,97 @@ module LayoutEditor {
             }
         }
     }
+
+    //------------------------------
+    export class SelectList {
+        selectedShapes: Shape[] = [];
+        selectedStyle: Style = new Style();
+
+        constructor() {
+            this.selectedStyle.strokeStyle = "blue";
+            this.selectedStyle.fillStyle = "none";
+            this.selectedStyle.lineWidth = 2;
+            this.selectedStyle.lineDash = [5, 5];
+        }
+
+        reset() {
+            this.selectedShapes.length = 0;
+        }
+
+        // removes the shape from the selected list
+        removeSelected(shape: Shape) {
+            var index: number = this.selectedShapes.indexOf(shape);
+            if (index !== -1) {
+                this.selectedShapes.splice(index, 1);
+                g_draw(this);
+            }
+        }
+
+        toggleSelected(shapes: Shape[]) {
+            for (var i: number = 0; i < shapes.length; ++i) {
+                var shape: Shape = shapes[i];
+                var index: number = this.selectedShapes.indexOf(shape);
+                if (index === -1)
+                    this.selectedShapes.push(shape);
+                else
+                    this.selectedShapes.splice(index, 1);
+            }
+            g_draw(this);
+        }
+
+        setSelectedShapes(shapes: Shape[]) {
+            this.selectedShapes = shapes.slice(); // copy
+            g_draw(this);
+        }
+
+        // returns a copy
+        getSelectedShapes(): Shape[] {
+            return this.selectedShapes.slice();
+        }
+
+        clearSelectedShapes() {
+            this.selectedShapes.length = 0;
+            g_draw(this);
+        }
+
+        // deletes all of the selected shapes
+        deleteSelected() {
+            for (var i: number = 0; i < this.selectedShapes.length; ++i) {
+                g_shapeList.removeShape(this.selectedShapes[i]);
+            }
+            this.selectedShapes.length = 0;
+
+            g_draw(this);
+        }
+
+        // duplicates all of the selected shapes
+        duplicateSelected(): Shape[] {
+            var copyShapes: Shape[] = [];
+            for (var i: number = 0; i < this.selectedShapes.length; ++i) {
+                var copyShape: Shape = g_shapeList.duplicateShape(this.selectedShapes[i]);
+                copyShape.transform.translate.x += 20;
+                copyShape.calculateBounds();
+                copyShapes.push(copyShape);
+            }
+
+            g_draw(this);
+            return copyShapes;
+        }
+
+        draw(ctx) {
+            this.selectedStyle.draw(ctx);
+
+            var numSelectedShapes: number = this.selectedShapes.length;
+            for (var i: number = 0; i < numSelectedShapes; ++i) {
+                var shape: Shape = this.selectedShapes[i];
+                Helper.assert(!shape.isDeleted);
+                shape.drawSelect(ctx);
+            }
+        }
+    }
+
+    export
+    var g_selectList: SelectList = new SelectList();
     export
     var g_shapeList: ShapeList = new ShapeList();
 

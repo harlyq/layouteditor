@@ -6,6 +6,7 @@ module LayoutEditor {
 
     var g_tool: Tool = null;
     var g_propertyTool: Tool = null;
+    var g_toolCtx: any = null;
 
     function setTool(toolName: string) {
         var oldTool = g_tool;
@@ -44,6 +45,9 @@ module LayoutEditor {
         }
 
         if (g_tool !== oldTool) {
+            if (oldTool)
+                oldTool.onChangeFocus(toolName);
+
             console.log("Changed tool to: " + toolName);
         }
     }
@@ -73,9 +77,14 @@ module LayoutEditor {
     function reset() {
         g_commandList.reset();
         g_shapeList.reset();
-        g_shapeList.requestDraw(g_drawCtx);
         g_panZoom.reset();
         g_styleList.reset();
+        g_selectList.reset();
+
+        g_draw(g_shapeList);
+        g_draw(g_screen);
+        g_draw(g_panZoom);
+        g_draw(g_selectList);
     }
 
     var focus = "";
@@ -86,6 +95,57 @@ module LayoutEditor {
 
         focus = name;
         g_tool.onChangeFocus(name); // TODO make more general
+    }
+
+    var requestFrame: boolean = false;
+    var drawList: any[] = [];
+
+    function draw(obj) {
+        if (drawList.indexOf(obj) === -1)
+            drawList.push(obj);
+
+        if (!requestFrame) {
+            requestAnimationFrame(renderFrame);
+        }
+        requestFrame = true;
+    }
+
+    function clear(ctx) {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
+
+    function renderFrame() {
+        if (drawList.indexOf(g_screen) !== -1 || drawList.indexOf(g_shapeList) !== -1 || drawList.indexOf(g_panZoom) !== -1) {
+            clear(g_drawCtx);
+            g_screen.draw(g_drawCtx);
+            g_shapeList.draw(g_drawCtx);
+        }
+
+        if (drawList.indexOf(g_selectList) !== -1 || drawList.indexOf(g_panZoom) !== -1 || drawList.indexOf(g_tool) !== -1) {
+            clear(g_toolCtx);
+            g_selectList.draw(g_toolCtx);
+            g_tool.draw(g_toolCtx);
+        }
+
+        if (drawList.indexOf(g_propertyPanel) !== -1) {
+            clear(g_propertyCtx);
+            g_propertyPanel.draw(g_propertyCtx);
+        }
+
+        drawList.length = 0;
+        requestFrame = false;
+    }
+
+    function duplicateSelect() {
+        g_commandList.addCommand(new DuplicateSelectedCommand());
+    }
+
+    function deleteSelect() {
+        g_commandList.addCommand(new DeleteSelectedCommand());
+    }
+
+    function changePlatform(e) {
+        g_screen.setPlatform(parseInt(e.target.value));
     }
 
     interface PanelInfo {
@@ -103,6 +163,8 @@ module LayoutEditor {
         g_toolCtx = toolCanvas.getContext("2d");
         g_propertyCtx = propertyCanvas.getContext("2d");
 
+        g_draw = draw;
+
         var toolElems = document.querySelectorAll(".tool");
         for (var i: number = 0; i < toolElems.length; ++i) {
             toolElems[i].addEventListener("click", toolButtonClick);
@@ -115,15 +177,27 @@ module LayoutEditor {
             g_commandList.redo();
         });
         document.getElementById("clear").addEventListener("click", reset);
-        document.getElementById("save").addEventListener("click", saveData);
         document.getElementById("load").addEventListener("click", loadData);
+        document.getElementById("save").addEventListener("click", saveData);
+        document.getElementById("duplicate").addEventListener("click", duplicateSelect);
+        document.getElementById("delete").addEventListener("click", deleteSelect);
+
+        var platformSelect = < HTMLSelectElement > document.getElementById("platform");
+        platformSelect.addEventListener("change", changePlatform);
+        platformSelect.value = g_screen.getPlatform().toString();
 
         g_inputText = document.getElementById("inputText");
         g_inputMultiLine = document.getElementById("inputMultiLine");
 
         g_propertyTool = new PropertyTool();
 
+        // provide a slide border so we can see the screen box
+        g_panZoom.pan.x = -10;
+        g_panZoom.pan.y = -10;
+
         setTool("rectTool");
+
+        reset();
 
         var watchCanvas = new InteractionHelper.Watch(interactionCanvas, function(e: InteractionHelper.Event) {
             g_panZoom.x = e.x;

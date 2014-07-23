@@ -43,11 +43,11 @@ module LayoutEditor {
 
         setObject(obj: any) {
             this.object = obj;
+            g_draw(this); // always redraw
         }
 
         addPropertyList(propertyList: PropertyList) {
             this.propertyLists.push(propertyList);
-            this.requestDraw();
         }
 
         getPropertyList(obj: any) {
@@ -171,14 +171,6 @@ module LayoutEditor {
 
             ctx.restore();
         }
-
-        requestDraw() {
-            var self = this;
-            requestAnimationFrame(function() {
-                self.draw(g_propertyCtx);
-            });
-        }
-
     }
 
     export module PropertyPanel {

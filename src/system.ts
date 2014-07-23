@@ -13,4 +13,6 @@ module LayoutEditor {
         y: number;
     }
 
+    export
+    var g_draw: (ctx) => void = null;
 }

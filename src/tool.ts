@@ -4,22 +4,21 @@ module LayoutEditor {
     export interface Tool {
         onPointer(e: InteractionHelper.Event): boolean;
         onChangeFocus(focus: string);
+        draw(ctx);
     }
 
     export class DrawTool implements Tool {
         public shape: Shape = null;
         public canUse: boolean = false;
+        public isDrawing: boolean = false;
 
         constructor() {}
 
-        public clear() {
-            g_toolCtx.clearRect(0, 0, g_toolCtx.canvas.width, g_toolCtx.canvas.height);
-        }
-
-        public draw() {
-            this.clear();
-            this.shape.calculateBounds();
-            this.shape.draw(g_toolCtx);
+        public draw(ctx) {
+            if (this.shape && this.isDrawing) {
+                this.shape.calculateBounds();
+                this.shape.draw(ctx);
+            }
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -51,7 +50,7 @@ module LayoutEditor {
                     var pos: XY = g_grid.snapXY(e.x, e.y);
                     this.x1 = pos.x;
                     this.y1 = pos.y;
-                    isHandled = true;
+                    this.isDrawing = true;
                     break;
 
                 case InteractionHelper.State.Move:
@@ -59,13 +58,10 @@ module LayoutEditor {
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    this.drawRect();
-
-                    isHandled = true;
+                    g_draw(this);
                     break;
 
                 case InteractionHelper.State.End:
-                    this.clear();
                     if (this.canUse) {
                         var newCommand = new RectCommand(
                             this.rectShape.transform.translate.x,
@@ -74,34 +70,39 @@ module LayoutEditor {
                             this.rectShape.h);
                         g_commandList.addCommand(newCommand);
                         this.canUse = false;
+                        g_draw(this);
                     }
 
+                    this.isDrawing = false;
                     isHandled = true;
                     break;
             }
-            return isHandled;
+            return isHandled || this.isDrawing;
         }
 
-        private drawRect() {
+        public draw(ctx) {
+            if (!this.isDrawing)
+                return;
+
             this.rectShape.fromRect(
                 Math.min(this.x1, this.x2),
                 Math.min(this.y1, this.y2),
                 Math.abs(this.x2 - this.x1),
                 Math.abs(this.y2 - this.y1));
 
-            this.draw();
+            super.draw(ctx);
 
             if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
-                g_toolCtx.save();
-                g_panZoom.transform(g_toolCtx);
-                g_toolCtx.beginPath();
-                g_snapStyle.draw(g_toolCtx);
-                g_toolCtx.moveTo(g_grid.snappedX, 0);
-                g_toolCtx.lineTo(g_grid.snappedX, 1000);
-                g_toolCtx.moveTo(0, g_grid.snappedY);
-                g_toolCtx.lineTo(1000, g_grid.snappedY);
-                g_toolCtx.stroke();
-                g_toolCtx.restore();
+                ctx.save();
+                g_panZoom.transform(ctx);
+                ctx.beginPath();
+                g_snapStyle.draw(ctx);
+                ctx.moveTo(g_grid.snappedX, 0);
+                ctx.lineTo(g_grid.snappedX, 1000);
+                ctx.moveTo(0, g_grid.snappedY);
+                ctx.lineTo(1000, g_grid.snappedY);
+                ctx.stroke();
+                ctx.restore();
             }
         }
     }
@@ -128,18 +129,16 @@ module LayoutEditor {
                     var pos: XY = g_grid.snapXY(e.x, e.y);
                     this.x1 = pos.x;
                     this.y1 = pos.y;
-                    isHandled = true;
+                    this.isDrawing = true;
                     break;
                 case InteractionHelper.State.Move:
                     var pos: XY = g_grid.snapXY(e.x, e.y);
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    this.drawEllipse();
-                    isHandled = true;
+                    g_draw(this);
                     break;
                 case InteractionHelper.State.End:
-                    this.clear();
                     if (this.canUse) {
                         var newCommand = new EllipseCommand(
                             this.ellipseShape.transform.translate.x,
@@ -148,33 +147,38 @@ module LayoutEditor {
                             this.ellipseShape.ry);
                         g_commandList.addCommand(newCommand);
                         this.canUse = false;
+                        g_draw(this);
                     }
+                    this.isDrawing = false;
                     isHandled = true;
                     break;
             }
 
-            return isHandled;
+            return isHandled || this.isDrawing;
         }
 
-        private drawEllipse() {
+        public draw(ctx) {
+            if (!this.isDrawing)
+                return;
+
             this.ellipseShape.fromRect(
                 Math.min(this.x1, this.x2),
                 Math.min(this.y1, this.y2),
                 Math.abs(this.x2 - this.x1),
                 Math.abs(this.y2 - this.y1));
-            this.draw();
+            super.draw(ctx);
 
             if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
-                g_toolCtx.save();
-                g_panZoom.transform(g_toolCtx);
-                g_toolCtx.beginPath();
-                g_snapStyle.draw(g_toolCtx);
-                g_toolCtx.moveTo(g_grid.snappedX, 0);
-                g_toolCtx.lineTo(g_grid.snappedX, 1000);
-                g_toolCtx.moveTo(0, g_grid.snappedY);
-                g_toolCtx.lineTo(1000, g_grid.snappedY);
-                g_toolCtx.stroke();
-                g_toolCtx.restore();
+                ctx.save();
+                g_panZoom.transform(ctx);
+                ctx.beginPath();
+                g_snapStyle.draw(ctx);
+                ctx.moveTo(g_grid.snappedX, 0);
+                ctx.lineTo(g_grid.snappedX, 1000);
+                ctx.moveTo(0, g_grid.snappedY);
+                ctx.lineTo(1000, g_grid.snappedY);
+                ctx.stroke();
+                ctx.restore();
             }
         }
     }
@@ -184,6 +188,7 @@ module LayoutEditor {
         private y1: number;
         private x2: number;
         private y2: number;
+        private isDrawing: boolean = false;
 
         constructor() {
             this.aabbShape.style = g_selectStyle;
@@ -199,43 +204,58 @@ module LayoutEditor {
                     this.aabbShape.x2 = e.x;
                     this.aabbShape.y2 = e.y;
                     this.aabbShape.calculateBounds();
-                    isHandled = true;
+                    this.isDrawing = true;
                     break;
                 case InteractionHelper.State.Move:
                     this.aabbShape.x2 = e.x;
                     this.aabbShape.y2 = e.y;
                     this.aabbShape.calculateBounds();
-                    this.drawSelect();
-                    isHandled = true;
+                    g_draw(this);
                     break;
                 case InteractionHelper.State.End:
-                    this.clear();
                     var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
                     if (shapes.length > 0)
                         g_commandList.addCommand(new SelectCommand(shapes));
+                    this.isDrawing = false;
+                    g_draw(this);
                     isHandled = true;
                     break;
             }
 
-            return isHandled;
+            return this.isDrawing || isHandled;
         }
 
         onChangeFocus(focus: string) {}
 
-        private clear() {
-            g_toolCtx.clearRect(0, 0, g_toolCtx.canvas.width, g_toolCtx.canvas.height);
-        }
+        public draw(ctx) {
+            if (!this.isDrawing)
+                return;
 
-        private drawSelect() {
-            this.clear();
+            this.aabbShape.draw(ctx);
 
-            this.aabbShape.draw(g_toolCtx);
-
-            g_shapeList.selectedStyle.draw(g_toolCtx);
+            g_selectList.selectedStyle.draw(ctx);
             var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
             for (var i = 0; i < shapes.length; ++i) {
-                shapes[i].drawSelect(g_toolCtx);
+                shapes[i].drawSelect(ctx);
             }
+        }
+    }
+
+    // TODO Should we be able to undo selection?????
+    export class SelectCommand implements Command {
+        selectedShapes: Shape[] = [];
+
+        constructor(public shapes: Shape[]) {
+            this.selectedShapes = g_selectList.getSelectedShapes().slice();
+        }
+
+        redo() {
+            g_selectList.setSelectedShapes(this.selectedShapes);
+            g_selectList.toggleSelected(this.shapes);
+        }
+
+        undo() {
+            g_selectList.setSelectedShapes(this.selectedShapes);
         }
     }
 
@@ -330,7 +350,7 @@ module LayoutEditor {
                         }
 
                         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
-                        this.drawResize();
+                        g_draw(this);
                         isHandled = true;
                     }
                     break;
@@ -339,27 +359,24 @@ module LayoutEditor {
                     if (this.shape && this.canUse) {
                         var newCommand = new TransformCommand(this.shape, this.resizeShape.transform);
                         g_commandList.addCommand(newCommand);
+                        g_draw(this);
                         isHandled = true;
                     }
-                    this.clear();
                     this.canUse = false;
                     this.shape = null;
                     break;
             }
 
-            return isHandled;
+            return isHandled || this.shape !== null;
         }
 
         onChangeFocus(focus: string) {}
 
-        private clear() {
-            g_toolCtx.clearRect(0, 0, g_toolCtx.canvas.width, g_toolCtx.canvas.height);
-        }
+        public draw(ctx) {
+            if (!this.shape)
+                return;
 
-        private drawResize() {
-            this.clear();
-
-            this.resizeShape.draw(g_toolCtx);
+            this.resizeShape.draw(ctx);
         }
     }
 
@@ -402,7 +419,7 @@ module LayoutEditor {
                         var newAngle = this.getAngle(e.x, e.y, this.pivot);
                         this.rotateShape.transform.rotate += newAngle - this.lastAngle;
                         this.lastAngle = newAngle;
-                        this.drawRotate();
+                        g_draw(this);
                         isHandled = true;
                     }
                     break;
@@ -411,29 +428,26 @@ module LayoutEditor {
                     if (this.rotateShape) {
                         var newCommand = new TransformCommand(this.shape, this.rotateShape.transform);
                         g_commandList.addCommand(newCommand);
+                        g_draw(this);
                         isHandled = true;
                     }
 
-                    this.clear();
                     this.rotateShape = null;
                     this.shape = null;
                     break;
             }
 
-            return isHandled;
+            return isHandled || this.rotateShape !== null;
         }
 
         onChangeFocus(focus: string) {}
 
-        private clear() {
-            g_toolCtx.clearRect(0, 0, g_toolCtx.canvas.width, g_toolCtx.canvas.height);
-        }
-
-        private drawRotate() {
-            this.clear();
+        public draw(ctx) {
+            if (!this.shape)
+                return;
 
             this.rotateShape.calculateBounds();
-            this.rotateShape.draw(g_toolCtx);
+            this.rotateShape.draw(ctx);
         }
 
         private getAngle(x: number, y: number, pivot: XY): number {
@@ -486,7 +500,7 @@ module LayoutEditor {
 
                         this.snapAABBToGrid();
                         this.canUse = true;
-                        this.drawMove();
+                        g_draw(this);
                         isHandled = true;
                     }
                     break;
@@ -495,6 +509,7 @@ module LayoutEditor {
                     if (this.shape && this.canUse) {
                         var newCommand = new TransformCommand(this.shape, this.moveShape.transform);
                         g_commandList.addCommand(newCommand);
+                        g_draw(this);
                         isHandled = true;
                     }
                     this.canUse = false;
@@ -502,35 +517,32 @@ module LayoutEditor {
                     break;
             }
 
-            return isHandled;
+            return isHandled || this.shape !== null;
         }
 
         onChangeFocus(focus: string) {}
 
-        private clear() {
-            g_toolCtx.clearRect(0, 0, g_toolCtx.canvas.width, g_toolCtx.canvas.height);
-        }
+        public draw(ctx) {
+            if (!this.shape)
+                return;
 
-        private drawMove() {
-            this.clear();
-
-            this.moveShape.draw(g_toolCtx);
-            g_toolCtx.strokeStyle = "orange";
-            this.moveShape.drawSelect(g_toolCtx);
-            g_toolCtx.strokeStyle = "violet";
-            this.moveShape.drawAABB(g_toolCtx);
+            this.moveShape.draw(ctx);
+            ctx.strokeStyle = "orange";
+            this.moveShape.drawSelect(ctx);
+            ctx.strokeStyle = "violet";
+            this.moveShape.drawAABB(ctx);
 
             if (this.snappedX > -1 || this.snappedY > -1) {
-                g_toolCtx.save();
-                g_panZoom.transform(g_toolCtx);
-                g_toolCtx.beginPath();
-                g_snapStyle.draw(g_toolCtx);
-                g_toolCtx.moveTo(this.snappedX, 0);
-                g_toolCtx.lineTo(this.snappedX, 1000);
-                g_toolCtx.moveTo(0, this.snappedY);
-                g_toolCtx.lineTo(1000, this.snappedY);
-                g_toolCtx.stroke();
-                g_toolCtx.restore();
+                ctx.save();
+                g_panZoom.transform(ctx);
+                ctx.beginPath();
+                g_snapStyle.draw(ctx);
+                ctx.moveTo(this.snappedX, 0);
+                ctx.lineTo(this.snappedX, 1000);
+                ctx.moveTo(0, this.snappedY);
+                ctx.lineTo(1000, this.snappedY);
+                ctx.stroke();
+                ctx.restore();
             }
         }
 
@@ -579,6 +591,8 @@ module LayoutEditor {
     }
 
     export class PanZoomTool implements Tool {
+        isDrawing: boolean = false;
+
         constructor() {
 
         }
@@ -588,37 +602,39 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
+                    this.isDrawing = true;
                     break;
 
                 case InteractionHelper.State.Move:
                     g_panZoom.pan.x += g_panZoom.deltaX;
                     g_panZoom.pan.y += g_panZoom.deltaY;
-                    this.drawPanZoom();
+                    g_draw(g_panZoom);
                     isHandled = true;
                     break;
 
                 case InteractionHelper.State.MouseWheel:
-                    var scale = (g_panZoom.deltaY > 0 ? 0.5 : 2);
+                    var scale = (g_panZoom.deltaY > 0 ? 1 / 1.15 : 1.15);
                     g_panZoom.pan.x += e.x * g_panZoom.zoom * (1 - scale);
                     g_panZoom.pan.y += e.y * g_panZoom.zoom * (1 - scale);
                     g_panZoom.zoom *= scale;
 
-                    this.drawPanZoom();
+                    g_draw(g_panZoom);
                     isHandled = true;
+
                     break;
 
                 case InteractionHelper.State.End:
+                    this.isDrawing = false;
+                    //g_draw(g_panZoom); not needed as we're not clearing anything
                     break;
             }
 
-            return isHandled;
+            return this.isDrawing || isHandled;
         }
 
         onChangeFocus(focus: string) {}
 
-        drawPanZoom() {
-            g_shapeList.requestDraw(g_drawCtx);
-        }
+        draw(ctx) {}
     }
 
     export class TextTool implements Tool {
@@ -641,6 +657,8 @@ module LayoutEditor {
                     this.shape = g_shapeList.getShapeInXY(e.x, e.y);
                     if (this.shape) {
                         this.editShape = this.shape.copy();
+                        //this.editShape.style = g_selectStyle; keep the same sgridtyle
+
                         var left: string = this.shape.oabb.cx + g_propertyCtx.canvas.offsetLeft + "px";
                         var top: string = this.shape.oabb.cy + g_propertyCtx.canvas.offsetTop + "px";
                         g_inputMultiLine.style.left = left;
@@ -658,7 +676,7 @@ module LayoutEditor {
                     }
             }
 
-            return isHandled;
+            return isHandled || this.shape !== null;
         }
 
         onChangeFocus(focus: string) {
@@ -672,11 +690,8 @@ module LayoutEditor {
                 g_commandList.addCommand(newCommand);
                 this.shape = null;
                 g_inputMultiLine.value = "";
+                g_draw(this);
             }
-        }
-
-        clear() {
-            g_toolCtx.clearRect(0, 0, g_toolCtx.canvas.width, g_toolCtx.canvas.height);
         }
 
         onInput(e) {
@@ -684,13 +699,14 @@ module LayoutEditor {
                 return;
 
             this.editShape.text = g_inputMultiLine.value;
-            this.drawPanZoom();
+            g_draw(this);
         }
 
-        drawPanZoom() {
-            this.clear();
+        public draw(ctx) {
+            if (!this.shape)
+                return;
 
-            this.editShape.draw(g_toolCtx);
+            this.editShape.draw(ctx);
         }
     }
 
@@ -714,12 +730,12 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    if (e.x < canvasWidth - panelWidth || e.x >= canvasWidth) {
+                    if (g_panZoom.x < canvasWidth - panelWidth || g_panZoom.x >= canvasWidth) {
                         this.edit(null);
                         break;
                     }
 
-                    var info: PropertyInfo = g_propertyPanel.getPropertyInfoXY(e.x, e.y);
+                    var info: PropertyInfo = g_propertyPanel.getPropertyInfoXY(g_panZoom.x, g_panZoom.y);
                     this.edit(info);
                     break;
             }
@@ -730,6 +746,8 @@ module LayoutEditor {
         onChangeFocus(name: string) {
 
         }
+
+        draw(ctx) {}
 
         private onInput(e) {
             if (this.editing) {
@@ -752,7 +770,7 @@ module LayoutEditor {
                     var newCommand: PropertyCommand = new PropertyCommand(this.editing, g_inputText.value);
                     g_commandList.addCommand(newCommand);
                 } else {
-                    g_propertyPanel.draw(g_propertyCtx);
+                    g_draw(g_propertyPanel);
                 }
             }
 
@@ -772,28 +790,6 @@ module LayoutEditor {
         }
     }
 
-    // TODO Should we be able to undo selection?????
-    export class SelectCommand implements Command {
-        selectedShapes: Shape[] = [];
-
-        constructor(public shapes: Shape[]) {
-            this.selectedShapes = g_shapeList.getSelectedShapes().slice();
-        }
-
-        redo() {
-            g_shapeList.setSelectedShapes(this.selectedShapes);
-            g_shapeList.toggleSelected(this.shapes);
-            g_shapeList.requestDrawSelect(g_toolCtx);
-        }
-
-        undo() {
-            g_shapeList.setSelectedShapes(this.selectedShapes);
-            g_shapeList.requestDrawSelect(g_toolCtx);
-        }
-    }
-
-    export
-    var g_toolCtx = null;
     export
     var g_inputText = null;
     export

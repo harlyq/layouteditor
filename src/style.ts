@@ -56,20 +56,13 @@ module LayoutEditor {
     var g_selectStyle: Style = new Style("select");
     export
     var g_snapStyle: Style = new Style("snap");
-    export
-    var g_propertyStyle: Style = new Style("property");
 
     g_drawStyle.strokeStyle = "red";
     g_drawStyle.lineDash = [2, 2];
     g_selectStyle.strokeStyle = "blue";
     g_selectStyle.lineDash = [5, 5];
+    g_selectStyle.fontStyle = "blue";
     g_snapStyle.strokeStyle = "red";
-    g_propertyStyle.strokeStyle = "none";
-    g_propertyStyle.fillStyle = "#c0c0c0";
-    g_propertyStyle.textBaseline = "top";
-    g_propertyStyle.textAlign = "left";
-    g_propertyStyle.fontSize = 12;
-    g_propertyStyle.fontSpacing = 1.1;
 
     export
     var g_style: Style = null;

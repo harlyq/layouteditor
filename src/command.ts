@@ -49,15 +49,12 @@ module LayoutEditor {
 
         redo() {
             g_shapeList.addShape(this.shape);
-            g_shapeList.requestDraw(g_drawCtx);
-
+            g_selectList.setSelectedShapes([this.shape]);
             g_propertyPanel.setObject(this.shape);
-            g_propertyPanel.requestDraw();
         }
 
         undo() {
             g_shapeList.removeShape(this.shape);
-            g_shapeList.requestDraw(g_drawCtx);
 
             // what do we set the property panel to display?
         }
@@ -89,6 +86,7 @@ module LayoutEditor {
         }
     }
 
+    // handles MoveCommand, RotateCommand, ResizeCommand
     export class TransformCommand implements Command {
         originalTransform: Transform = new Transform();
 
@@ -99,13 +97,15 @@ module LayoutEditor {
         redo() {
             Helper.extend(this.shape.transform, this.transform);
             this.shape.calculateBounds();
-            g_shapeList.requestDraw(g_drawCtx);
+            g_draw(g_shapeList);
+            g_draw(g_selectList);
         }
 
         undo() {
             Helper.extend(this.shape.transform, this.originalTransform);
             this.shape.calculateBounds();
-            g_shapeList.requestDraw(g_drawCtx);
+            g_draw(g_shapeList);
+            g_draw(g_selectList);
         }
     }
 
@@ -118,12 +118,12 @@ module LayoutEditor {
 
         redo() {
             this.shape.text = this.text;
-            g_shapeList.requestDraw(g_drawCtx);
+            g_draw(g_shapeList);
         }
 
         undo() {
             this.shape.text = this.oldText;
-            g_shapeList.requestDraw(g_drawCtx);
+            g_draw(g_shapeList);
         }
     }
 
@@ -136,14 +136,10 @@ module LayoutEditor {
 
         redo() {
             this.setValue(this.value);
-            g_shapeList.requestDraw(g_drawCtx);
-            g_propertyPanel.requestDraw();
         }
 
         undo() {
             this.setValue(this.oldValue);
-            g_shapeList.requestDraw(g_drawCtx);
-            g_propertyPanel.requestDraw();
         }
 
         setValue(value: string) {
@@ -155,6 +151,50 @@ module LayoutEditor {
                 propertyInfo.object[propertyInfo.name] = value;
             else
                 Helper.assert(false); // can't handle this type
+
+            g_draw(g_shapeList);
+            g_draw(g_propertyPanel);
+        }
+    }
+
+    export class DuplicateSelectedCommand implements Command {
+        oldSelected: Shape[];
+        duplicatedShapes: Shape[];
+
+        constructor() {
+            this.oldSelected = g_selectList.getSelectedShapes();
+        }
+
+        redo() {
+            if (!this.duplicatedShapes) {
+                this.duplicatedShapes = g_selectList.duplicateSelected();
+            } else {
+                // re-add the shapes from the previous undo - don't re-duplicate them
+                g_shapeList.addShapes(this.duplicatedShapes);
+            }
+            g_selectList.setSelectedShapes(this.duplicatedShapes);
+        }
+
+        undo() {
+            g_selectList.deleteSelected();
+            g_selectList.setSelectedShapes(this.oldSelected);
+        }
+    }
+
+    export class DeleteSelectedCommand implements Command {
+        oldSelected: Shape[];
+
+        constructor() {
+            this.oldSelected = g_selectList.getSelectedShapes();
+        }
+
+        redo() {
+            g_selectList.deleteSelected();
+        }
+
+        undo() {
+            g_shapeList.addShapes(this.oldSelected);
+            g_selectList.setSelectedShapes(this.oldSelected);
         }
     }
 

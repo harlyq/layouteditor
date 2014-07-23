@@ -357,7 +357,7 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand(this.shape, this.resizeShape.transform);
+                        var newCommand = new TransformCommand([this.shape], [this.resizeShape.transform]);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
@@ -426,7 +426,7 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.rotateShape) {
-                        var newCommand = new TransformCommand(this.shape, this.rotateShape.transform);
+                        var newCommand = new TransformCommand([this.shape], [this.rotateShape.transform]);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
@@ -461,15 +461,19 @@ module LayoutEditor {
     }
 
     export class MoveTool implements Tool {
-        private moveShape: Shape = null;
+        private aabbShape: AABBShape = new AABBShape();
+        private oldAABB: Bounds = new Bounds();
+        private oldShapes: Shape[] = [];
+        private moveShapes: Shape[] = [];
+        private moveTransforms: Transform[] = [];
         private shape: Shape = null;
         private canUse: boolean = false;
         private deltaX: number = 0;
         private deltaY: number = 0;
-        private snappedX: number = 0;
-        private snappedY: number = 0;
 
-        constructor() {}
+        constructor() {
+            this.aabbShape.style = g_selectStyle;
+        }
 
         onPointer(e: InteractionHelper.Event): boolean {
             var isHandled: boolean = false;
@@ -479,27 +483,30 @@ module LayoutEditor {
                     this.shape = g_shapeList.getShapeInXY(e.x, e.y);
 
                     if (this.shape) {
+                        if (!g_selectList.isSelected(this.shape)) {
+                            g_selectList.setSelectedShapes([this.shape]);
+                        }
+
                         g_grid.rebuildTabs();
-                        this.moveShape = this.shape.copy();
-                        this.moveShape.style = g_selectStyle;
+                        this.createMoveShapes();
                         this.deltaX = 0;
                         this.deltaY = 0;
+
+                        g_draw(this);
                         isHandled = true;
                     }
                     break;
 
                 case InteractionHelper.State.Move:
                     if (this.shape) {
-                        var transform = this.moveShape.transform;
-                        var oldTransform = this.shape.transform;
-
                         this.deltaX += e.deltaX;
                         this.deltaY += e.deltaY;
-                        transform.translate.x = oldTransform.translate.x + this.deltaX;
-                        transform.translate.y = oldTransform.translate.y + this.deltaY;
 
-                        this.snapAABBToGrid();
+                        var delta: XY = this.snapAABBToGrid(this.deltaX, this.deltaY);
+
+                        this.moveMoveShapes(delta.x, delta.y);
                         this.canUse = true;
+
                         g_draw(this);
                         isHandled = true;
                     }
@@ -507,7 +514,7 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand(this.shape, this.moveShape.transform);
+                        var newCommand = new TransformCommand(this.oldShapes, this.moveTransforms);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
@@ -526,67 +533,105 @@ module LayoutEditor {
             if (!this.shape)
                 return;
 
-            this.moveShape.draw(ctx);
-            ctx.strokeStyle = "orange";
-            this.moveShape.drawSelect(ctx);
-            ctx.strokeStyle = "violet";
-            this.moveShape.drawAABB(ctx);
+            this.aabbShape.draw(ctx);
 
-            if (this.snappedX > -1 || this.snappedY > -1) {
-                ctx.save();
-                g_panZoom.transform(ctx);
-                ctx.beginPath();
-                g_snapStyle.draw(ctx);
-                ctx.moveTo(this.snappedX, 0);
-                ctx.lineTo(this.snappedX, 1000);
-                ctx.moveTo(0, this.snappedY);
-                ctx.lineTo(1000, this.snappedY);
-                ctx.stroke();
-                ctx.restore();
+            for (var i: number = 0; i < this.moveShapes.length; ++i) {
+                var moveShape: Shape = this.moveShapes[i];
+                moveShape.draw(ctx);
+                ctx.strokeStyle = "orange";
+                moveShape.drawSelect(ctx);
+                ctx.strokeStyle = "violet";
+                moveShape.drawAABB(ctx);
+
+            }
+
+            g_grid.draw(ctx);
+
+        }
+
+        private createMoveShapes() {
+            this.moveShapes.length = 0;
+            this.moveTransforms.length = 0;
+
+            this.aabbShape.reset();
+
+            this.oldShapes = g_selectList.getSelectedShapes(); // ref
+            for (var i: number = 0; i < this.oldShapes.length; ++i) {
+                var shape: Shape = this.oldShapes[i];
+                var moveShape: Shape = shape.copy();
+                moveShape.style = g_selectStyle;
+                this.moveShapes.push(moveShape);
+                this.moveTransforms.push(moveShape.transform);
+                this.aabbShape.addAABB(shape.aabb);
+            }
+
+            this.aabbShape.calculateBounds();
+            Helper.extend(this.oldAABB, this.aabbShape.aabb);
+        }
+
+        private moveMoveShapes(dx: number, dy: number) {
+            // AABBShape doesn't use transform so move the aabb directory (note, aabb === oabb)
+            this.aabbShape.aabb.cx = this.oldAABB.cx + dx;
+            this.aabbShape.aabb.cy = this.oldAABB.cy + dy;
+
+            for (var i: number = 0; i < this.moveShapes.length; ++i) {
+                var transform: Transform = this.moveTransforms[i];
+                var oldTransform: Transform = this.oldShapes[i].transform;
+
+                transform.translate.x = oldTransform.translate.x + dx;
+                transform.translate.y = oldTransform.translate.y + dy;
             }
         }
 
-        private snapAABBToGrid() {
-            this.moveShape.calculateBounds();
+        private snapAABBToGrid(dx: number, dy: number): XY {
+            var aabb: Bounds = this.aabbShape.aabb;
 
-            var aabb = this.moveShape.aabb;
-            var translate = this.moveShape.transform.translate;
+            var centerX: number = this.oldAABB.cx + dx;
+            var centerY: number = this.oldAABB.cy + dy;
+            var left: number = centerX - aabb.hw;
+            var top: number = centerY - aabb.hh;
+            var right: number = centerX + aabb.hw;
+            var bottom: number = centerY + aabb.hh;
 
-            var left = aabb.cx - aabb.hw;
-            var top = aabb.cy - aabb.hh;
-            var right = aabb.cx + aabb.hw;
-            var bottom = aabb.cy + aabb.hh;
+            var delta: XY = {
+                x: dx,
+                y: dy
+            };
 
-            var snapTopLeft = g_grid.snapXY(left, top);
-            var snapBottomRight = g_grid.snapXY(right, bottom);
-            var snapCenter = g_grid.snapXY(aabb.cx, aabb.cy);
+            g_grid.snappedX = -1;
+            g_grid.snappedY = -1;
 
-            this.snappedX = -1;
-            if (left !== snapTopLeft.x) {
-                translate.x += snapTopLeft.x - left;
-                this.snappedX = snapTopLeft.x;
-            } else if (right !== snapBottomRight.x) {
-                translate.x += snapBottomRight.x - right;
-                this.snappedX = snapBottomRight.x;
-            } else if (aabb.cx !== snapCenter.x) {
-                translate.x += snapCenter.x - aabb.cx;
-                this.snappedX = snapCenter.x;
+            var newLeft: number = g_grid.snapX(left);
+            if (left !== newLeft) {
+                delta.x += newLeft - left;
+            } else {
+                var newRight: number = g_grid.snapX(right);
+                if (right !== newRight) {
+                    delta.x += newRight - right;
+                } else {
+                    var newCenterX: number = g_grid.snapX(aabb.cx);
+                    if (newCenterX !== aabb.cx) {
+                        delta.x += newCenterX - aabb.cx;
+                    }
+                }
             }
 
-            this.snappedY = -1;
-            if (top !== snapTopLeft.y) {
-                translate.y += snapTopLeft.y - top;
-                this.snappedY = snapTopLeft.y;
-            } else if (bottom !== snapBottomRight.y) {
-                translate.y += snapBottomRight.y - bottom;
-                this.snappedY = snapBottomRight.y;
-            } else if (aabb.cy !== snapCenter.y) {
-                translate.y += snapCenter.y - aabb.cy;
-                this.snappedY = snapCenter.y;
+            var newTop: number = g_grid.snapY(top);
+            if (top !== newTop) {
+                delta.y += newTop - top;
+            } else {
+                var newBottom: number = g_grid.snapY(bottom);
+                if (bottom !== newBottom) {
+                    delta.y += newBottom - bottom;
+                } else {
+                    var newCenterY: number = g_grid.snapY(aabb.cy);
+                    if (newCenterY !== aabb.cy) {
+                        delta.y += newCenterY - aabb.cy;
+                    }
+                }
             }
 
-            if (this.snappedY >= 1 || this.snappedX >= -1)
-                this.moveShape.calculateBounds();
+            return delta;
         }
     }
 

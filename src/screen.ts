@@ -52,7 +52,7 @@ module LayoutEditor {
         screenType: ScreenType = null;
 
         constructor() {
-            this.screenType = this.getScreenType(Screen.Platform.iPhone4_Portrait);
+            this.screenType = this.getScreenType(Screen.Platform.iPhone_Portrait);
         }
 
         getScreenType(platform: Screen.Platform): ScreenType {

@@ -936,7 +936,7 @@ var LayoutEditor;
                     height: 385
                 }];
             this.screenType = null;
-            this.screenType = this.getScreenType(3 /* iPhone4_Portrait */);
+            this.screenType = this.getScreenType(1 /* iPhone_Portrait */);
         }
         Screen.prototype.getScreenType = function (platform) {
             for (var i = 0; i < this.types.length; ++i) {
@@ -1011,8 +1011,15 @@ var LayoutEditor;
     //------------------------------
     var Bounds = (function () {
         function Bounds() {
-            this.rotate = 0;
         }
+        Bounds.prototype.reset = function () {
+            this.rotate = undefined;
+            this.cx = undefined;
+            this.cy = undefined;
+            this.hw = undefined;
+            this.hh = undefined;
+        };
+
         Bounds.prototype.toPolygon = function () {
             var cr = Math.cos(this.rotate);
             var sr = Math.sin(this.rotate);
@@ -1091,6 +1098,14 @@ var LayoutEditor;
                 y: 0
             };
         }
+        Transform.prototype.reset = function () {
+            this.rotate = 0;
+            this.scale.x = 1;
+            this.scale.y = 1;
+            this.translate.x = 0;
+            this.translate.y = 0;
+        };
+
         Transform.prototype.calcXY = function (x, y) {
             var newPos = {
                 x: 0,
@@ -1532,6 +1547,27 @@ var LayoutEditor;
             return base;
         };
 
+        AABBShape.prototype.reset = function () {
+            this.x1 = undefined;
+            this.y1 = undefined;
+            this.x2 = undefined;
+            this.y2 = undefined;
+        };
+
+        AABBShape.prototype.addAABB = function (aabb) {
+            if (this.x1 === undefined) {
+                this.x1 = aabb.cx - aabb.hw;
+                this.y1 = aabb.cy - aabb.hh;
+                this.x2 = aabb.cx + aabb.hw;
+                this.y2 = aabb.cy + aabb.hh;
+            } else {
+                this.x1 = Math.min(this.x1, aabb.cx - aabb.hw);
+                this.y1 = Math.min(this.y1, aabb.cy - aabb.hh);
+                this.x2 = Math.max(this.x2, aabb.cx + aabb.hw);
+                this.y2 = Math.max(this.y2, aabb.cy + aabb.hh);
+            }
+        };
+
         AABBShape.prototype.buildPath = function (ctx) {
             // don't apply transform!
             var x1 = this.oabb.cx - this.oabb.hw;
@@ -1577,6 +1613,45 @@ var LayoutEditor;
         return AABBShape;
     })(Shape);
     LayoutEditor.AABBShape = AABBShape;
+
+    var GroupShape = (function (_super) {
+        __extends(GroupShape, _super);
+        function GroupShape() {
+            _super.call(this);
+            this.shapes = [];
+        }
+        GroupShape.prototype.reset = function () {
+            this.shapes.length = 0;
+        };
+
+        GroupShape.prototype.setShapes = function (shapes) {
+            this.shapes = shapes;
+            this.calculateBounds();
+        };
+
+        GroupShape.prototype.calculateBounds = function () {
+            this.aabb.reset();
+            this.oabb.reset();
+            this.transform.reset();
+
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+            }
+        };
+
+        GroupShape.prototype.saveData = function () {
+            var obj = _super.prototype.saveData.call(this);
+            obj.type = "GroupShape";
+            return obj;
+        };
+
+        GroupShape.prototype.loadData = function (obj) {
+            Helper.assert(obj.type === "GroupShape");
+            _super.prototype.loadData.call(this, obj);
+        };
+        return GroupShape;
+    })(Shape);
+    LayoutEditor.GroupShape = GroupShape;
 
     //------------------------------
     var ShapeList = (function () {
@@ -1713,6 +1788,7 @@ var LayoutEditor;
         function SelectList() {
             this.selectedShapes = [];
             this.selectedStyle = new LayoutEditor.Style();
+            this.allShape = new RectShape(0, 0);
             this.selectedStyle.strokeStyle = "blue";
             this.selectedStyle.fillStyle = "none";
             this.selectedStyle.lineWidth = 2;
@@ -1727,7 +1803,7 @@ var LayoutEditor;
             var index = this.selectedShapes.indexOf(shape);
             if (index !== -1) {
                 this.selectedShapes.splice(index, 1);
-                LayoutEditor.g_draw(this);
+                this.rebuildAllShape();
             }
         };
 
@@ -1740,22 +1816,26 @@ var LayoutEditor;
                 else
                     this.selectedShapes.splice(index, 1);
             }
-            LayoutEditor.g_draw(this);
+            this.rebuildAllShape();
+        };
+
+        SelectList.prototype.isSelected = function (shape) {
+            return this.selectedShapes.indexOf(shape) !== -1;
         };
 
         SelectList.prototype.setSelectedShapes = function (shapes) {
             this.selectedShapes = shapes.slice(); // copy
-            LayoutEditor.g_draw(this);
+            this.rebuildAllShape();
         };
 
-        // returns a copy
+        // returns the instance
         SelectList.prototype.getSelectedShapes = function () {
-            return this.selectedShapes.slice();
+            return this.selectedShapes;
         };
 
         SelectList.prototype.clearSelectedShapes = function () {
             this.selectedShapes.length = 0;
-            LayoutEditor.g_draw(this);
+            this.rebuildAllShape();
         };
 
         // deletes all of the selected shapes
@@ -1765,7 +1845,7 @@ var LayoutEditor;
             }
             this.selectedShapes.length = 0;
 
-            LayoutEditor.g_draw(this);
+            this.rebuildAllShape();
         };
 
         // duplicates all of the selected shapes
@@ -1778,7 +1858,7 @@ var LayoutEditor;
                 copyShapes.push(copyShape);
             }
 
-            LayoutEditor.g_draw(this);
+            this.rebuildAllShape();
             return copyShapes;
         };
 
@@ -1786,11 +1866,19 @@ var LayoutEditor;
             this.selectedStyle.draw(ctx);
 
             var numSelectedShapes = this.selectedShapes.length;
+            if (numSelectedShapes > 0)
+                this.allShape.drawSelect(ctx);
+
             for (var i = 0; i < numSelectedShapes; ++i) {
                 var shape = this.selectedShapes[i];
                 Helper.assert(!shape.isDeleted);
                 shape.drawSelect(ctx);
             }
+        };
+
+        SelectList.prototype.rebuildAllShape = function () {
+            LayoutEditor.g_draw(this);
+            // TODO
         };
         return SelectList;
     })();
@@ -1855,8 +1943,6 @@ var LayoutEditor;
             this.xTabs = [];
             this.yTabs = [];
             this.shapeGravity = 10;
-            this.snappedX = -1;
-            this.snappedY = -1;
         }
         Grid.prototype.getClosestIndex = function (list, value, index) {
             var bestDist = Math.abs(value - list[index]);
@@ -1883,36 +1969,45 @@ var LayoutEditor;
             return bestIndex;
         };
 
-        Grid.prototype.snapXY = function (x, y) {
-            var pos = {
-                x: x,
-                y: y
-            };
-
+        Grid.prototype.snapX = function (x) {
             if (this.snapToGrid) {
-                pos.x = pos.x % this.gridSize;
-                pos.y = pos.y % this.gridSize;
+                x = x % this.gridSize;
             } else if (this.snapToShape) {
-                var i = Helper.getIndexOfSorted(this.xTabs, pos.x);
-                i = this.getClosestIndex(this.xTabs, pos.x, i);
-                if (Math.abs(this.xTabs[i] - pos.x) < this.shapeGravity) {
-                    pos.x = this.xTabs[i];
-                    this.snappedX = pos.x;
+                var i = Helper.getIndexOfSorted(this.xTabs, x);
+                i = this.getClosestIndex(this.xTabs, x, i);
+                if (Math.abs(this.xTabs[i] - x) < this.shapeGravity) {
+                    x = this.xTabs[i];
+                    this.snappedX = x;
                 } else {
-                    this.snappedX = -1;
-                }
-
-                var j = Helper.getIndexOfSorted(this.yTabs, pos.y);
-                j = this.getClosestIndex(this.yTabs, pos.y, j);
-                if (Math.abs(this.yTabs[j] - pos.y) < this.shapeGravity) {
-                    pos.y = this.yTabs[j];
-                    this.snappedY = pos.y;
-                } else {
-                    this.snappedY = -1;
+                    this.snappedX = undefined;
                 }
             }
 
-            return pos;
+            return x;
+        };
+
+        Grid.prototype.snapY = function (y) {
+            if (this.snapToGrid) {
+                y = y % this.gridSize;
+            } else if (this.snapToShape) {
+                var j = Helper.getIndexOfSorted(this.yTabs, y);
+                j = this.getClosestIndex(this.yTabs, y, j);
+                if (Math.abs(this.yTabs[j] - y) < this.shapeGravity) {
+                    y = this.yTabs[j];
+                    this.snappedY = y;
+                } else {
+                    this.snappedY = undefined;
+                }
+            }
+
+            return y;
+        };
+
+        Grid.prototype.snapXY = function (x, y) {
+            return {
+                x: this.snapX(x),
+                y: this.snapY(y)
+            };
         };
 
         Grid.prototype.rebuildTabs = function (excludeShapes) {
@@ -1943,18 +2038,40 @@ var LayoutEditor;
                 insertSortedUnique(this.yTabs, y2);
                 insertSortedUnique(this.yTabs, cy);
             }
+        };
+
+        Grid.prototype.draw = function (ctx) {
+            if (this.snappedX !== undefined || this.snappedY !== undefined) {
+                ctx.save();
+                LayoutEditor.g_panZoom.transform(ctx);
+
+                ctx.beginPath();
+                LayoutEditor.g_snapStyle.draw(ctx);
+
+                if (this.snappedX !== undefined) {
+                    ctx.moveTo(this.snappedX, 0);
+                    ctx.lineTo(this.snappedX, 1000);
+                }
+                if (this.snappedY !== undefined) {
+                    ctx.moveTo(0, this.snappedY);
+                    ctx.lineTo(1000, this.snappedY);
+                }
+
+                ctx.restore();
+                ctx.stroke();
+            }
             // ctx.save();
-            // g_panZoom.transform(g_toolCtx);
-            // g_toolCtx.beginPath();
+            // g_panZoom.transform(ctx);
+            // ctx.beginPath();
             // for (var i = 0; i < this.xTabs.length; ++i) {
-            //     g_toolCtx.moveTo(this.xTabs[i], 0);
-            //     g_toolCtx.lineTo(this.xTabs[i], 1000);
+            //     ctx.moveTo(this.xTabs[i], 0);
+            //     ctx.lineTo(this.xTabs[i], 1000);
             // }
             // for (var i = 0; i < this.yTabs.length; ++i) {
-            //     g_toolCtx.moveTo(0, this.yTabs[i]);
-            //     g_toolCtx.lineTo(1000, this.yTabs[i]);
+            //     ctx.moveTo(0, this.yTabs[i]);
+            //     ctx.lineTo(1000, this.yTabs[i]);
             // }
-            // g_toolCtx.stroke();
+            // ctx.stroke();
             // ctx.restore();
         };
         return Grid;
@@ -2054,22 +2171,33 @@ var LayoutEditor;
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     var TransformCommand = (function () {
-        function TransformCommand(shape, transform) {
-            this.shape = shape;
-            this.transform = transform;
-            this.originalTransform = new LayoutEditor.Transform();
-            Helper.extend(this.originalTransform, shape.transform);
+        function TransformCommand(shapes, transforms) {
+            this.shapes = shapes;
+            this.transforms = transforms;
+            this.originalTransforms = [];
+            Helper.assert(shapes.length === transforms.length);
+            for (var i = 0; i < shapes.length; ++i) {
+                var transform = new LayoutEditor.Transform();
+                Helper.extend(transform, shapes[i].transform);
+                this.originalTransforms[i] = transform;
+            }
         }
         TransformCommand.prototype.redo = function () {
-            Helper.extend(this.shape.transform, this.transform);
-            this.shape.calculateBounds();
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                Helper.extend(shape.transform, this.transforms[i]);
+                shape.calculateBounds();
+            }
             LayoutEditor.g_draw(LayoutEditor.g_shapeList);
             LayoutEditor.g_draw(LayoutEditor.g_selectList);
         };
 
         TransformCommand.prototype.undo = function () {
-            Helper.extend(this.shape.transform, this.originalTransform);
-            this.shape.calculateBounds();
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                Helper.extend(shape.transform, this.originalTransforms[i]);
+                shape.calculateBounds();
+            }
             LayoutEditor.g_draw(LayoutEditor.g_shapeList);
             LayoutEditor.g_draw(LayoutEditor.g_selectList);
         };
@@ -2129,7 +2257,7 @@ var LayoutEditor;
 
     var DuplicateSelectedCommand = (function () {
         function DuplicateSelectedCommand() {
-            this.oldSelected = LayoutEditor.g_selectList.getSelectedShapes();
+            this.oldSelected = LayoutEditor.g_selectList.getSelectedShapes().slice();
         }
         DuplicateSelectedCommand.prototype.redo = function () {
             if (!this.duplicatedShapes) {
@@ -2151,7 +2279,7 @@ var LayoutEditor;
 
     var DeleteSelectedCommand = (function () {
         function DeleteSelectedCommand() {
-            this.oldSelected = LayoutEditor.g_selectList.getSelectedShapes();
+            this.oldSelected = LayoutEditor.g_selectList.getSelectedShapes().slice();
         }
         DeleteSelectedCommand.prototype.redo = function () {
             LayoutEditor.g_selectList.deleteSelected();
@@ -2504,7 +2632,7 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.shape && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(this.shape, this.resizeShape.transform);
+                        var newCommand = new LayoutEditor.TransformCommand([this.shape], [this.resizeShape.transform]);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_draw(this);
                         isHandled = true;
@@ -2581,7 +2709,7 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.rotateShape) {
-                        var newCommand = new LayoutEditor.TransformCommand(this.shape, this.rotateShape.transform);
+                        var newCommand = new LayoutEditor.TransformCommand([this.shape], [this.rotateShape.transform]);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_draw(this);
                         isHandled = true;
@@ -2620,13 +2748,16 @@ var LayoutEditor;
 
     var MoveTool = (function () {
         function MoveTool() {
-            this.moveShape = null;
+            this.aabbShape = new LayoutEditor.AABBShape();
+            this.oldAABB = new LayoutEditor.Bounds();
+            this.oldShapes = [];
+            this.moveShapes = [];
+            this.moveTransforms = [];
             this.shape = null;
             this.canUse = false;
             this.deltaX = 0;
             this.deltaY = 0;
-            this.snappedX = 0;
-            this.snappedY = 0;
+            this.aabbShape.style = LayoutEditor.g_selectStyle;
         }
         MoveTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -2636,27 +2767,30 @@ var LayoutEditor;
                     this.shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
 
                     if (this.shape) {
+                        if (!LayoutEditor.g_selectList.isSelected(this.shape)) {
+                            LayoutEditor.g_selectList.setSelectedShapes([this.shape]);
+                        }
+
                         LayoutEditor.g_grid.rebuildTabs();
-                        this.moveShape = this.shape.copy();
-                        this.moveShape.style = LayoutEditor.g_selectStyle;
+                        this.createMoveShapes();
                         this.deltaX = 0;
                         this.deltaY = 0;
+
+                        LayoutEditor.g_draw(this);
                         isHandled = true;
                     }
                     break;
 
                 case 2 /* Move */:
                     if (this.shape) {
-                        var transform = this.moveShape.transform;
-                        var oldTransform = this.shape.transform;
-
                         this.deltaX += e.deltaX;
                         this.deltaY += e.deltaY;
-                        transform.translate.x = oldTransform.translate.x + this.deltaX;
-                        transform.translate.y = oldTransform.translate.y + this.deltaY;
 
-                        this.snapAABBToGrid();
+                        var delta = this.snapAABBToGrid(this.deltaX, this.deltaY);
+
+                        this.moveMoveShapes(delta.x, delta.y);
                         this.canUse = true;
+
                         LayoutEditor.g_draw(this);
                         isHandled = true;
                     }
@@ -2664,7 +2798,7 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.shape && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(this.shape, this.moveShape.transform);
+                        var newCommand = new LayoutEditor.TransformCommand(this.oldShapes, this.moveTransforms);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_draw(this);
                         isHandled = true;
@@ -2684,67 +2818,103 @@ var LayoutEditor;
             if (!this.shape)
                 return;
 
-            this.moveShape.draw(ctx);
-            ctx.strokeStyle = "orange";
-            this.moveShape.drawSelect(ctx);
-            ctx.strokeStyle = "violet";
-            this.moveShape.drawAABB(ctx);
+            this.aabbShape.draw(ctx);
 
-            if (this.snappedX > -1 || this.snappedY > -1) {
-                ctx.save();
-                LayoutEditor.g_panZoom.transform(ctx);
-                ctx.beginPath();
-                LayoutEditor.g_snapStyle.draw(ctx);
-                ctx.moveTo(this.snappedX, 0);
-                ctx.lineTo(this.snappedX, 1000);
-                ctx.moveTo(0, this.snappedY);
-                ctx.lineTo(1000, this.snappedY);
-                ctx.stroke();
-                ctx.restore();
+            for (var i = 0; i < this.moveShapes.length; ++i) {
+                var moveShape = this.moveShapes[i];
+                moveShape.draw(ctx);
+                ctx.strokeStyle = "orange";
+                moveShape.drawSelect(ctx);
+                ctx.strokeStyle = "violet";
+                moveShape.drawAABB(ctx);
+            }
+
+            LayoutEditor.g_grid.draw(ctx);
+        };
+
+        MoveTool.prototype.createMoveShapes = function () {
+            this.moveShapes.length = 0;
+            this.moveTransforms.length = 0;
+
+            this.aabbShape.reset();
+
+            this.oldShapes = LayoutEditor.g_selectList.getSelectedShapes(); // ref
+            for (var i = 0; i < this.oldShapes.length; ++i) {
+                var shape = this.oldShapes[i];
+                var moveShape = shape.copy();
+                moveShape.style = LayoutEditor.g_selectStyle;
+                this.moveShapes.push(moveShape);
+                this.moveTransforms.push(moveShape.transform);
+                this.aabbShape.addAABB(shape.aabb);
+            }
+
+            this.aabbShape.calculateBounds();
+            Helper.extend(this.oldAABB, this.aabbShape.aabb);
+        };
+
+        MoveTool.prototype.moveMoveShapes = function (dx, dy) {
+            // AABBShape doesn't use transform so move the aabb directory (note, aabb === oabb)
+            this.aabbShape.aabb.cx = this.oldAABB.cx + dx;
+            this.aabbShape.aabb.cy = this.oldAABB.cy + dy;
+
+            for (var i = 0; i < this.moveShapes.length; ++i) {
+                var transform = this.moveTransforms[i];
+                var oldTransform = this.oldShapes[i].transform;
+
+                transform.translate.x = oldTransform.translate.x + dx;
+                transform.translate.y = oldTransform.translate.y + dy;
             }
         };
 
-        MoveTool.prototype.snapAABBToGrid = function () {
-            this.moveShape.calculateBounds();
+        MoveTool.prototype.snapAABBToGrid = function (dx, dy) {
+            var aabb = this.aabbShape.aabb;
 
-            var aabb = this.moveShape.aabb;
-            var translate = this.moveShape.transform.translate;
+            var centerX = this.oldAABB.cx + dx;
+            var centerY = this.oldAABB.cy + dy;
+            var left = centerX - aabb.hw;
+            var top = centerY - aabb.hh;
+            var right = centerX + aabb.hw;
+            var bottom = centerY + aabb.hh;
 
-            var left = aabb.cx - aabb.hw;
-            var top = aabb.cy - aabb.hh;
-            var right = aabb.cx + aabb.hw;
-            var bottom = aabb.cy + aabb.hh;
+            var delta = {
+                x: dx,
+                y: dy
+            };
 
-            var snapTopLeft = LayoutEditor.g_grid.snapXY(left, top);
-            var snapBottomRight = LayoutEditor.g_grid.snapXY(right, bottom);
-            var snapCenter = LayoutEditor.g_grid.snapXY(aabb.cx, aabb.cy);
+            LayoutEditor.g_grid.snappedX = -1;
+            LayoutEditor.g_grid.snappedY = -1;
 
-            this.snappedX = -1;
-            if (left !== snapTopLeft.x) {
-                translate.x += snapTopLeft.x - left;
-                this.snappedX = snapTopLeft.x;
-            } else if (right !== snapBottomRight.x) {
-                translate.x += snapBottomRight.x - right;
-                this.snappedX = snapBottomRight.x;
-            } else if (aabb.cx !== snapCenter.x) {
-                translate.x += snapCenter.x - aabb.cx;
-                this.snappedX = snapCenter.x;
+            var newLeft = LayoutEditor.g_grid.snapX(left);
+            if (left !== newLeft) {
+                delta.x += newLeft - left;
+            } else {
+                var newRight = LayoutEditor.g_grid.snapX(right);
+                if (right !== newRight) {
+                    delta.x += newRight - right;
+                } else {
+                    var newCenterX = LayoutEditor.g_grid.snapX(aabb.cx);
+                    if (newCenterX !== aabb.cx) {
+                        delta.x += newCenterX - aabb.cx;
+                    }
+                }
             }
 
-            this.snappedY = -1;
-            if (top !== snapTopLeft.y) {
-                translate.y += snapTopLeft.y - top;
-                this.snappedY = snapTopLeft.y;
-            } else if (bottom !== snapBottomRight.y) {
-                translate.y += snapBottomRight.y - bottom;
-                this.snappedY = snapBottomRight.y;
-            } else if (aabb.cy !== snapCenter.y) {
-                translate.y += snapCenter.y - aabb.cy;
-                this.snappedY = snapCenter.y;
+            var newTop = LayoutEditor.g_grid.snapY(top);
+            if (top !== newTop) {
+                delta.y += newTop - top;
+            } else {
+                var newBottom = LayoutEditor.g_grid.snapY(bottom);
+                if (bottom !== newBottom) {
+                    delta.y += newBottom - bottom;
+                } else {
+                    var newCenterY = LayoutEditor.g_grid.snapY(aabb.cy);
+                    if (newCenterY !== aabb.cy) {
+                        delta.y += newCenterY - aabb.cy;
+                    }
+                }
             }
 
-            if (this.snappedY >= 1 || this.snappedX >= -1)
-                this.moveShape.calculateBounds();
+            return delta;
         };
         return MoveTool;
     })();

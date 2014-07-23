@@ -88,22 +88,33 @@ module LayoutEditor {
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     export class TransformCommand implements Command {
-        originalTransform: Transform = new Transform();
+        originalTransforms: Transform[] = [];
 
-        constructor(public shape: Shape, public transform: Transform) {
-            Helper.extend(this.originalTransform, shape.transform);
+        constructor(public shapes: Shape[], public transforms: Transform[]) {
+            Helper.assert(shapes.length === transforms.length);
+            for (var i: number = 0; i < shapes.length; ++i) {
+                var transform: Transform = new Transform();
+                Helper.extend(transform, shapes[i].transform);
+                this.originalTransforms[i] = transform;
+            }
         }
 
         redo() {
-            Helper.extend(this.shape.transform, this.transform);
-            this.shape.calculateBounds();
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                var shape: Shape = this.shapes[i];
+                Helper.extend(shape.transform, this.transforms[i]);
+                shape.calculateBounds();
+            }
             g_draw(g_shapeList);
             g_draw(g_selectList);
         }
 
         undo() {
-            Helper.extend(this.shape.transform, this.originalTransform);
-            this.shape.calculateBounds();
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                var shape: Shape = this.shapes[i];
+                Helper.extend(shape.transform, this.originalTransforms[i]);
+                shape.calculateBounds();
+            }
             g_draw(g_shapeList);
             g_draw(g_selectList);
         }
@@ -162,7 +173,7 @@ module LayoutEditor {
         duplicatedShapes: Shape[];
 
         constructor() {
-            this.oldSelected = g_selectList.getSelectedShapes();
+            this.oldSelected = g_selectList.getSelectedShapes().slice();
         }
 
         redo() {
@@ -185,7 +196,7 @@ module LayoutEditor {
         oldSelected: Shape[];
 
         constructor() {
-            this.oldSelected = g_selectList.getSelectedShapes();
+            this.oldSelected = g_selectList.getSelectedShapes().slice();
         }
 
         redo() {

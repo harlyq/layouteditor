@@ -3,13 +3,21 @@ module LayoutEditor {
 
     //------------------------------
     export class Bounds {
-        rotate: number = 0; // radians
+        rotate: number; // radians
         cx: number;
         cy: number;
         hw: number; // halfWidth
         hh: number; // halfHeight
 
         constructor() {}
+
+        reset() {
+            this.rotate = undefined;
+            this.cx = undefined;
+            this.cy = undefined;
+            this.hw = undefined;
+            this.hh = undefined;
+        }
 
         toPolygon(): number[] {
             var cr = Math.cos(this.rotate);
@@ -86,6 +94,14 @@ module LayoutEditor {
             x: 0,
             y: 0
         };
+
+        reset() {
+            this.rotate = 0;
+            this.scale.x = 1;
+            this.scale.y = 1;
+            this.translate.x = 0;
+            this.translate.y = 0;
+        }
 
         calcXY(x: number, y: number): XY {
             var newPos: XY = {
@@ -526,6 +542,27 @@ module LayoutEditor {
             return base;
         }
 
+        reset() {
+            this.x1 = undefined;
+            this.y1 = undefined;
+            this.x2 = undefined;
+            this.y2 = undefined;
+        }
+
+        addAABB(aabb: Bounds) {
+            if (this.x1 === undefined) {
+                this.x1 = aabb.cx - aabb.hw;
+                this.y1 = aabb.cy - aabb.hh;
+                this.x2 = aabb.cx + aabb.hw;
+                this.y2 = aabb.cy + aabb.hh;
+            } else {
+                this.x1 = Math.min(this.x1, aabb.cx - aabb.hw);
+                this.y1 = Math.min(this.y1, aabb.cy - aabb.hh);
+                this.x2 = Math.max(this.x2, aabb.cx + aabb.hw);
+                this.y2 = Math.max(this.y2, aabb.cy + aabb.hh);
+            }
+        }
+
         buildPath(ctx) {
             // don't apply transform!
             var x1 = this.oabb.cx - this.oabb.hw;
@@ -566,6 +603,45 @@ module LayoutEditor {
             this.y1 = obj.y1;
             this.x2 = obj.x2;
             this.y2 = obj.y2;
+            super.loadData(obj);
+        }
+    }
+
+    export class GroupShape extends Shape {
+        shapes: Shape[] = [];
+
+        constructor() {
+            super();
+        }
+
+        reset() {
+            this.shapes.length = 0;
+        }
+
+        setShapes(shapes: Shape[]) {
+            this.shapes = shapes;
+            this.calculateBounds();
+        }
+
+        calculateBounds() {
+            this.aabb.reset();
+            this.oabb.reset();
+            this.transform.reset();
+
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                var shape: Shape = this.shapes[i];
+
+            }
+        }
+
+        saveData(): any {
+            var obj: any = super.saveData();
+            obj.type = "GroupShape";
+            return obj;
+        }
+
+        loadData(obj: any) {
+            Helper.assert(obj.type === "GroupShape");
             super.loadData(obj);
         }
     }
@@ -706,6 +782,7 @@ module LayoutEditor {
     export class SelectList {
         selectedShapes: Shape[] = [];
         selectedStyle: Style = new Style();
+        allShape: RectShape = new RectShape(0, 0);
 
         constructor() {
             this.selectedStyle.strokeStyle = "blue";
@@ -723,7 +800,7 @@ module LayoutEditor {
             var index: number = this.selectedShapes.indexOf(shape);
             if (index !== -1) {
                 this.selectedShapes.splice(index, 1);
-                g_draw(this);
+                this.rebuildAllShape();
             }
         }
 
@@ -736,22 +813,26 @@ module LayoutEditor {
                 else
                     this.selectedShapes.splice(index, 1);
             }
-            g_draw(this);
+            this.rebuildAllShape();
+        }
+
+        isSelected(shape: Shape): boolean {
+            return this.selectedShapes.indexOf(shape) !== -1;
         }
 
         setSelectedShapes(shapes: Shape[]) {
             this.selectedShapes = shapes.slice(); // copy
-            g_draw(this);
+            this.rebuildAllShape();
         }
 
-        // returns a copy
+        // returns the instance
         getSelectedShapes(): Shape[] {
-            return this.selectedShapes.slice();
+            return this.selectedShapes;
         }
 
         clearSelectedShapes() {
             this.selectedShapes.length = 0;
-            g_draw(this);
+            this.rebuildAllShape();
         }
 
         // deletes all of the selected shapes
@@ -761,7 +842,7 @@ module LayoutEditor {
             }
             this.selectedShapes.length = 0;
 
-            g_draw(this);
+            this.rebuildAllShape();
         }
 
         // duplicates all of the selected shapes
@@ -774,7 +855,7 @@ module LayoutEditor {
                 copyShapes.push(copyShape);
             }
 
-            g_draw(this);
+            this.rebuildAllShape();
             return copyShapes;
         }
 
@@ -782,11 +863,19 @@ module LayoutEditor {
             this.selectedStyle.draw(ctx);
 
             var numSelectedShapes: number = this.selectedShapes.length;
+            if (numSelectedShapes > 0)
+                this.allShape.drawSelect(ctx);
+
             for (var i: number = 0; i < numSelectedShapes; ++i) {
                 var shape: Shape = this.selectedShapes[i];
                 Helper.assert(!shape.isDeleted);
                 shape.drawSelect(ctx);
             }
+        }
+
+        rebuildAllShape() {
+            g_draw(this);
+            // TODO
         }
     }
 

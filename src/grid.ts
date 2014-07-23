@@ -37,8 +37,8 @@ module LayoutEditor {
         xTabs: number[] = [];
         yTabs: number[] = [];
         shapeGravity: number = 10;
-        snappedX: number = -1;
-        snappedY: number = -1;
+        snappedX: number;
+        snappedY: number;
 
         constructor() {
 
@@ -69,36 +69,45 @@ module LayoutEditor {
             return bestIndex;
         }
 
-        snapXY(x: number, y: number): XY {
-            var pos: XY = {
-                x: x,
-                y: y
-            };
-
+        snapX(x: number): number {
             if (this.snapToGrid) {
-                pos.x = pos.x % this.gridSize;
-                pos.y = pos.y % this.gridSize;
+                x = x % this.gridSize;
             } else if (this.snapToShape) {
-                var i = Helper.getIndexOfSorted(this.xTabs, pos.x);
-                i = this.getClosestIndex(this.xTabs, pos.x, i);
-                if (Math.abs(this.xTabs[i] - pos.x) < this.shapeGravity) {
-                    pos.x = this.xTabs[i];
-                    this.snappedX = pos.x;
+                var i = Helper.getIndexOfSorted(this.xTabs, x);
+                i = this.getClosestIndex(this.xTabs, x, i);
+                if (Math.abs(this.xTabs[i] - x) < this.shapeGravity) {
+                    x = this.xTabs[i];
+                    this.snappedX = x;
                 } else {
-                    this.snappedX = -1;
-                }
-
-                var j = Helper.getIndexOfSorted(this.yTabs, pos.y);
-                j = this.getClosestIndex(this.yTabs, pos.y, j);
-                if (Math.abs(this.yTabs[j] - pos.y) < this.shapeGravity) {
-                    pos.y = this.yTabs[j];
-                    this.snappedY = pos.y;
-                } else {
-                    this.snappedY = -1;
+                    this.snappedX = undefined;
                 }
             }
 
-            return pos;
+            return x;
+        }
+
+        snapY(y: number): number {
+            if (this.snapToGrid) {
+                y = y % this.gridSize;
+            } else if (this.snapToShape) {
+                var j = Helper.getIndexOfSorted(this.yTabs, y);
+                j = this.getClosestIndex(this.yTabs, y, j);
+                if (Math.abs(this.yTabs[j] - y) < this.shapeGravity) {
+                    y = this.yTabs[j];
+                    this.snappedY = y;
+                } else {
+                    this.snappedY = undefined;
+                }
+            }
+
+            return y;
+        }
+
+        snapXY(x: number, y: number): XY {
+            return {
+                x: this.snapX(x),
+                y: this.snapY(y)
+            };
         }
 
         rebuildTabs(excludeShapes: Shape[] = []) {
@@ -128,22 +137,44 @@ module LayoutEditor {
                 insertSortedUnique(this.yTabs, y2);
                 insertSortedUnique(this.yTabs, cy);
             }
-
-            // ctx.save();
-            // g_panZoom.transform(g_toolCtx);
-            // g_toolCtx.beginPath();
-            // for (var i = 0; i < this.xTabs.length; ++i) {
-            //     g_toolCtx.moveTo(this.xTabs[i], 0);
-            //     g_toolCtx.lineTo(this.xTabs[i], 1000);
-            // }
-            // for (var i = 0; i < this.yTabs.length; ++i) {
-            //     g_toolCtx.moveTo(0, this.yTabs[i]);
-            //     g_toolCtx.lineTo(1000, this.yTabs[i]);
-            // }
-            // g_toolCtx.stroke();
-            // ctx.restore();
         }
 
+        draw(ctx) {
+            if (this.snappedX !== undefined || this.snappedY !== undefined) {
+                ctx.save();
+                g_panZoom.transform(ctx);
+
+                ctx.beginPath();
+                g_snapStyle.draw(ctx);
+
+                if (this.snappedX !== undefined) {
+                    ctx.moveTo(this.snappedX, 0);
+                    ctx.lineTo(this.snappedX, 1000);
+                }
+                if (this.snappedY !== undefined) {
+                    ctx.moveTo(0, this.snappedY);
+                    ctx.lineTo(1000, this.snappedY);
+                }
+
+                ctx.restore();
+                ctx.stroke();
+            }
+
+
+            // ctx.save();
+            // g_panZoom.transform(ctx);
+            // ctx.beginPath();
+            // for (var i = 0; i < this.xTabs.length; ++i) {
+            //     ctx.moveTo(this.xTabs[i], 0);
+            //     ctx.lineTo(this.xTabs[i], 1000);
+            // }
+            // for (var i = 0; i < this.yTabs.length; ++i) {
+            //     ctx.moveTo(0, this.yTabs[i]);
+            //     ctx.lineTo(1000, this.yTabs[i]);
+            // }
+            // ctx.stroke();
+            // ctx.restore();
+        }
     }
     export
     var g_grid: Grid = new Grid();

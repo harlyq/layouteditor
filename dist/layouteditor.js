@@ -305,18 +305,16 @@ var InteractionHelper;
         Watch.prototype.touchMove = function (e) {
             e.preventDefault();
 
-            var x = e.pageX - this.elem.offsetLeft;
-            var y = e.pageY - this.elem.offsetTop;
+            var pinch = this.getPinchInfo(e);
 
-            if (this.moveStarted || Math.abs(x - this.lastX) > this.options.TouchCancelTapDistance || Math.abs(y - this.lastY) > this.options.TouchCancelTapDistance) {
+            if (this.moveStarted || Math.abs(pinch.x - this.lastX) > this.options.TouchCancelTapDistance || Math.abs(pinch.y - this.lastY) > this.options.TouchCancelTapDistance) {
                 this.moveStarted = true;
-                var pinch = this.getPinchInfo(e);
 
                 var event = new Event();
                 event.x = pinch.x;
                 event.y = pinch.y;
-                event.deltaX = x - this.lastX;
-                event.deltaY = y - this.lastY;
+                event.deltaX = pinch.x - this.lastX;
+                event.deltaY = pinch.y - this.lastY;
                 event.pinchDistance = pinch.distance;
                 event.state = 2 /* Move */;
                 event.target = e.target;
@@ -338,16 +336,13 @@ var InteractionHelper;
                 document.removeEventListener("touchend", this.touchEndHandler);
             }
 
-            var x = e.pageX - this.elem.offsetLeft;
-            var y = e.pageY - this.elem.offsetTop;
-
             var pinch = this.getPinchInfo(e);
 
             var event = new Event();
             event.x = pinch.x;
             event.y = pinch.y;
-            event.deltaX = x - this.lastX;
-            event.deltaY = y - this.lastY;
+            event.deltaX = pinch.x - this.lastX;
+            event.deltaY = pinch.y - this.lastY;
             event.pinchDistance = pinch.distance;
             event.state = 3 /* End */;
             event.target = e.target;
@@ -494,13 +489,73 @@ var LayoutEditor;
             }
         };
 
+        // returns y position of the next property
+        PropertyPanel.prototype.drawObject = function (ctx, object, name, x, y) {
+            if (name.length > 0) {
+                ctx.fillText("+ " + name, x, y);
+                y += this.lineHeight;
+            }
+
+            var propertyList = this.getPropertyList(object);
+
+            for (var i = 0; i < propertyList.items.length; ++i) {
+                var propItem = propertyList.items[i];
+                var name = propItem.name;
+
+                var propInfo = {
+                    y: y,
+                    height: 0,
+                    propertyItem: propItem,
+                    object: object,
+                    name: name
+                };
+
+                this.propertyInfos.push(propInfo);
+
+                switch (propItem.type) {
+                    case "object":
+                        y = this.drawObject(ctx, object[name], name, x, y);
+                        break;
+
+                    case undefined:
+                    case "":
+                    case "string":
+                    case "number":
+                        y = this.drawText(ctx, object, name, x, y);
+                }
+
+                propInfo.height = y - propInfo.y;
+            }
+
+            return y;
+        };
+
+        PropertyPanel.prototype.drawText = function (ctx, object, name, x, y) {
+            ctx.fillText(name + " : " + object[name], x, y);
+            return y + this.lineHeight;
+        };
+
+        PropertyPanel.prototype.editText = function (ctx, object, name, value, x, y) {
+            ctx.fillText(name + " : " + value, x, y);
+            return y + this.lineHeight;
+        };
+
         // TODO this needs to relate to how we draw properties
         PropertyPanel.prototype.drawEditing = function (info, value) {
-            var valueWidth = this.width - this.nameWidth;
-            var x = LayoutEditor.g_propertyCtx.canvas.width - valueWidth;
-            var y = info.y;
-            LayoutEditor.g_propertyCtx.clearRect(x, y, valueWidth, this.lineHeight);
-            LayoutEditor.g_propertyCtx.fillText(value, x, y);
+            var x = LayoutEditor.g_propertyCtx.canvas.width - this.width;
+
+            LayoutEditor.g_propertyCtx.clearRect(x, info.y, this.width, info.height);
+
+            switch (info.propertyItem.type) {
+                case "object":
+                    break;
+
+                case undefined:
+                case "":
+                case "string":
+                case "number":
+                    this.editText(LayoutEditor.g_propertyCtx, info.object, info.name, value, x, info.y);
+            }
         };
 
         PropertyPanel.prototype.getPropertyInfoXY = function (x, y) {
@@ -508,45 +563,6 @@ var LayoutEditor;
                 return list[index].y;
             });
             return this.propertyInfos[index];
-        };
-
-        PropertyPanel.prototype.drawProperties = function (ctx, object, x, y, drawType) {
-            var padding = 5;
-            var propertyList = this.getPropertyList(object);
-
-            for (var i = 0; i < propertyList.items.length; ++i) {
-                var propItem = propertyList.items[i];
-                var isObject = propItem.type === "object";
-
-                if (!isObject) {
-                    if (drawType === 0 /* Names */) {
-                        ctx.fillText(propItem.name, x, y);
-                    } else {
-                        ctx.fillText(object[propItem.name], x, y);
-                    }
-                } else {
-                    if (drawType === 0 /* Names */) {
-                        ctx.fillText("+" + propItem.name, x, y);
-                    }
-                }
-
-                this.propertyInfos.push({
-                    y: y,
-                    object: object,
-                    name: propItem.name,
-                    index: i
-                });
-
-                y += this.lineHeight;
-
-                if (propItem.type === "object") {
-                    var newX = x;
-                    if (drawType === 0 /* Names */)
-                        newX += padding;
-
-                    this.drawProperties(ctx, object[propItem.name], newX, y, drawType);
-                }
-            }
         };
 
         PropertyPanel.prototype.draw = function (ctx) {
@@ -565,40 +581,23 @@ var LayoutEditor;
             var x = propertyWidth - this.width;
             var y = 0;
 
+            // keep these properties for all property rendering
             ctx.strokeStyle = "black";
             ctx.textBaseline = "top";
 
+            ctx.save();
             ctx.fillStyle = "#aaa";
-            ctx.fillRect(x, y, this.width, propertyHeight);
-            ctx.fillStyle = "#bbb";
-            ctx.fillRect(x + this.nameWidth, y, this.width - this.nameWidth, propertyHeight);
-
-            if (ctx.fillStyle !== this.fontStyle)
-                ctx.fillStyle = this.fontStyle;
-
-            // property names
-            ctx.save();
             ctx.beginPath();
-            ctx.rect(x, 0, this.nameWidth, propertyHeight);
+            ctx.rect(x, 0, this.width, propertyHeight);
+            ctx.fill();
             ctx.clip();
+
+            ctx.fillStyle = this.fontStyle;
 
             x += padding;
 
-            this.drawProperties(ctx, this.object, x, y, 0 /* Names */);
-            ctx.restore();
+            this.drawObject(ctx, this.object, "", x, y);
 
-            // values
-            y = 0;
-            x = propertyWidth - this.nameWidth;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(x, y, this.width - this.nameWidth, propertyHeight);
-            ctx.clip();
-
-            x += padding;
-
-            this.drawProperties(ctx, this.object, x, y, 1 /* Values */);
             ctx.restore();
         };
 
@@ -1937,11 +1936,13 @@ var LayoutEditor;
         PropertyCommand.prototype.redo = function () {
             this.setValue(this.value);
             LayoutEditor.g_shapeList.requestDraw(LayoutEditor.g_drawCtx);
+            LayoutEditor.g_propertyPanel.requestDraw();
         };
 
         PropertyCommand.prototype.undo = function () {
             this.setValue(this.oldValue);
             LayoutEditor.g_shapeList.requestDraw(LayoutEditor.g_drawCtx);
+            LayoutEditor.g_propertyPanel.requestDraw();
         };
 
         PropertyCommand.prototype.setValue = function (value) {
@@ -2593,6 +2594,10 @@ var LayoutEditor;
                     this.shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
                     if (this.shape) {
                         this.editShape = this.shape.copy();
+                        var left = this.shape.oabb.cx + LayoutEditor.g_propertyCtx.canvas.offsetLeft + "px";
+                        var top = this.shape.oabb.cy + LayoutEditor.g_propertyCtx.canvas.offsetTop + "px";
+                        LayoutEditor.g_inputMultiLine.style.left = left;
+                        LayoutEditor.g_inputMultiLine.style.top = top;
                         LayoutEditor.g_inputMultiLine.value = this.editShape.text;
                         LayoutEditor.g_inputMultiLine.focus();
                         isHandled = true;
@@ -2647,6 +2652,7 @@ var LayoutEditor;
     var PropertyTool = (function () {
         function PropertyTool() {
             this.editing = null;
+            this.changed = false;
             var self = this;
             LayoutEditor.g_inputText.addEventListener("input", function (e) {
                 self.onInput(e);
@@ -2678,8 +2684,10 @@ var LayoutEditor;
         };
 
         PropertyTool.prototype.onInput = function (e) {
-            if (this.editing)
+            if (this.editing) {
                 LayoutEditor.g_propertyPanel.drawEditing(this.editing, LayoutEditor.g_inputText.value);
+                this.changed = true;
+            }
         };
 
         PropertyTool.prototype.onChange = function (e) {
@@ -2692,15 +2700,26 @@ var LayoutEditor;
                 return;
 
             if (this.editing) {
-                var newCommand = new LayoutEditor.PropertyCommand(this.editing, LayoutEditor.g_inputText.value);
-                LayoutEditor.g_commandList.addCommand(newCommand);
+                if (this.changed) {
+                    var newCommand = new LayoutEditor.PropertyCommand(this.editing, LayoutEditor.g_inputText.value);
+                    LayoutEditor.g_commandList.addCommand(newCommand);
+                } else {
+                    LayoutEditor.g_propertyPanel.draw(LayoutEditor.g_propertyCtx);
+                }
             }
 
             this.editing = propertyInfo;
+            this.changed = false;
 
             if (propertyInfo) {
                 LayoutEditor.g_inputText.value = propertyInfo.object[propertyInfo.name];
                 LayoutEditor.g_propertyPanel.drawEditing(propertyInfo, LayoutEditor.g_inputText.value);
+
+                //window.prompt(propertyInfo.name, g_inputText.value);
+                var left = LayoutEditor.g_propertyCtx.canvas.width - LayoutEditor.g_propertyPanel.width + LayoutEditor.g_propertyCtx.canvas.offsetLeft + "px";
+                var top = propertyInfo.y + LayoutEditor.g_propertyCtx.canvas.offsetTop + "px";
+                LayoutEditor.g_inputText.style.left = left;
+                LayoutEditor.g_inputText.style.top = top;
                 LayoutEditor.g_inputText.focus();
             }
         };
@@ -2732,6 +2751,7 @@ var LayoutEditor;
     LayoutEditor.g_toolCtx = null;
     LayoutEditor.g_inputText = null;
     LayoutEditor.g_inputMultiLine = null;
+    LayoutEditor.g_inputTextStyle = null;
 })(LayoutEditor || (LayoutEditor = {}));
 /// <reference path="interactionhelper.ts" />
 /// <reference path="helper.ts" />

@@ -5,6 +5,7 @@ var uglify = require('gulp-uglify');
 var less = require('gulp-less');
 var concat = require('gulp-concat');
 var run = require('gulp-run');
+//var tap = require('gulp-tap');
 
 gulp.task('less', function() {
     return gulp
@@ -15,6 +16,14 @@ gulp.task('less', function() {
 
 gulp.task('typescript', function() {
     run('tsc.cmd --out dist/layouteditor.js src/layouteditor.ts').exec();
+
+    // This should work, but actually generates a non --out file in layouteditor.js
+    // return gulp
+    //     .src('src/layouteditor.ts')
+    //     .pipe(tsc({
+    //         out: 'blah.js'
+    //     }))
+    //     .pipe(gulp.dest('dist'));
 });
 
 gulp.task('typescript_final', function() {

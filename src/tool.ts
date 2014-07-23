@@ -641,6 +641,10 @@ module LayoutEditor {
                     this.shape = g_shapeList.getShapeInXY(e.x, e.y);
                     if (this.shape) {
                         this.editShape = this.shape.copy();
+                        var left: string = this.shape.oabb.cx + g_propertyCtx.canvas.offsetLeft + "px";
+                        var top: string = this.shape.oabb.cy + g_propertyCtx.canvas.offsetTop + "px";
+                        g_inputMultiLine.style.left = left;
+                        g_inputMultiLine.style.top = top;
                         g_inputMultiLine.value = this.editShape.text;
                         g_inputMultiLine.focus();
                         isHandled = true;
@@ -692,6 +696,7 @@ module LayoutEditor {
 
     export class PropertyTool implements Tool {
         editing: PropertyInfo = null;
+        changed: boolean = false;
 
         constructor() {
             var self = this;
@@ -727,8 +732,10 @@ module LayoutEditor {
         }
 
         private onInput(e) {
-            if (this.editing)
+            if (this.editing) {
                 g_propertyPanel.drawEditing(this.editing, g_inputText.value);
+                this.changed = true;
+            }
         }
 
         private onChange(e) {
@@ -741,15 +748,25 @@ module LayoutEditor {
                 return;
 
             if (this.editing) {
-                var newCommand: PropertyCommand = new PropertyCommand(this.editing, g_inputText.value);
-                g_commandList.addCommand(newCommand);
+                if (this.changed) {
+                    var newCommand: PropertyCommand = new PropertyCommand(this.editing, g_inputText.value);
+                    g_commandList.addCommand(newCommand);
+                } else {
+                    g_propertyPanel.draw(g_propertyCtx);
+                }
             }
 
             this.editing = propertyInfo;
+            this.changed = false;
 
             if (propertyInfo) {
                 g_inputText.value = propertyInfo.object[propertyInfo.name];
                 g_propertyPanel.drawEditing(propertyInfo, g_inputText.value);
+                //window.prompt(propertyInfo.name, g_inputText.value);
+                var left: string = g_propertyCtx.canvas.width - g_propertyPanel.width + g_propertyCtx.canvas.offsetLeft + "px";
+                var top: string = propertyInfo.y + g_propertyCtx.canvas.offsetTop + "px";
+                g_inputText.style.left = left;
+                g_inputText.style.top = top;
                 g_inputText.focus();
             }
         }
@@ -781,4 +798,6 @@ module LayoutEditor {
     var g_inputText = null;
     export
     var g_inputMultiLine = null;
+    export
+    var g_inputTextStyle = null;
 }

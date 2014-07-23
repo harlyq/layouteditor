@@ -15,9 +15,10 @@ module LayoutEditor {
 
     export interface PropertyInfo {
         y: number;
+        height: number;
+        propertyItem: PropertyItem;
         object: any;
         name: string;
-        index: number;
     }
 
     export class PropertyPanel {
@@ -55,16 +56,75 @@ module LayoutEditor {
                 if (this.propertyLists[i].isA(obj))
                     return this.propertyLists[i];
             }
+        }
 
+        // returns y position of the next property
+        drawObject(ctx, object: any, name: string, x: number, y: number): number {
+            if (name.length > 0) {
+                ctx.fillText("+ " + name, x, y);
+                y += this.lineHeight;
+            }
+
+            var propertyList: PropertyList = this.getPropertyList(object);
+
+            for (var i: number = 0; i < propertyList.items.length; ++i) {
+                var propItem: PropertyItem = propertyList.items[i];
+                var name: string = propItem.name;
+
+                var propInfo: PropertyInfo = {
+                    y: y,
+                    height: 0,
+                    propertyItem: propItem,
+                    object: object,
+                    name: name
+                };
+
+                this.propertyInfos.push(propInfo);
+
+                switch (propItem.type) {
+                    case "object":
+                        y = this.drawObject(ctx, object[name], name, x, y);
+                        break;
+
+                    case undefined:
+                    case "":
+                    case "string":
+                    case "number":
+                        y = this.drawText(ctx, object, name, x, y);
+                }
+
+                propInfo.height = y - propInfo.y;
+            }
+
+            return y;
+        }
+
+        drawText(ctx, object: any, name: string, x: number, y: number): number {
+            ctx.fillText(name + " : " + object[name], x, y);
+            return y + this.lineHeight;
+        }
+
+        editText(ctx, object: any, name: string, value: string, x: number, y: number): number {
+            ctx.fillText(name + " : " + value, x, y);
+            return y + this.lineHeight;
         }
 
         // TODO this needs to relate to how we draw properties
         drawEditing(info: PropertyInfo, value: string) {
-            var valueWidth: number = this.width - this.nameWidth;
-            var x: number = g_propertyCtx.canvas.width - valueWidth;
-            var y: number = info.y;
-            g_propertyCtx.clearRect(x, y, valueWidth, this.lineHeight);
-            g_propertyCtx.fillText(value, x, y);
+            var x: number = g_propertyCtx.canvas.width - this.width;
+
+            g_propertyCtx.clearRect(x, info.y, this.width, info.height);
+
+            switch (info.propertyItem.type) {
+                case "object":
+                    break;
+
+                case undefined:
+                case "":
+                case "string":
+                case "number":
+                    this.editText(g_propertyCtx, info.object, info.name, value, x, info.y);
+            }
         }
 
         getPropertyInfoXY(x: number, y: number): PropertyInfo {
@@ -74,45 +134,6 @@ module LayoutEditor {
                     return list[index].y;
                 });
             return this.propertyInfos[index];
-        }
-
-        private drawProperties(ctx, object: any, x: number, y: number, drawType: PropertyPanel.DrawType) {
-            var padding: number = 5;
-            var propertyList: PropertyList = this.getPropertyList(object);
-
-            for (var i: number = 0; i < propertyList.items.length; ++i) {
-                var propItem: PropertyItem = propertyList.items[i];
-                var isObject: boolean = propItem.type === "object";
-
-                if (!isObject) {
-                    if (drawType === PropertyPanel.DrawType.Names) {
-                        ctx.fillText(propItem.name, x, y);
-                    } else {
-                        ctx.fillText(object[propItem.name], x, y);
-                    }
-                } else {
-                    if (drawType === PropertyPanel.DrawType.Names) {
-                        ctx.fillText("+" + propItem.name, x, y);
-                    }
-                }
-
-                this.propertyInfos.push({
-                    y: y,
-                    object: object,
-                    name: propItem.name,
-                    index: i
-                });
-
-                y += this.lineHeight;
-
-                if (propItem.type === "object") {
-                    var newX: number = x;
-                    if (drawType === PropertyPanel.DrawType.Names)
-                        newX += padding;
-
-                    this.drawProperties(ctx, object[propItem.name], newX, y, drawType);
-                }
-            }
         }
 
         draw(ctx) {
@@ -131,40 +152,23 @@ module LayoutEditor {
             var x: number = propertyWidth - this.width;
             var y: number = 0;
 
+            // keep these properties for all property rendering
             ctx.strokeStyle = "black";
             ctx.textBaseline = "top";
 
+            ctx.save();
             ctx.fillStyle = "#aaa";
-            ctx.fillRect(x, y, this.width, propertyHeight);
-            ctx.fillStyle = "#bbb";
-            ctx.fillRect(x + this.nameWidth, y, this.width - this.nameWidth, propertyHeight);
-
-            if (ctx.fillStyle !== this.fontStyle)
-                ctx.fillStyle = this.fontStyle;
-
-            // property names
-            ctx.save();
             ctx.beginPath();
-            ctx.rect(x, 0, this.nameWidth, propertyHeight);
+            ctx.rect(x, 0, this.width, propertyHeight);
+            ctx.fill();
             ctx.clip();
+
+            ctx.fillStyle = this.fontStyle;
 
             x += padding;
 
-            this.drawProperties(ctx, this.object, x, y, PropertyPanel.DrawType.Names);
-            ctx.restore();
+            this.drawObject(ctx, this.object, "", x, y);
 
-            // values
-            y = 0;
-            x = propertyWidth - this.nameWidth;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(x, y, this.width - this.nameWidth, propertyHeight);
-            ctx.clip();
-
-            x += padding;
-
-            this.drawProperties(ctx, this.object, x, y, PropertyPanel.DrawType.Values);
             ctx.restore();
         }
 

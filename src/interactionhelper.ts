@@ -307,20 +307,18 @@ module InteractionHelper {
         private touchMove(e) {
             e.preventDefault();
 
-            var x: number = e.pageX - this.elem.offsetLeft;
-            var y: number = e.pageY - this.elem.offsetTop;
+            var pinch = this.getPinchInfo(e);
 
             if (this.moveStarted ||
-                Math.abs(x - this.lastX) > this.options.TouchCancelTapDistance ||
-                Math.abs(y - this.lastY) > this.options.TouchCancelTapDistance) {
+                Math.abs(pinch.x - this.lastX) > this.options.TouchCancelTapDistance ||
+                Math.abs(pinch.y - this.lastY) > this.options.TouchCancelTapDistance) {
                 this.moveStarted = true;
-                var pinch = this.getPinchInfo(e);
 
                 var event = new Event();
                 event.x = pinch.x;
                 event.y = pinch.y;
-                event.deltaX = x - this.lastX;
-                event.deltaY = y - this.lastY;
+                event.deltaX = pinch.x - this.lastX;
+                event.deltaY = pinch.y - this.lastY;
                 event.pinchDistance = pinch.distance;
                 event.state = State.Move;
                 event.target = e.target;
@@ -342,16 +340,13 @@ module InteractionHelper {
                 document.removeEventListener("touchend", this.touchEndHandler);
             }
 
-            var x: number = e.pageX - this.elem.offsetLeft;
-            var y: number = e.pageY - this.elem.offsetTop;
-
             var pinch: PinchInfo = this.getPinchInfo(e);
 
             var event = new Event();
             event.x = pinch.x;
             event.y = pinch.y;
-            event.deltaX = x - this.lastX;
-            event.deltaY = y - this.lastY;
+            event.deltaX = pinch.x - this.lastX;
+            event.deltaY = pinch.y - this.lastY;
             event.pinchDistance = pinch.distance;
             event.state = State.End;
             event.target = e.target;

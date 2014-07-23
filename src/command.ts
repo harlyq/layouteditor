@@ -137,11 +137,13 @@ module LayoutEditor {
         redo() {
             this.setValue(this.value);
             g_shapeList.requestDraw(g_drawCtx);
+            g_propertyPanel.requestDraw();
         }
 
         undo() {
             this.setValue(this.oldValue);
             g_shapeList.requestDraw(g_drawCtx);
+            g_propertyPanel.requestDraw();
         }
 
         setValue(value: string) {

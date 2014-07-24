@@ -88,33 +88,24 @@ module LayoutEditor {
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     export class TransformCommand implements Command {
-        originalTransforms: Transform[] = [];
+        originalTransform: Transform = new Transform();
 
-        constructor(public shapes: Shape[], public transforms: Transform[]) {
-            Helper.assert(shapes.length === transforms.length);
-            for (var i: number = 0; i < shapes.length; ++i) {
-                var transform: Transform = new Transform();
-                Helper.extend(transform, shapes[i].transform);
-                this.originalTransforms[i] = transform;
-            }
+        constructor(public shape: Shape, public transform: Transform) {
+            Helper.extend(this.originalTransform, shape.transform);
         }
 
         redo() {
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                var shape: Shape = this.shapes[i];
-                Helper.extend(shape.transform, this.transforms[i]);
-                shape.calculateBounds();
-            }
+            Helper.extend(this.shape.transform, this.transform);
+            this.shape.applyTransform();
+
             g_draw(g_shapeList);
             g_draw(g_selectList);
         }
 
         undo() {
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                var shape: Shape = this.shapes[i];
-                Helper.extend(shape.transform, this.originalTransforms[i]);
-                shape.calculateBounds();
-            }
+            Helper.extend(this.shape.transform, this.originalTransform);
+            this.shape.applyTransform();
+
             g_draw(g_shapeList);
             g_draw(g_selectList);
         }

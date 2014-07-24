@@ -215,7 +215,7 @@ module LayoutEditor {
                 case InteractionHelper.State.End:
                     var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
                     if (shapes.length > 0)
-                        g_commandList.addCommand(new SelectCommand(shapes));
+                        g_commandList.addCommand(new SelectCommand(shapes, this.aabbShape.aabb.getArea() > 10));
                     this.isDrawing = false;
                     g_draw(this);
                     isHandled = true;
@@ -233,7 +233,7 @@ module LayoutEditor {
 
             this.aabbShape.draw(ctx);
 
-            g_selectList.selectedStyle.draw(ctx);
+            g_selectStyle.draw(ctx);
             var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
             for (var i = 0; i < shapes.length; ++i) {
                 shapes[i].drawSelect(ctx);
@@ -243,19 +243,25 @@ module LayoutEditor {
 
     // TODO Should we be able to undo selection?????
     export class SelectCommand implements Command {
-        selectedShapes: Shape[] = [];
+        shapes: Shape[] = [];
+        oldSelectedShapes: Shape[] = [];
 
-        constructor(public shapes: Shape[]) {
-            this.selectedShapes = g_selectList.getSelectedShapes().slice();
+        constructor(shapes: Shape[], public isReplace: boolean = false) {
+            this.shapes = shapes.slice();
+            this.oldSelectedShapes = g_selectList.getSelectedShapes().slice();
         }
 
         redo() {
-            g_selectList.setSelectedShapes(this.selectedShapes);
-            g_selectList.toggleSelected(this.shapes);
+            if (this.isReplace) {
+                g_selectList.setSelectedShapes(this.shapes);
+            } else {
+                g_selectList.setSelectedShapes(this.oldSelectedShapes);
+                g_selectList.toggleSelected(this.shapes);
+            }
         }
 
         undo() {
-            g_selectList.setSelectedShapes(this.selectedShapes);
+            g_selectList.setSelectedShapes(this.oldSelectedShapes);
         }
     }
 
@@ -357,7 +363,7 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand([this.shape], [this.resizeShape.transform]);
+                        var newCommand = new TransformCommand(this.shape, this.resizeShape.transform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
@@ -426,7 +432,7 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.rotateShape) {
-                        var newCommand = new TransformCommand([this.shape], [this.rotateShape.transform]);
+                        var newCommand = new TransformCommand(this.shape, this.rotateShape.transform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
@@ -461,19 +467,13 @@ module LayoutEditor {
     }
 
     export class MoveTool implements Tool {
-        private aabbShape: AABBShape = new AABBShape();
-        private oldAABB: Bounds = new Bounds();
-        private oldShapes: Shape[] = [];
-        private moveShapes: Shape[] = [];
-        private moveTransforms: Transform[] = [];
+        private moveShape: GroupShape = null;
         private shape: Shape = null;
         private canUse: boolean = false;
         private deltaX: number = 0;
         private deltaY: number = 0;
 
-        constructor() {
-            this.aabbShape.style = g_selectStyle;
-        }
+        constructor() {}
 
         onPointer(e: InteractionHelper.Event): boolean {
             var isHandled: boolean = false;
@@ -488,7 +488,7 @@ module LayoutEditor {
                         }
 
                         g_grid.rebuildTabs();
-                        this.createMoveShapes();
+                        this.moveShape = g_selectList.selectGroup.copy();
                         this.deltaX = 0;
                         this.deltaY = 0;
 
@@ -504,7 +504,14 @@ module LayoutEditor {
 
                         var delta: XY = this.snapAABBToGrid(this.deltaX, this.deltaY);
 
-                        this.moveMoveShapes(delta.x, delta.y);
+                        var oldTransform = g_selectList.selectGroup.transform;
+                        var moveTransform = this.moveShape.transform;
+
+                        moveTransform.translate.x = oldTransform.translate.x + delta.x;
+                        moveTransform.translate.y = oldTransform.translate.y + delta.y;
+
+                        this.moveShape.applyTransform(); // propagate change to group shapes
+
                         this.canUse = true;
 
                         g_draw(this);
@@ -514,13 +521,14 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand(this.oldShapes, this.moveTransforms);
+                        var newCommand = new TransformCommand(g_selectList.selectGroup, this.moveShape.transform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
                     }
                     this.canUse = false;
                     this.shape = null;
+                    this.moveShape = null;
                     break;
             }
 
@@ -533,61 +541,18 @@ module LayoutEditor {
             if (!this.shape)
                 return;
 
-            this.aabbShape.draw(ctx);
-
-            for (var i: number = 0; i < this.moveShapes.length; ++i) {
-                var moveShape: Shape = this.moveShapes[i];
-                moveShape.draw(ctx);
-                ctx.strokeStyle = "orange";
-                moveShape.drawSelect(ctx);
-                ctx.strokeStyle = "violet";
-                moveShape.drawAABB(ctx);
-
-            }
+            this.moveShape.drawSelect(ctx);
 
             g_grid.draw(ctx);
 
         }
 
-        private createMoveShapes() {
-            this.moveShapes.length = 0;
-            this.moveTransforms.length = 0;
-
-            this.aabbShape.reset();
-
-            this.oldShapes = g_selectList.getSelectedShapes(); // ref
-            for (var i: number = 0; i < this.oldShapes.length; ++i) {
-                var shape: Shape = this.oldShapes[i];
-                var moveShape: Shape = shape.copy();
-                moveShape.style = g_selectStyle;
-                this.moveShapes.push(moveShape);
-                this.moveTransforms.push(moveShape.transform);
-                this.aabbShape.addAABB(shape.aabb);
-            }
-
-            this.aabbShape.calculateBounds();
-            Helper.extend(this.oldAABB, this.aabbShape.aabb);
-        }
-
-        private moveMoveShapes(dx: number, dy: number) {
-            // AABBShape doesn't use transform so move the aabb directory (note, aabb === oabb)
-            this.aabbShape.aabb.cx = this.oldAABB.cx + dx;
-            this.aabbShape.aabb.cy = this.oldAABB.cy + dy;
-
-            for (var i: number = 0; i < this.moveShapes.length; ++i) {
-                var transform: Transform = this.moveTransforms[i];
-                var oldTransform: Transform = this.oldShapes[i].transform;
-
-                transform.translate.x = oldTransform.translate.x + dx;
-                transform.translate.y = oldTransform.translate.y + dy;
-            }
-        }
-
         private snapAABBToGrid(dx: number, dy: number): XY {
-            var aabb: Bounds = this.aabbShape.aabb;
+            // the delta is wrt to the original aabb
+            var aabb = g_selectList.selectGroup.aabb;
 
-            var centerX: number = this.oldAABB.cx + dx;
-            var centerY: number = this.oldAABB.cy + dy;
+            var centerX: number = aabb.cx + dx;
+            var centerY: number = aabb.cy + dy;
             var left: number = centerX - aabb.hw;
             var top: number = centerY - aabb.hh;
             var right: number = centerX + aabb.hw;

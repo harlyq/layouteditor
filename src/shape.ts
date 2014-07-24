@@ -3,7 +3,7 @@ module LayoutEditor {
 
     //------------------------------
     export class Bounds {
-        rotate: number; // radians
+        rotate: number = 0; // radians
         cx: number;
         cy: number;
         hw: number; // halfWidth
@@ -12,11 +12,36 @@ module LayoutEditor {
         constructor() {}
 
         reset() {
-            this.rotate = undefined;
+            this.rotate = 0;
             this.cx = undefined;
             this.cy = undefined;
             this.hw = undefined;
             this.hh = undefined;
+        }
+
+        getArea() {
+            return this.hw * this.hh * 4;
+        }
+
+        enclose(aabb: Bounds) {
+            Helper.assert(aabb.rotate === 0); // only works with unrotated bounds 0
+            Helper.assert(this.rotate === 0);
+
+            if (this.cx === undefined) {
+                this.cx = aabb.cx;
+                this.cy = aabb.cy;
+                this.hw = aabb.hw;
+                this.hh = aabb.hh;
+            } else {
+                var x1: number = Math.min(this.cx - this.hw, aabb.cx - aabb.hw);
+                var y1: number = Math.min(this.cy - this.hh, aabb.cy - aabb.hh);
+                var x2: number = Math.max(this.cx + this.hw, aabb.cx + aabb.hw);
+                var y2: number = Math.max(this.cy + this.hh, aabb.cy + aabb.hh);
+                this.cx = (x1 + x2) * 0.5;
+                this.cy = (y1 + y2) * 0.5;
+                this.hw = (x2 - x1) * 0.5;
+                this.hh = (y2 - y1) * 0.5;
+            }
         }
 
         toPolygon(): number[] {
@@ -153,6 +178,17 @@ module LayoutEditor {
                 y: ly
             };
         }
+
+        subtract(transform: Transform): Transform {
+            var subTransform = new Transform();
+            subTransform.rotate = this.rotate - transform.rotate;
+            subTransform.translate.x = this.translate.x - transform.translate.x;
+            subTransform.translate.y = this.translate.y - transform.translate.y;
+            subTransform.scale.x = this.scale.x - transform.scale.x;
+            subTransform.scale.y = this.scale.y - transform.scale.y;
+
+            return subTransform;
+        }
     }
 
     //------------------------------
@@ -269,6 +305,11 @@ module LayoutEditor {
             }
 
             ctx.restore();
+        }
+
+        // performed by the derived class
+        applyTransform() {
+            this.calculateBounds();
         }
 
         // performed by the derived class
@@ -549,20 +590,6 @@ module LayoutEditor {
             this.y2 = undefined;
         }
 
-        addAABB(aabb: Bounds) {
-            if (this.x1 === undefined) {
-                this.x1 = aabb.cx - aabb.hw;
-                this.y1 = aabb.cy - aabb.hh;
-                this.x2 = aabb.cx + aabb.hw;
-                this.y2 = aabb.cy + aabb.hh;
-            } else {
-                this.x1 = Math.min(this.x1, aabb.cx - aabb.hw);
-                this.y1 = Math.min(this.y1, aabb.cy - aabb.hh);
-                this.x2 = Math.max(this.x2, aabb.cx + aabb.hw);
-                this.y2 = Math.max(this.y2, aabb.cy + aabb.hh);
-            }
-        }
-
         buildPath(ctx) {
             // don't apply transform!
             var x1 = this.oabb.cx - this.oabb.hw;
@@ -609,6 +636,9 @@ module LayoutEditor {
 
     export class GroupShape extends Shape {
         shapes: Shape[] = [];
+        lastTransform: Transform = new Transform();
+        encloseHH: number = 0;
+        encloseHW: number = 0;
 
         constructor() {
             super();
@@ -616,22 +646,119 @@ module LayoutEditor {
 
         reset() {
             this.shapes.length = 0;
+            this.encloseHW = 0;
+            this.encloseHH = 0;
         }
 
         setShapes(shapes: Shape[]) {
-            this.shapes = shapes;
-            this.calculateBounds();
+            this.shapes = shapes.slice(); // copy
+            this.encloseShapes();
         }
 
-        calculateBounds() {
-            this.aabb.reset();
-            this.oabb.reset();
-            this.transform.reset();
+        copy(base ? : GroupShape): GroupShape {
+            if (!base)
+                base = new GroupShape();
+            super.copy(base);
+            Helper.extend(base.lastTransform, this.lastTransform);
+
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                base.shapes[i] = this.shapes[i].copy();
+            }
+            return base;
+        }
+
+        // shapes in this group will be drawn independently
+        draw(ctx) {}
+
+        // draw the the subelements
+        drawSelect(ctx) {
+            super.drawSelect(ctx);
+
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                this.shapes[i].drawSelect(ctx);
+            }
+        }
+
+        // check each sub-shape individually
+        isInsideXY(ctx, x: number, y: number): boolean {
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                if (this.shapes[i].isInsideXY(ctx, x, y))
+                    return true;
+            }
+
+            return false;
+        }
+
+        applyTransform() {
+            var deltaTransform = this.transform.subtract(this.lastTransform);
 
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 var shape: Shape = this.shapes[i];
 
+                shape.transform.translate.x += deltaTransform.translate.x;
+                shape.transform.translate.y += deltaTransform.translate.y;
+
+                // TODO - this is wrong
+                shape.transform.rotate += deltaTransform.rotate;
+                shape.transform.scale.x += deltaTransform.scale.x;
+                shape.transform.scale.y += deltaTransform.scale.y;
+
+                shape.calculateBounds();
             }
+
+            Helper.extend(this.lastTransform, this.transform);
+
+            super.applyTransform();
+        }
+
+        encloseShapes() {
+            var aabb: Bounds = this.aabb;
+            var oabb: Bounds = this.oabb;
+            var transform: Transform = this.transform;
+
+            aabb.reset();
+            oabb.reset();
+            transform.reset();
+
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                var shape: Shape = this.shapes[i];
+
+                aabb.enclose(shape.aabb);
+            }
+
+            Helper.extend(oabb, aabb); // initial oabb matches aabb
+
+            transform.translate.x = aabb.cx;
+            transform.translate.y = aabb.cy;
+
+            Helper.extend(this.lastTransform, transform);
+
+            this.encloseHW = aabb.hw;
+            this.encloseHH = aabb.hh;
+        }
+
+        calculateBounds() {
+            var transform: Transform = this.transform;
+            var oabb: Bounds = this.oabb;
+            var aabb: Bounds = this.aabb;
+
+            oabb.rotate = transform.rotate;
+            oabb.hw = this.encloseHW * transform.scale.x;
+            oabb.hh = this.encloseHH * transform.scale.y;
+            oabb.cx = transform.translate.x;
+            oabb.cy = transform.translate.y;
+
+            var polygon: number[] = oabb.toPolygon();
+            var x1: number = Helper.arrayMin(polygon, 0, 2);
+            var x2: number = Helper.arrayMax(polygon, 0, 2);
+            var y1: number = Helper.arrayMin(polygon, 1, 2);
+            var y2: number = Helper.arrayMax(polygon, 1, 2);
+
+            aabb.rotate = 0;
+            aabb.hw = (x2 - x1) * 0.5;
+            aabb.hh = (y2 - y1) * 0.5;
+            aabb.cx = (x1 + x2) * 0.5;
+            aabb.cy = (y1 + y2) * 0.5;
         }
 
         saveData(): any {
@@ -781,15 +908,9 @@ module LayoutEditor {
     //------------------------------
     export class SelectList {
         selectedShapes: Shape[] = [];
-        selectedStyle: Style = new Style();
-        allShape: RectShape = new RectShape(0, 0);
+        selectGroup: GroupShape = new GroupShape();
 
-        constructor() {
-            this.selectedStyle.strokeStyle = "blue";
-            this.selectedStyle.fillStyle = "none";
-            this.selectedStyle.lineWidth = 2;
-            this.selectedStyle.lineDash = [5, 5];
-        }
+        constructor() {}
 
         reset() {
             this.selectedShapes.length = 0;
@@ -800,7 +921,7 @@ module LayoutEditor {
             var index: number = this.selectedShapes.indexOf(shape);
             if (index !== -1) {
                 this.selectedShapes.splice(index, 1);
-                this.rebuildAllShape();
+                this.rebuildSelectGroup();
             }
         }
 
@@ -813,7 +934,7 @@ module LayoutEditor {
                 else
                     this.selectedShapes.splice(index, 1);
             }
-            this.rebuildAllShape();
+            this.rebuildSelectGroup();
         }
 
         isSelected(shape: Shape): boolean {
@@ -822,7 +943,7 @@ module LayoutEditor {
 
         setSelectedShapes(shapes: Shape[]) {
             this.selectedShapes = shapes.slice(); // copy
-            this.rebuildAllShape();
+            this.rebuildSelectGroup();
         }
 
         // returns the instance
@@ -832,7 +953,7 @@ module LayoutEditor {
 
         clearSelectedShapes() {
             this.selectedShapes.length = 0;
-            this.rebuildAllShape();
+            this.rebuildSelectGroup();
         }
 
         // deletes all of the selected shapes
@@ -842,7 +963,7 @@ module LayoutEditor {
             }
             this.selectedShapes.length = 0;
 
-            this.rebuildAllShape();
+            this.rebuildSelectGroup();
         }
 
         // duplicates all of the selected shapes
@@ -855,16 +976,16 @@ module LayoutEditor {
                 copyShapes.push(copyShape);
             }
 
-            this.rebuildAllShape();
+            this.rebuildSelectGroup();
             return copyShapes;
         }
 
         draw(ctx) {
-            this.selectedStyle.draw(ctx);
+            g_selectStyle.draw(ctx);
 
             var numSelectedShapes: number = this.selectedShapes.length;
             if (numSelectedShapes > 0)
-                this.allShape.drawSelect(ctx);
+                this.selectGroup.drawSelect(ctx);
 
             for (var i: number = 0; i < numSelectedShapes; ++i) {
                 var shape: Shape = this.selectedShapes[i];
@@ -873,9 +994,11 @@ module LayoutEditor {
             }
         }
 
-        rebuildAllShape() {
+        rebuildSelectGroup() {
+            this.selectGroup.reset();
+            this.selectGroup.setShapes(this.selectedShapes);
+
             g_draw(this);
-            // TODO
         }
     }
 

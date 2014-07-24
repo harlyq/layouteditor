@@ -70,6 +70,7 @@ module LayoutEditor {
         }
 
         snapX(x: number): number {
+            this.snappedX = undefined;
             if (this.snapToGrid) {
                 x = x % this.gridSize;
             } else if (this.snapToShape) {
@@ -78,8 +79,6 @@ module LayoutEditor {
                 if (Math.abs(this.xTabs[i] - x) < this.shapeGravity) {
                     x = this.xTabs[i];
                     this.snappedX = x;
-                } else {
-                    this.snappedX = undefined;
                 }
             }
 
@@ -87,6 +86,7 @@ module LayoutEditor {
         }
 
         snapY(y: number): number {
+            this.snappedY = undefined;
             if (this.snapToGrid) {
                 y = y % this.gridSize;
             } else if (this.snapToShape) {
@@ -95,8 +95,6 @@ module LayoutEditor {
                 if (Math.abs(this.yTabs[j] - y) < this.shapeGravity) {
                     y = this.yTabs[j];
                     this.snappedY = y;
-                } else {
-                    this.snappedY = undefined;
                 }
             }
 
@@ -141,11 +139,12 @@ module LayoutEditor {
 
         draw(ctx) {
             if (this.snappedX !== undefined || this.snappedY !== undefined) {
+                g_snapStyle.draw(ctx);
+
                 ctx.save();
                 g_panZoom.transform(ctx);
 
                 ctx.beginPath();
-                g_snapStyle.draw(ctx);
 
                 if (this.snappedX !== undefined) {
                     ctx.moveTo(this.snappedX, 0);

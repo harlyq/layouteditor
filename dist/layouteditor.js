@@ -1193,6 +1193,10 @@ var LayoutEditor;
 
             return subTransform;
         };
+
+        Transform.prototype.isEqual = function (other) {
+            return this.rotate === other.rotate && this.translate.x === other.translate.x && this.translate.y === other.translate.y && this.scale.x === other.scale.x && this.scale.y === other.scale.y;
+        };
         return Transform;
     })();
     LayoutEditor.Transform = Transform;
@@ -1311,11 +1315,6 @@ var LayoutEditor;
         };
 
         // performed by the derived class
-        Shape.prototype.applyTransform = function () {
-            this.calculateBounds();
-        };
-
-        // performed by the derived class
         Shape.prototype.calculateBounds = function () {
         };
 
@@ -1325,6 +1324,12 @@ var LayoutEditor;
 
             this.buildPath(ctx);
             return ctx.isPointInPath(u, v);
+        };
+
+        Shape.prototype.isInsideOABBXY = function (x, y) {
+            var oabb = this.oabb;
+            var localPos = oabb.invXY(x, y);
+            return localPos.x >= -oabb.hw && localPos.x < oabb.hw && localPos.y >= -oabb.hh && localPos.y < oabb.hh;
         };
 
         Shape.prototype.isOverlapBounds = function (bounds) {
@@ -1647,9 +1652,12 @@ var LayoutEditor;
         function GroupShape() {
             _super.call(this);
             this.shapes = [];
+            this.oldTransforms = [];
             this.lastTransform = new Transform();
             this.encloseHH = 0;
             this.encloseHW = 0;
+            this.oldCX = 0;
+            this.oldCY = 0;
         }
         GroupShape.prototype.reset = function () {
             this.shapes.length = 0;
@@ -1659,6 +1667,7 @@ var LayoutEditor;
 
         GroupShape.prototype.setShapes = function (shapes) {
             this.shapes = shapes.slice(); // copy
+
             this.encloseShapes();
         };
 
@@ -1669,6 +1678,8 @@ var LayoutEditor;
             Helper.extend(base.lastTransform, this.lastTransform);
 
             for (var i = 0; i < this.shapes.length; ++i) {
+                base.oldTransforms[i] = new Transform();
+                Helper.extend(base.oldTransforms[i], this.oldTransforms[i]);
                 base.shapes[i] = this.shapes[i].copy();
             }
             return base;
@@ -1698,25 +1709,31 @@ var LayoutEditor;
         };
 
         GroupShape.prototype.applyTransform = function () {
+            if (this.transform.isEqual(this.lastTransform))
+                return;
+
             var deltaTransform = this.transform.subtract(this.lastTransform);
+            var transform = this.transform;
 
             for (var i = 0; i < this.shapes.length; ++i) {
                 var shape = this.shapes[i];
+                var oldTransform = this.oldTransforms[i];
 
-                shape.transform.translate.x += deltaTransform.translate.x;
-                shape.transform.translate.y += deltaTransform.translate.y;
+                var dx = (oldTransform.translate.x - this.oldCX) * transform.scale.x + transform.translate.x;
+                var dy = (oldTransform.translate.y - this.oldCY) * transform.scale.y + transform.translate.y;
+
+                shape.transform.translate.x = dx;
+                shape.transform.translate.y = dy;
 
                 // TODO - this is wrong
-                shape.transform.rotate += deltaTransform.rotate;
-                shape.transform.scale.x += deltaTransform.scale.x;
-                shape.transform.scale.y += deltaTransform.scale.y;
+                shape.transform.rotate = oldTransform.rotate + deltaTransform.rotate;
+                shape.transform.scale.x = oldTransform.scale.x * transform.scale.x;
+                shape.transform.scale.y = oldTransform.scale.y * transform.scale.y;
 
                 shape.calculateBounds();
             }
 
             Helper.extend(this.lastTransform, this.transform);
-
-            _super.prototype.applyTransform.call(this);
         };
 
         GroupShape.prototype.encloseShapes = function () {
@@ -1728,8 +1745,12 @@ var LayoutEditor;
             oabb.reset();
             transform.reset();
 
+            this.oldTransforms.length = 0;
             for (var i = 0; i < this.shapes.length; ++i) {
                 var shape = this.shapes[i];
+
+                this.oldTransforms[i] = new Transform();
+                Helper.extend(this.oldTransforms[i], this.shapes[i].transform);
 
                 aabb.enclose(shape.aabb);
             }
@@ -1738,14 +1759,22 @@ var LayoutEditor;
 
             transform.translate.x = aabb.cx;
             transform.translate.y = aabb.cy;
+            transform.scale.x = 1;
+            transform.scale.y = 1;
+            transform.rotate = 0;
 
             Helper.extend(this.lastTransform, transform);
 
             this.encloseHW = aabb.hw;
             this.encloseHH = aabb.hh;
+            this.oldCX = aabb.cx;
+            this.oldCY = aabb.cy;
         };
 
         GroupShape.prototype.calculateBounds = function () {
+            // move all the sub-objects
+            this.applyTransform();
+
             var transform = this.transform;
             var oabb = this.oabb;
             var aabb = this.aabb;
@@ -2305,7 +2334,7 @@ var LayoutEditor;
         }
         TransformCommand.prototype.redo = function () {
             Helper.extend(this.shape.transform, this.transform);
-            this.shape.applyTransform();
+            this.shape.calculateBounds();
 
             LayoutEditor.g_draw(LayoutEditor.g_shapeList);
             LayoutEditor.g_draw(LayoutEditor.g_selectList);
@@ -2313,7 +2342,7 @@ var LayoutEditor;
 
         TransformCommand.prototype.undo = function () {
             Helper.extend(this.shape.transform, this.originalTransform);
-            this.shape.applyTransform();
+            this.shape.calculateBounds();
 
             LayoutEditor.g_draw(LayoutEditor.g_shapeList);
             LayoutEditor.g_draw(LayoutEditor.g_selectList);
@@ -2662,26 +2691,32 @@ var LayoutEditor;
     var ResizeTool = (function () {
         function ResizeTool() {
             this.resizeShape = null;
-            this.shape = null;
             this.handle = 0 /* None */;
             this.handleSize = 20;
             this.canUse = false;
             this.startLocalPos = null;
+            this.isDrawing = false;
         }
         ResizeTool.prototype.onPointer = function (e) {
             var isHandled = false;
 
             switch (e.state) {
                 case 1 /* Start */:
-                    this.shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
+                    var shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
                     this.handle = 0 /* None */;
 
-                    if (this.shape) {
-                        LayoutEditor.g_grid.rebuildTabs();
-                        this.resizeShape = this.shape.copy();
-                        this.resizeShape.style = LayoutEditor.g_selectStyle;
+                    if (shape) {
+                        if (!LayoutEditor.g_selectList.isSelected(shape)) {
+                            LayoutEditor.g_selectList.setSelectedShapes([shape]);
+                        }
+                    }
 
-                        var oldOABB = this.shape.oabb;
+                    var selectGroup = LayoutEditor.g_selectList.selectGroup;
+                    if (selectGroup.isInsideOABBXY(e.x, e.y)) {
+                        LayoutEditor.g_grid.rebuildTabs();
+                        this.resizeShape = selectGroup.copy();
+
+                        var oldOABB = selectGroup.oabb;
                         var localPos = oldOABB.invXY(e.x, e.y);
                         var handleX = this.handleSize;
                         var handleY = this.handleSize;
@@ -2701,14 +2736,15 @@ var LayoutEditor;
 
                         this.startLocalPos = localPos;
                         isHandled = true;
+                        this.isDrawing = true;
                     }
                     break;
 
                 case 2 /* Move */:
-                    if (this.shape) {
+                    if (this.isDrawing) {
                         var transform = this.resizeShape.transform;
-                        var oldTransform = this.shape.transform;
-                        var oldOABB = this.shape.oabb;
+                        var oldTransform = LayoutEditor.g_selectList.selectGroup.transform;
+                        var oldOABB = LayoutEditor.g_selectList.selectGroup.oabb;
 
                         var localPos = oldOABB.invXY(e.x, e.y);
                         var dx = (localPos.x - this.startLocalPos.x);
@@ -2748,6 +2784,7 @@ var LayoutEditor;
                             transform.translate.y = newY;
                         }
 
+                        this.resizeShape.calculateBounds();
                         this.canUse = this.handle !== 0 /* None */;
                         LayoutEditor.g_draw(this);
                         isHandled = true;
@@ -2755,28 +2792,28 @@ var LayoutEditor;
                     break;
 
                 case 3 /* End */:
-                    if (this.shape && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(this.shape, this.resizeShape.transform);
+                    if (this.isDrawing && this.canUse) {
+                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, this.resizeShape.transform);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_draw(this);
                         isHandled = true;
                     }
                     this.canUse = false;
-                    this.shape = null;
+                    this.isDrawing = false;
                     break;
             }
 
-            return isHandled || this.shape !== null;
+            return isHandled || this.isDrawing;
         };
 
         ResizeTool.prototype.onChangeFocus = function (focus) {
         };
 
         ResizeTool.prototype.draw = function (ctx) {
-            if (!this.shape)
+            if (!this.isDrawing)
                 return;
 
-            this.resizeShape.draw(ctx);
+            this.resizeShape.drawSelect(ctx);
         };
         return ResizeTool;
     })();
@@ -2913,7 +2950,7 @@ var LayoutEditor;
                         moveTransform.translate.x = oldTransform.translate.x + delta.x;
                         moveTransform.translate.y = oldTransform.translate.y + delta.y;
 
-                        this.moveShape.applyTransform(); // propagate change to group shapes
+                        this.moveShape.calculateBounds();
 
                         this.canUse = true;
 

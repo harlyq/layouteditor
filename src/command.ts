@@ -96,7 +96,7 @@ module LayoutEditor {
 
         redo() {
             Helper.extend(this.shape.transform, this.transform);
-            this.shape.applyTransform();
+            this.shape.calculateBounds();
 
             g_draw(g_shapeList);
             g_draw(g_selectList);
@@ -104,7 +104,7 @@ module LayoutEditor {
 
         undo() {
             Helper.extend(this.shape.transform, this.originalTransform);
-            this.shape.applyTransform();
+            this.shape.calculateBounds();
 
             g_draw(g_shapeList);
             g_draw(g_selectList);

@@ -189,6 +189,12 @@ module LayoutEditor {
 
             return subTransform;
         }
+
+        isEqual(other: Transform): boolean {
+            return this.rotate === other.rotate &&
+                this.translate.x === other.translate.x && this.translate.y === other.translate.y &&
+                this.scale.x === other.scale.x && this.scale.y === other.scale.y;
+        }
     }
 
     //------------------------------
@@ -308,11 +314,6 @@ module LayoutEditor {
         }
 
         // performed by the derived class
-        applyTransform() {
-            this.calculateBounds();
-        }
-
-        // performed by the derived class
         calculateBounds() {}
 
         isInsideXY(ctx, x: number, y: number): boolean {
@@ -321,6 +322,13 @@ module LayoutEditor {
 
             this.buildPath(ctx);
             return ctx.isPointInPath(u, v);
+        }
+
+        isInsideOABBXY(x: number, y: number): boolean {
+            var oabb: Bounds = this.oabb;
+            var localPos: XY = oabb.invXY(x, y);
+            return localPos.x >= -oabb.hw && localPos.x < oabb.hw &&
+                localPos.y >= -oabb.hh && localPos.y < oabb.hh;
         }
 
         isOverlapBounds(bounds: Bounds): boolean {
@@ -636,9 +644,12 @@ module LayoutEditor {
 
     export class GroupShape extends Shape {
         shapes: Shape[] = [];
-        lastTransform: Transform = new Transform();
-        encloseHH: number = 0;
-        encloseHW: number = 0;
+        private oldTransforms: Transform[] = []; // original transform for each shape
+        private lastTransform: Transform = new Transform();
+        private encloseHH: number = 0;
+        private encloseHW: number = 0;
+        private oldCX: number = 0;
+        private oldCY: number = 0;
 
         constructor() {
             super();
@@ -652,6 +663,7 @@ module LayoutEditor {
 
         setShapes(shapes: Shape[]) {
             this.shapes = shapes.slice(); // copy
+
             this.encloseShapes();
         }
 
@@ -662,6 +674,8 @@ module LayoutEditor {
             Helper.extend(base.lastTransform, this.lastTransform);
 
             for (var i: number = 0; i < this.shapes.length; ++i) {
+                base.oldTransforms[i] = new Transform();
+                Helper.extend(base.oldTransforms[i], this.oldTransforms[i]);
                 base.shapes[i] = this.shapes[i].copy();
             }
             return base;
@@ -689,26 +703,32 @@ module LayoutEditor {
             return false;
         }
 
-        applyTransform() {
-            var deltaTransform = this.transform.subtract(this.lastTransform);
+        private applyTransform() {
+            if (this.transform.isEqual(this.lastTransform))
+                return;
+
+            var deltaTransform: Transform = this.transform.subtract(this.lastTransform);
+            var transform: Transform = this.transform;
 
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 var shape: Shape = this.shapes[i];
+                var oldTransform: Transform = this.oldTransforms[i];
 
-                shape.transform.translate.x += deltaTransform.translate.x;
-                shape.transform.translate.y += deltaTransform.translate.y;
+                var dx: number = (oldTransform.translate.x - this.oldCX) * transform.scale.x + transform.translate.x;
+                var dy: number = (oldTransform.translate.y - this.oldCY) * transform.scale.y + transform.translate.y;
+
+                shape.transform.translate.x = dx;
+                shape.transform.translate.y = dy;
 
                 // TODO - this is wrong
-                shape.transform.rotate += deltaTransform.rotate;
-                shape.transform.scale.x += deltaTransform.scale.x;
-                shape.transform.scale.y += deltaTransform.scale.y;
+                shape.transform.rotate = oldTransform.rotate + deltaTransform.rotate;
+                shape.transform.scale.x = oldTransform.scale.x * transform.scale.x;
+                shape.transform.scale.y = oldTransform.scale.y * transform.scale.y;
 
                 shape.calculateBounds();
             }
 
             Helper.extend(this.lastTransform, this.transform);
-
-            super.applyTransform();
         }
 
         encloseShapes() {
@@ -720,8 +740,12 @@ module LayoutEditor {
             oabb.reset();
             transform.reset();
 
+            this.oldTransforms.length = 0;
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 var shape: Shape = this.shapes[i];
+
+                this.oldTransforms[i] = new Transform();
+                Helper.extend(this.oldTransforms[i], this.shapes[i].transform);
 
                 aabb.enclose(shape.aabb);
             }
@@ -730,14 +754,22 @@ module LayoutEditor {
 
             transform.translate.x = aabb.cx;
             transform.translate.y = aabb.cy;
+            transform.scale.x = 1;
+            transform.scale.y = 1;
+            transform.rotate = 0;
 
             Helper.extend(this.lastTransform, transform);
 
             this.encloseHW = aabb.hw;
             this.encloseHH = aabb.hh;
+            this.oldCX = aabb.cx;
+            this.oldCY = aabb.cy;
         }
 
         calculateBounds() {
+            // move all the sub-objects
+            this.applyTransform();
+
             var transform: Transform = this.transform;
             var oabb: Bounds = this.oabb;
             var aabb: Bounds = this.aabb;

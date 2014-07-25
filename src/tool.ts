@@ -266,12 +266,12 @@ module LayoutEditor {
     }
 
     export class ResizeTool implements Tool {
-        resizeShape: Shape = null;
-        shape: Shape = null;
+        resizeShape: GroupShape = null;
         handle: ResizeTool.HandleFlag = ResizeTool.HandleFlag.None;
         handleSize: number = 20;
         canUse: boolean = false;
         startLocalPos: XY = null;
+        isDrawing: boolean = false;
 
         constructor() {}
 
@@ -280,15 +280,21 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    var shape: Shape = g_shapeList.getShapeInXY(e.x, e.y);
                     this.handle = ResizeTool.HandleFlag.None;
 
-                    if (this.shape) {
-                        g_grid.rebuildTabs();
-                        this.resizeShape = this.shape.copy();
-                        this.resizeShape.style = g_selectStyle;
+                    if (shape) {
+                        if (!g_selectList.isSelected(shape)) {
+                            g_selectList.setSelectedShapes([shape]);
+                        }
+                    }
 
-                        var oldOABB: Bounds = this.shape.oabb;
+                    var selectGroup: GroupShape = g_selectList.selectGroup;
+                    if (selectGroup.isInsideOABBXY(e.x, e.y)) {
+                        g_grid.rebuildTabs();
+                        this.resizeShape = selectGroup.copy();
+
+                        var oldOABB: Bounds = selectGroup.oabb;
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
                         var handleX = this.handleSize;
                         var handleY = this.handleSize;
@@ -308,14 +314,15 @@ module LayoutEditor {
 
                         this.startLocalPos = localPos;
                         isHandled = true;
+                        this.isDrawing = true;
                     }
                     break;
 
                 case InteractionHelper.State.Move:
-                    if (this.shape) {
+                    if (this.isDrawing) {
                         var transform = this.resizeShape.transform;
-                        var oldTransform = this.shape.transform;
-                        var oldOABB = this.shape.oabb;
+                        var oldTransform = g_selectList.selectGroup.transform;
+                        var oldOABB = g_selectList.selectGroup.oabb;
 
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
                         var dx = (localPos.x - this.startLocalPos.x);
@@ -355,6 +362,7 @@ module LayoutEditor {
                             transform.translate.y = newY;
                         }
 
+                        this.resizeShape.calculateBounds();
                         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
                         g_draw(this);
                         isHandled = true;
@@ -362,27 +370,27 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.End:
-                    if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand(this.shape, this.resizeShape.transform);
+                    if (this.isDrawing && this.canUse) {
+                        var newCommand = new TransformCommand(g_selectList.selectGroup, this.resizeShape.transform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
                     }
                     this.canUse = false;
-                    this.shape = null;
+                    this.isDrawing = false;
                     break;
             }
 
-            return isHandled || this.shape !== null;
+            return isHandled || this.isDrawing;
         }
 
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.shape)
+            if (!this.isDrawing)
                 return;
 
-            this.resizeShape.draw(ctx);
+            this.resizeShape.drawSelect(ctx);
         }
     }
 
@@ -510,7 +518,7 @@ module LayoutEditor {
                         moveTransform.translate.x = oldTransform.translate.x + delta.x;
                         moveTransform.translate.y = oldTransform.translate.y + delta.y;
 
-                        this.moveShape.applyTransform(); // propagate change to group shapes
+                        this.moveShape.calculateBounds();
 
                         this.canUse = true;
 

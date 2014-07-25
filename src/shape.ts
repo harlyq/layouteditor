@@ -111,67 +111,57 @@ module LayoutEditor {
     //------------------------------
     export class Transform {
         rotate: number = 0;
-        scale: XY = {
-            x: 1,
-            y: 1
-        };
-        translate: XY = {
-            x: 0,
-            y: 0
-        };
+        sx: number = 1;
+        sy: number = 1;
+        tx: number = 0;
+        ty: number = 0;
 
         reset() {
             this.rotate = 0;
-            this.scale.x = 1;
-            this.scale.y = 1;
-            this.translate.x = 0;
-            this.translate.y = 0;
+            this.sx = 1;
+            this.sy = 1;
+            this.tx = 0;
+            this.ty = 0;
         }
 
-        calcXY(x: number, y: number): XY {
-            var newPos: XY = {
-                x: 0,
-                y: 0
-            };
+        calcXY(lx: number, ly: number): XY {
             var sr: number = Math.sin(this.rotate);
             var cr: number = Math.cos(this.rotate);
 
-            var lx: number = (x - this.translate.x) * this.scale.x;
-            var ly: number = (y - this.translate.y) * this.scale.y;
-            newPos.x = (lx * cr - ly * sr) + this.translate.x;
-            newPos.y = (lx * sr + ly * cr) + this.translate.y;
+            var nx: number = lx * this.sx;
+            var ny: number = ly * this.sy;
+            var x: number = (nx * cr - ny * sr) + this.tx;
+            var y: number = (nx * sr + ny * cr) + this.ty;
 
-            return newPos;
+            return {
+                x: x,
+                y: y
+            };
         }
 
         invXY(x: number, y: number): XY {
-            var newPos: XY = {
-                x: 0,
-                y: 0
-            };
-
             var sr: number = Math.sin(this.rotate);
             var cr: number = Math.cos(this.rotate);
 
-            newPos.x = x - this.translate.x;
-            newPos.y = y - this.translate.y;
+            var nx: number = x - this.tx;
+            var ny: number = y - this.ty;
 
             var lx: number = 0;
             var ly: number = 0;
 
             if (Math.abs(cr) < EPSILON) {
-                lx = newPos.y / sr;
-                ly = -newPos.x / sr;
+                lx = ny / sr;
+                ly = -nx / sr;
             } else if (Math.abs(sr) < EPSILON) {
-                lx = newPos.x / cr;
-                ly = newPos.y / cr;
+                lx = nx / cr;
+                ly = ny / cr;
             } else {
-                lx = (newPos.x * cr + newPos.y * sr) / (cr * cr + sr * sr);
-                ly = (newPos.y - lx * sr) / cr;
+                lx = (nx * cr + ny * sr) / (cr * cr + sr * sr);
+                ly = (ny - lx * sr) / cr;
             }
 
-            lx /= this.scale.x;
-            ly /= this.scale.y;
+            lx /= this.sx;
+            ly /= this.sy;
 
             return {
                 x: lx,
@@ -182,18 +172,18 @@ module LayoutEditor {
         subtract(transform: Transform): Transform {
             var subTransform = new Transform();
             subTransform.rotate = this.rotate - transform.rotate;
-            subTransform.translate.x = this.translate.x - transform.translate.x;
-            subTransform.translate.y = this.translate.y - transform.translate.y;
-            subTransform.scale.x = this.scale.x - transform.scale.x;
-            subTransform.scale.y = this.scale.y - transform.scale.y;
+            subTransform.tx = this.tx - transform.tx;
+            subTransform.ty = this.ty - transform.ty;
+            subTransform.sx = this.sx - transform.sx;
+            subTransform.sy = this.sy - transform.sy;
 
             return subTransform;
         }
 
         isEqual(other: Transform): boolean {
             return this.rotate === other.rotate &&
-                this.translate.x === other.translate.x && this.translate.y === other.translate.y &&
-                this.scale.x === other.scale.x && this.scale.y === other.scale.y;
+                this.tx === other.tx && this.ty === other.ty &&
+                this.sx === other.sx && this.sy === other.sy;
         }
     }
 
@@ -415,8 +405,8 @@ module LayoutEditor {
             var transform = this.transform;
 
             ctx.save();
-            g_panZoom.transform(ctx, transform.translate.x, transform.translate.y,
-                transform.rotate, transform.scale.x, transform.scale.y);
+            g_panZoom.transform(ctx, transform.tx, transform.ty,
+                transform.rotate, transform.sx, transform.sy);
 
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
@@ -432,8 +422,8 @@ module LayoutEditor {
         }
 
         fromRect(x: number, y: number, w: number, h: number) {
-            this.transform.translate.x = x + w * 0.5;
-            this.transform.translate.y = y + h * 0.5;
+            this.transform.tx = x + w * 0.5;
+            this.transform.ty = y + h * 0.5;
             this.w = w;
             this.h = h;
             this.calculateBounds();
@@ -445,10 +435,10 @@ module LayoutEditor {
             var dy = this.h * 0.5;
 
             this.oabb.rotate = transform.rotate;
-            this.oabb.hw = Math.abs(dx) * transform.scale.x;
-            this.oabb.hh = Math.abs(dy) * transform.scale.y;
-            this.oabb.cx = transform.translate.x;
-            this.oabb.cy = transform.translate.y;
+            this.oabb.hw = Math.abs(dx) * transform.sx;
+            this.oabb.hh = Math.abs(dy) * transform.sy;
+            this.oabb.cx = transform.tx;
+            this.oabb.cy = transform.ty;
 
             var polygon: number[] = this.oabb.toPolygon();
             var x1: number = Helper.arrayMin(polygon, 0, 2);
@@ -492,8 +482,8 @@ module LayoutEditor {
             var ry = Math.abs(this.ry);
 
             ctx.save();
-            g_panZoom.transform(ctx, transform.translate.x, transform.translate.y,
-                transform.rotate, transform.scale.x, transform.scale.y);
+            g_panZoom.transform(ctx, transform.tx, transform.ty,
+                transform.rotate, transform.sx, transform.sy);
 
             var kappa = .5522848,
                 ox = rx * kappa, // control point offset horizontal
@@ -520,8 +510,8 @@ module LayoutEditor {
         }
 
         fromRect(x: number, y: number, w: number, h: number) {
-            this.transform.translate.x = x + w * 0.5;
-            this.transform.translate.y = y + h * 0.5;
+            this.transform.tx = x + w * 0.5;
+            this.transform.ty = y + h * 0.5;
             this.rx = w * 0.5;
             this.ry = h * 0.5;
             this.calculateBounds();
@@ -530,14 +520,14 @@ module LayoutEditor {
         calculateBounds() {
             var transform = this.transform;
 
-            var hw = this.rx * transform.scale.x;
-            var hh = this.ry * transform.scale.y;
+            var hw = this.rx * transform.sx;
+            var hh = this.ry * transform.sy;
 
             this.oabb.rotate = transform.rotate;
             this.oabb.hw = hw;
             this.oabb.hh = hh;
-            this.oabb.cx = transform.translate.x;
-            this.oabb.cy = transform.translate.y;
+            this.oabb.cx = transform.tx;
+            this.oabb.cy = transform.ty;
 
             this.aabb.rotate = 0;
 
@@ -648,8 +638,8 @@ module LayoutEditor {
         private lastTransform: Transform = new Transform();
         private encloseHH: number = 0;
         private encloseHW: number = 0;
-        private oldCX: number = 0;
-        private oldCY: number = 0;
+        private encloseCX: number = 0;
+        private encloseCY: number = 0;
 
         constructor() {
             super();
@@ -659,6 +649,8 @@ module LayoutEditor {
             this.shapes.length = 0;
             this.encloseHW = 0;
             this.encloseHH = 0;
+            this.encloseCX = 0;
+            this.encloseCY = 0;
         }
 
         setShapes(shapes: Shape[]) {
@@ -714,16 +706,15 @@ module LayoutEditor {
                 var shape: Shape = this.shapes[i];
                 var oldTransform: Transform = this.oldTransforms[i];
 
-                var dx: number = (oldTransform.translate.x - this.oldCX) * transform.scale.x + transform.translate.x;
-                var dy: number = (oldTransform.translate.y - this.oldCY) * transform.scale.y + transform.translate.y;
+                var newPos: XY = transform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
 
-                shape.transform.translate.x = dx;
-                shape.transform.translate.y = dy;
+                shape.transform.tx = newPos.x;
+                shape.transform.ty = newPos.y;
 
                 // TODO - this is wrong
-                shape.transform.rotate = oldTransform.rotate + deltaTransform.rotate;
-                shape.transform.scale.x = oldTransform.scale.x * transform.scale.x;
-                shape.transform.scale.y = oldTransform.scale.y * transform.scale.y;
+                shape.transform.rotate = oldTransform.rotate + transform.rotate;
+                shape.transform.sx = oldTransform.sx * transform.sx;
+                shape.transform.sy = oldTransform.sy * transform.sy;
 
                 shape.calculateBounds();
             }
@@ -752,18 +743,18 @@ module LayoutEditor {
 
             Helper.extend(oabb, aabb); // initial oabb matches aabb
 
-            transform.translate.x = aabb.cx;
-            transform.translate.y = aabb.cy;
-            transform.scale.x = 1;
-            transform.scale.y = 1;
+            transform.tx = aabb.cx;
+            transform.ty = aabb.cy;
+            transform.sx = 1;
+            transform.sy = 1;
             transform.rotate = 0;
 
             Helper.extend(this.lastTransform, transform);
 
             this.encloseHW = aabb.hw;
             this.encloseHH = aabb.hh;
-            this.oldCX = aabb.cx;
-            this.oldCY = aabb.cy;
+            this.encloseCX = aabb.cx;
+            this.encloseCY = aabb.cy;
         }
 
         calculateBounds() {
@@ -775,10 +766,10 @@ module LayoutEditor {
             var aabb: Bounds = this.aabb;
 
             oabb.rotate = transform.rotate;
-            oabb.hw = this.encloseHW * transform.scale.x;
-            oabb.hh = this.encloseHH * transform.scale.y;
-            oabb.cx = transform.translate.x;
-            oabb.cy = transform.translate.y;
+            oabb.hw = this.encloseHW * transform.sx;
+            oabb.hh = this.encloseHH * transform.sy;
+            oabb.cx = transform.tx;
+            oabb.cy = transform.ty;
 
             var polygon: number[] = oabb.toPolygon();
             var x1: number = Helper.arrayMin(polygon, 0, 2);
@@ -1003,7 +994,7 @@ module LayoutEditor {
             var copyShapes: Shape[] = [];
             for (var i: number = 0; i < this.selectedShapes.length; ++i) {
                 var copyShape: Shape = g_shapeList.duplicateShape(this.selectedShapes[i]);
-                copyShape.transform.translate.x += 20;
+                copyShape.transform.tx += 20;
                 copyShape.calculateBounds();
                 copyShapes.push(copyShape);
             }

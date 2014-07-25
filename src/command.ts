@@ -66,8 +66,8 @@ module LayoutEditor {
             super();
 
             this.shape = new RectShape(w, h);
-            this.shape.transform.translate.x = cx;
-            this.shape.transform.translate.y = cy;
+            this.shape.transform.tx = cx;
+            this.shape.transform.ty = cy;
             this.shape.setStyle(g_style);
             this.shape.calculateBounds();
         }
@@ -79,8 +79,8 @@ module LayoutEditor {
             super();
 
             this.shape = new EllipseShape(rx, ry);
-            this.shape.transform.translate.x = cx;
-            this.shape.transform.translate.y = cy;
+            this.shape.transform.tx = cx;
+            this.shape.transform.ty = cy;
             this.shape.setStyle(g_style);
             this.shape.calculateBounds();
         }

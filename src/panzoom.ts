@@ -63,10 +63,10 @@ module LayoutEditor {
             ctx.scale(x * this.zoom, y * this.zoom);
         }
 
-        transform(ctx, translateX: number = 0, translateY: number = 0, rotate: number = 0, scaleX: number = 1, scaleY: number = 1) {
-            ctx.translate(translateX * this.zoom + this.pan.x, translateY * this.zoom + this.pan.y);
+        transform(ctx, tx: number = 0, ty: number = 0, rotate: number = 0, sx: number = 1, sy: number = 1) {
+            ctx.translate(tx * this.zoom + this.pan.x, ty * this.zoom + this.pan.y);
             ctx.rotate(rotate);
-            ctx.scale(scaleX * this.zoom, scaleY * this.zoom);
+            ctx.scale(sx * this.zoom, sy * this.zoom);
         }
 
         saveData(): any {

@@ -64,8 +64,8 @@ module LayoutEditor {
                 case InteractionHelper.State.End:
                     if (this.canUse) {
                         var newCommand = new RectCommand(
-                            this.rectShape.transform.translate.x,
-                            this.rectShape.transform.translate.y,
+                            this.rectShape.transform.tx,
+                            this.rectShape.transform.ty,
                             this.rectShape.w,
                             this.rectShape.h);
                         g_commandList.addCommand(newCommand);
@@ -141,8 +141,8 @@ module LayoutEditor {
                 case InteractionHelper.State.End:
                     if (this.canUse) {
                         var newCommand = new EllipseCommand(
-                            this.ellipseShape.transform.translate.x,
-                            this.ellipseShape.transform.translate.y,
+                            this.ellipseShape.transform.tx,
+                            this.ellipseShape.transform.ty,
                             this.ellipseShape.rx,
                             this.ellipseShape.ry);
                         g_commandList.addCommand(newCommand);
@@ -327,39 +327,39 @@ module LayoutEditor {
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
                         var dx = (localPos.x - this.startLocalPos.x);
                         var dy = (localPos.y - this.startLocalPos.y);
-                        var sx = dx * oldTransform.scale.x / (oldOABB.hw * 2); // unscaled delta
-                        var sy = dy * oldTransform.scale.y / (oldOABB.hh * 2); // unscaled delta
+                        var sx = dx * oldTransform.sx / (oldOABB.hw * 2); // unscaled delta
+                        var sy = dy * oldTransform.sy / (oldOABB.hh * 2); // unscaled delta
                         var cr = Math.cos(oldOABB.rotate);
                         var sr = Math.sin(oldOABB.rotate);
 
-                        var newX = oldTransform.translate.x;
-                        var newY = oldTransform.translate.y;
+                        var newX = oldTransform.tx;
+                        var newY = oldTransform.ty;
                         if (this.handle & ResizeTool.HandleFlag.Left) {
                             newX += dx * cr * 0.5;
                             newY += dx * sr * 0.5;
-                            transform.scale.x = oldTransform.scale.x - sx;
+                            transform.sx = oldTransform.sx - sx;
                         } else if (this.handle & ResizeTool.HandleFlag.Right) {
                             newX += dx * cr * 0.5;
                             newY += dx * sr * 0.5;
-                            transform.scale.x = oldTransform.scale.x + sx;
+                            transform.sx = oldTransform.sx + sx;
                         }
 
                         if (this.handle & ResizeTool.HandleFlag.Top) {
                             newX -= dy * sr * 0.5;
                             newY += dy * cr * 0.5;
-                            transform.scale.y = oldTransform.scale.y - sy;
+                            transform.sy = oldTransform.sy - sy;
                         } else if (this.handle & ResizeTool.HandleFlag.Bottom) {
                             newX -= dy * sr * 0.5;
                             newY += dy * cr * 0.5;
-                            transform.scale.y = oldTransform.scale.y + sy;
+                            transform.sy = oldTransform.sy + sy;
                         }
 
                         if (this.handle === ResizeTool.HandleFlag.Middle) {
-                            transform.translate.x += e.deltaX;
-                            transform.translate.y += e.deltaY;
+                            transform.tx += e.deltaX;
+                            transform.ty += e.deltaY;
                         } else {
-                            transform.translate.x = newX;
-                            transform.translate.y = newY;
+                            transform.tx = newX;
+                            transform.ty = newY;
                         }
 
                         this.resizeShape.calculateBounds();
@@ -375,6 +375,7 @@ module LayoutEditor {
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
+                        this.resizeShape = null;
                     }
                     this.canUse = false;
                     this.isDrawing = false;
@@ -387,7 +388,7 @@ module LayoutEditor {
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.isDrawing)
+            if (!this.resizeShape)
                 return;
 
             this.resizeShape.drawSelect(ctx);
@@ -401,13 +402,11 @@ module LayoutEditor {
     }
 
     export class RotateTool implements Tool {
-        shape: Shape = null;
-        lastAngle: number = 0;
-        rotateShape: Shape = null;
-        pivot: XY = {
-            x: 0,
-            y: 0
-        };
+        private lastAngle: number = 0;
+        private rotateShape: Shape = null;
+        private pivotX: number = 0;
+        private pivotY: number = 0;
+        isDrawing: boolean = false;
 
         constructor() {
 
@@ -418,55 +417,64 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
-                    if (this.shape) {
-                        this.rotateShape = this.shape.copy();
-                        this.rotateShape.style = g_selectStyle;
-                        this.pivot = this.rotateShape.transform.translate;
-                        this.lastAngle = this.getAngle(e.x, e.y, this.pivot);
+                    var shape: Shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    if (shape) {
+                        if (!g_selectList.isSelected(shape)) {
+                            g_selectList.setSelectedShapes([shape]);
+                        }
+                    }
+
+                    var selectGroup: GroupShape = g_selectList.selectGroup;
+                    if (selectGroup.isInsideOABBXY(e.x, e.y)) {
+                        g_grid.rebuildTabs();
+                        this.rotateShape = selectGroup.copy();
+                        this.pivotX = this.rotateShape.transform.tx;
+                        this.pivotY = this.rotateShape.transform.tx;
+                        this.lastAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
+                        this.isDrawing = true;
                         isHandled = true;
                     }
                     break;
 
                 case InteractionHelper.State.Move:
-                    if (this.rotateShape) {
-                        var newAngle = this.getAngle(e.x, e.y, this.pivot);
+                    if (this.isDrawing) {
+                        var newAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
                         this.rotateShape.transform.rotate += newAngle - this.lastAngle;
                         this.lastAngle = newAngle;
+                        this.rotateShape.calculateBounds();
                         g_draw(this);
                         isHandled = true;
                     }
                     break;
 
                 case InteractionHelper.State.End:
-                    if (this.rotateShape) {
-                        var newCommand = new TransformCommand(this.shape, this.rotateShape.transform);
+                    if (this.isDrawing) {
+                        var newCommand = new TransformCommand(g_selectList.selectGroup, this.rotateShape.transform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
+                        this.isDrawing = false;
+                        this.rotateShape = null;
                     }
 
-                    this.rotateShape = null;
-                    this.shape = null;
                     break;
             }
 
-            return isHandled || this.rotateShape !== null;
+            return isHandled || this.isDrawing;
         }
 
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.shape)
+            if (!this.rotateShape)
                 return;
 
-            this.rotateShape.calculateBounds();
-            this.rotateShape.draw(ctx);
+            this.rotateShape.drawSelect(ctx);
         }
 
-        private getAngle(x: number, y: number, pivot: XY): number {
-            var dy = y - pivot.y;
-            var dx = x - pivot.x;
+        private getAngle(x: number, y: number, px: number, py: number): number {
+            var dx = x - px;
+            var dy = y - py;
             if (Math.abs(dy) < EPSILON && Math.abs(dx) < EPSILON)
                 return 0;
 
@@ -515,8 +523,8 @@ module LayoutEditor {
                         var oldTransform = g_selectList.selectGroup.transform;
                         var moveTransform = this.moveShape.transform;
 
-                        moveTransform.translate.x = oldTransform.translate.x + delta.x;
-                        moveTransform.translate.y = oldTransform.translate.y + delta.y;
+                        moveTransform.tx = oldTransform.tx + delta.x;
+                        moveTransform.ty = oldTransform.ty + delta.y;
 
                         this.moveShape.calculateBounds();
 

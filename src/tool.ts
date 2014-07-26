@@ -38,7 +38,7 @@ module LayoutEditor {
         constructor() {
             super();
             this.shape = this.rectShape;
-            this.rectShape.style = g_drawStyle;
+            this.rectShape.setStyle(g_drawStyle);
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -117,7 +117,7 @@ module LayoutEditor {
         constructor() {
             super();
             this.shape = this.ellipseShape;
-            this.ellipseShape.style = g_drawStyle;
+            this.ellipseShape.setStyle(g_drawStyle);
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -191,7 +191,7 @@ module LayoutEditor {
         private isDrawing: boolean = false;
 
         constructor() {
-            this.aabbShape.style = g_selectStyle;
+            this.aabbShape.setStyle(g_selectStyle);
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -266,12 +266,17 @@ module LayoutEditor {
     }
 
     export class ResizeTool implements Tool {
-        resizeShape: GroupShape = null;
-        handle: ResizeTool.HandleFlag = ResizeTool.HandleFlag.None;
-        handleSize: number = 20;
-        canUse: boolean = false;
-        startLocalPos: XY = null;
         isDrawing: boolean = false;
+        handleSize: number = 20;
+
+        private handle: ResizeTool.HandleFlag = ResizeTool.HandleFlag.None;
+        private canUse: boolean = false;
+        private startLocalPos: XY = null;
+        private oldInfo: SimpleTransform = null;
+        private oldTransform: Transform = new Transform();
+        private deltaX: number = 0;
+        private deltaY: number = 0;
+        private oldOABB: Bounds = new Bounds();
 
         constructor() {}
 
@@ -292,12 +297,15 @@ module LayoutEditor {
                     var selectGroup: GroupShape = g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
                         g_grid.rebuildTabs();
-                        this.resizeShape = selectGroup.copy();
 
-                        var oldOABB: Bounds = selectGroup.oabb;
+                        Helper.extend(this.oldOABB, selectGroup.oabb);
+                        Helper.extend(this.oldTransform, selectGroup.transform);
+
+                        var oldOABB: Bounds = this.oldOABB;
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
                         var handleX = this.handleSize;
                         var handleY = this.handleSize;
+                        this.oldInfo = selectGroup.transform.decompose();
 
                         if (localPos.x + oldOABB.hw < handleX)
                             this.handle = (this.handle | ResizeTool.HandleFlag.Left);
@@ -315,54 +323,63 @@ module LayoutEditor {
                         this.startLocalPos = localPos;
                         isHandled = true;
                         this.isDrawing = true;
+                        this.deltaX = 0;
+                        this.deltaY = 0;
                     }
                     break;
 
                 case InteractionHelper.State.Move:
                     if (this.isDrawing) {
-                        var transform = this.resizeShape.transform;
-                        var oldTransform = g_selectList.selectGroup.transform;
-                        var oldOABB = g_selectList.selectGroup.oabb;
+                        var transform = g_selectList.selectGroup.transform;
+                        var oldOABB = this.oldOABB;
+                        var oldInfo = this.oldInfo;
 
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
                         var dx = (localPos.x - this.startLocalPos.x);
                         var dy = (localPos.y - this.startLocalPos.y);
-                        var sx = dx * oldTransform.sx / (oldOABB.hw * 2); // unscaled delta
-                        var sy = dy * oldTransform.sy / (oldOABB.hh * 2); // unscaled delta
+                        var sx = dx * oldInfo.scaleX / (oldOABB.hw * 2); // unscaled delta
+                        var sy = dy * oldInfo.scaleY / (oldOABB.hh * 2); // unscaled delta
                         var cr = Math.cos(oldOABB.rotate);
                         var sr = Math.sin(oldOABB.rotate);
 
-                        var newX = oldTransform.tx;
-                        var newY = oldTransform.ty;
+                        var newX = oldInfo.tx;
+                        var newY = oldInfo.ty;
+                        var newScaleX = oldInfo.scaleX;
+                        var newScaleY = oldInfo.scaleY;
+
                         if (this.handle & ResizeTool.HandleFlag.Left) {
                             newX += dx * cr * 0.5;
                             newY += dx * sr * 0.5;
-                            transform.sx = oldTransform.sx - sx;
+                            newScaleX -= sx;
                         } else if (this.handle & ResizeTool.HandleFlag.Right) {
                             newX += dx * cr * 0.5;
                             newY += dx * sr * 0.5;
-                            transform.sx = oldTransform.sx + sx;
+                            newScaleX += sx;
                         }
 
                         if (this.handle & ResizeTool.HandleFlag.Top) {
                             newX -= dy * sr * 0.5;
                             newY += dy * cr * 0.5;
-                            transform.sy = oldTransform.sy - sy;
+                            newScaleY -= sy;
                         } else if (this.handle & ResizeTool.HandleFlag.Bottom) {
                             newX -= dy * sr * 0.5;
                             newY += dy * cr * 0.5;
-                            transform.sy = oldTransform.sy + sy;
+                            newScaleY += sy;
                         }
 
                         if (this.handle === ResizeTool.HandleFlag.Middle) {
-                            transform.tx += e.deltaX;
-                            transform.ty += e.deltaY;
-                        } else {
-                            transform.tx = newX;
-                            transform.ty = newY;
+                            this.deltaX += e.deltaX;
+                            this.deltaY += e.deltaY;
+                            newX = this.deltaX;
+                            newY = this.deltaY;
                         }
 
-                        this.resizeShape.calculateBounds();
+                        transform.setIdentity();
+                        transform.scale(newScaleX, newScaleY);
+                        transform.rotate(this.oldInfo.rotate);
+                        transform.translate(newX, newY)
+
+                        g_selectList.selectGroup.calculateBounds();
                         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
                         g_draw(this);
                         isHandled = true;
@@ -371,11 +388,10 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.isDrawing && this.canUse) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup, this.resizeShape.transform);
+                        var newCommand = new TransformCommand(g_selectList.selectGroup, g_selectList.selectGroup.transform, this.oldTransform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
-                        this.resizeShape = null;
                     }
                     this.canUse = false;
                     this.isDrawing = false;
@@ -387,12 +403,7 @@ module LayoutEditor {
 
         onChangeFocus(focus: string) {}
 
-        public draw(ctx) {
-            if (!this.resizeShape)
-                return;
-
-            this.resizeShape.drawSelect(ctx);
-        }
+        public draw(ctx) {}
     }
 
     export module ResizeTool {
@@ -403,9 +414,10 @@ module LayoutEditor {
 
     export class RotateTool implements Tool {
         private lastAngle: number = 0;
-        private rotateShape: Shape = null;
         private pivotX: number = 0;
         private pivotY: number = 0;
+        private oldTransform: Transform = new Transform();
+
         isDrawing: boolean = false;
 
         constructor() {
@@ -427,9 +439,11 @@ module LayoutEditor {
                     var selectGroup: GroupShape = g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
                         g_grid.rebuildTabs();
-                        this.rotateShape = selectGroup.copy();
-                        this.pivotX = this.rotateShape.transform.tx;
-                        this.pivotY = this.rotateShape.transform.tx;
+                        // this.rotateShape = selectGroup.copy();
+                        Helper.extend(this.oldTransform, selectGroup.transform);
+
+                        this.pivotX = selectGroup.transform.tx;
+                        this.pivotY = selectGroup.transform.tx;
                         this.lastAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
                         this.isDrawing = true;
                         isHandled = true;
@@ -439,22 +453,22 @@ module LayoutEditor {
                 case InteractionHelper.State.Move:
                     if (this.isDrawing) {
                         var newAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
-                        this.rotateShape.transform.rotate += newAngle - this.lastAngle;
-                        this.lastAngle = newAngle;
-                        this.rotateShape.calculateBounds();
+                        g_selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
+                        g_selectList.selectGroup.calculateBounds();
                         g_draw(this);
+
                         isHandled = true;
+                        this.lastAngle = newAngle;
                     }
                     break;
 
                 case InteractionHelper.State.End:
                     if (this.isDrawing) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup, this.rotateShape.transform);
+                        var newCommand = new TransformCommand(g_selectList.selectGroup, g_selectList.selectGroup.transform, this.oldTransform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
                         isHandled = true;
                         this.isDrawing = false;
-                        this.rotateShape = null;
                     }
 
                     break;
@@ -465,12 +479,7 @@ module LayoutEditor {
 
         onChangeFocus(focus: string) {}
 
-        public draw(ctx) {
-            if (!this.rotateShape)
-                return;
-
-            this.rotateShape.drawSelect(ctx);
-        }
+        public draw(ctx) {}
 
         private getAngle(x: number, y: number, px: number, py: number): number {
             var dx = x - px;
@@ -483,11 +492,12 @@ module LayoutEditor {
     }
 
     export class MoveTool implements Tool {
-        private moveShape: GroupShape = null;
         private shape: Shape = null;
         private canUse: boolean = false;
         private deltaX: number = 0;
         private deltaY: number = 0;
+        private oldTransform: Transform = new Transform();
+        private oldAABB: Bounds = new Bounds();
 
         constructor() {}
 
@@ -504,7 +514,8 @@ module LayoutEditor {
                         }
 
                         g_grid.rebuildTabs();
-                        this.moveShape = g_selectList.selectGroup.copy();
+                        Helper.extend(this.oldTransform, g_selectList.selectGroup.transform);
+                        Helper.extend(this.oldAABB, g_selectList.selectGroup.aabb)
                         this.deltaX = 0;
                         this.deltaY = 0;
 
@@ -520,13 +531,12 @@ module LayoutEditor {
 
                         var delta: XY = this.snapAABBToGrid(this.deltaX, this.deltaY);
 
-                        var oldTransform = g_selectList.selectGroup.transform;
-                        var moveTransform = this.moveShape.transform;
+                        var moveTransform = g_selectList.selectGroup.transform;
 
-                        moveTransform.tx = oldTransform.tx + delta.x;
-                        moveTransform.ty = oldTransform.ty + delta.y;
+                        moveTransform.tx = this.oldTransform.tx + delta.x;
+                        moveTransform.ty = this.oldTransform.ty + delta.y;
 
-                        this.moveShape.calculateBounds();
+                        g_selectList.selectGroup.calculateBounds();
 
                         this.canUse = true;
 
@@ -537,14 +547,14 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup, this.moveShape.transform);
+                        var newCommand = new TransformCommand(g_selectList.selectGroup, g_selectList.selectGroup.transform, this.oldTransform);
                         g_commandList.addCommand(newCommand);
                         g_draw(this);
+                        g_grid.clearSnap();
                         isHandled = true;
                     }
                     this.canUse = false;
                     this.shape = null;
-                    this.moveShape = null;
                     break;
             }
 
@@ -554,18 +564,12 @@ module LayoutEditor {
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.shape)
-                return;
-
-            this.moveShape.drawSelect(ctx);
-
             g_grid.draw(ctx);
-
         }
 
         private snapAABBToGrid(dx: number, dy: number): XY {
             // the delta is wrt to the original aabb
-            var aabb = g_selectList.selectGroup.aabb;
+            var aabb = this.oldAABB;
 
             var centerX: number = aabb.cx + dx;
             var centerY: number = aabb.cy + dy;
@@ -579,9 +583,6 @@ module LayoutEditor {
                 y: dy
             };
 
-            g_grid.snappedX = -1;
-            g_grid.snappedY = -1;
-
             var newLeft: number = g_grid.snapX(left);
             if (left !== newLeft) {
                 delta.x += newLeft - left;
@@ -590,9 +591,9 @@ module LayoutEditor {
                 if (right !== newRight) {
                     delta.x += newRight - right;
                 } else {
-                    var newCenterX: number = g_grid.snapX(aabb.cx);
-                    if (newCenterX !== aabb.cx) {
-                        delta.x += newCenterX - aabb.cx;
+                    var newCenterX: number = g_grid.snapX(centerX);
+                    if (newCenterX !== centerX) {
+                        delta.x += newCenterX - centerX;
                     }
                 }
             }
@@ -605,9 +606,9 @@ module LayoutEditor {
                 if (bottom !== newBottom) {
                     delta.y += newBottom - bottom;
                 } else {
-                    var newCenterY: number = g_grid.snapY(aabb.cy);
-                    if (newCenterY !== aabb.cy) {
-                        delta.y += newCenterY - aabb.cy;
+                    var newCenterY: number = g_grid.snapY(centerY);
+                    if (newCenterY !== centerY) {
+                        delta.y += newCenterY - centerY;
                     }
                 }
             }
@@ -632,16 +633,16 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.Move:
-                    g_panZoom.pan.x += g_panZoom.deltaX;
-                    g_panZoom.pan.y += g_panZoom.deltaY;
+                    g_panZoom.panX += g_panZoom.deltaX;
+                    g_panZoom.panY += g_panZoom.deltaY;
                     g_draw(g_panZoom);
                     isHandled = true;
                     break;
 
                 case InteractionHelper.State.MouseWheel:
                     var scale = (g_panZoom.deltaY > 0 ? 1 / 1.15 : 1.15);
-                    g_panZoom.pan.x += e.x * g_panZoom.zoom * (1 - scale);
-                    g_panZoom.pan.y += e.y * g_panZoom.zoom * (1 - scale);
+                    g_panZoom.panX += e.x * g_panZoom.zoom * (1 - scale);
+                    g_panZoom.panY += e.y * g_panZoom.zoom * (1 - scale);
                     g_panZoom.zoom *= scale;
 
                     g_draw(g_panZoom);

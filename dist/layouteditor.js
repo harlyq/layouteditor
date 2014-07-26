@@ -793,18 +793,16 @@ var LayoutEditor;
             }]
     });
 })(LayoutEditor || (LayoutEditor = {}));
-/// <reference path="helper.ts" />
+/// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
     //------------------------------
     var PanZoom = (function () {
         function PanZoom() {
-            this.pan = {
-                x: 0,
-                y: 0
-            };
+            this.panX = 0;
+            this.panY = 0;
             this.zoom = 1;
-            // raw input values
+            // raw input values, prior to panZoom scaling
             this.x = 0;
             this.y = 0;
             this.deltaX = 0;
@@ -816,10 +814,10 @@ var LayoutEditor;
         };
 
         PanZoom.prototype.toX = function (x) {
-            return (x - this.pan.x) / this.zoom;
+            return (x - this.panX) / this.zoom;
         };
         PanZoom.prototype.toY = function (y) {
-            return (y - this.pan.y) / this.zoom;
+            return (y - this.panY) / this.zoom;
         };
         PanZoom.prototype.toH = function (h) {
             return h / this.zoom;
@@ -829,31 +827,17 @@ var LayoutEditor;
         };
 
         PanZoom.prototype.calcXY = function (x, y) {
-            var newPos = {
-                x: 0,
-                y: 0
+            return {
+                x: x * this.zoom + this.panX,
+                y: y * this.zoom + this.panY
             };
-            newPos.x = x * this.zoom + this.pan.x;
-            newPos.y = y * this.zoom + this.pan.y;
-            return newPos;
         };
 
         PanZoom.prototype.invXY = function (x, y) {
-            var invPos = {
-                x: 0,
-                y: 0
+            return {
+                x: (x - this.panX) / this.zoom,
+                y: (y - this.panY) / this.zoom
             };
-            invPos.x = (x - this.pan.x) / this.zoom;
-            invPos.y = (y - this.pan.y) / this.zoom;
-            return invPos;
-        };
-
-        PanZoom.prototype.translate = function (ctx, x, y) {
-            ctx.translate(x * this.zoom + this.pan.x, y * this.zoom + this.pan.y);
-        };
-
-        PanZoom.prototype.scale = function (ctx, x, y) {
-            ctx.scale(x * this.zoom, y * this.zoom);
         };
 
         PanZoom.prototype.transform = function (ctx, tx, ty, rotate, sx, sy) {
@@ -862,18 +846,21 @@ var LayoutEditor;
             if (typeof rotate === "undefined") { rotate = 0; }
             if (typeof sx === "undefined") { sx = 1; }
             if (typeof sy === "undefined") { sy = 1; }
-            ctx.translate(tx * this.zoom + this.pan.x, ty * this.zoom + this.pan.y);
+            ctx.translate(tx * this.zoom + this.panX, ty * this.zoom + this.panY);
             ctx.rotate(rotate);
             ctx.scale(sx * this.zoom, sy * this.zoom);
+        };
+
+        PanZoom.prototype.transformComplete = function (ctx, t) {
+            var zoom = this.zoom;
+            ctx.transform(zoom * t.a, zoom * t.b, zoom * t.c, zoom * t.d, t.tx * zoom + this.panX, t.ty * zoom + this.panY);
         };
 
         PanZoom.prototype.saveData = function () {
             return {
                 type: "PanZoom",
-                pan: {
-                    x: this.pan.x,
-                    y: this.pan.y
-                },
+                panX: this.panX,
+                panY: this.panY,
                 zoom: this.zoom
             };
         };
@@ -1112,80 +1099,137 @@ var LayoutEditor;
     LayoutEditor.drawPolygon = drawPolygon;
 
     //------------------------------
+    var SimpleTransform = (function () {
+        function SimpleTransform(scaleX, scaleY, shear, rotate, tx, ty) {
+            this.scaleX = scaleX;
+            this.scaleY = scaleY;
+            this.shear = shear;
+            this.rotate = rotate;
+            this.tx = tx;
+            this.ty = ty;
+        }
+        return SimpleTransform;
+    })();
+    LayoutEditor.SimpleTransform = SimpleTransform;
+
     var Transform = (function () {
         function Transform() {
-            this.rotate = 0;
-            this.sx = 1;
-            this.sy = 1;
+            // | a| b|
+            // | c| d|
+            // |tx|ty|
+            this.a = 1;
+            this.b = 0;
+            this.c = 0;
+            this.d = 1;
             this.tx = 0;
             this.ty = 0;
         }
-        Transform.prototype.reset = function () {
-            this.rotate = 0;
-            this.sx = 1;
-            this.sy = 1;
-            this.tx = 0;
-            this.ty = 0;
+        Transform.prototype.setIdentity = function () {
+            this.constructor();
+        };
+
+        Transform.prototype.setRotate = function (rad) {
+            var sr = Math.sin(rad);
+            var cr = Math.cos(rad);
+            this.a = cr;
+            this.b = -sr;
+            this.c = sr;
+            this.d = cr;
+            // this.tx = 0;
+            // this.ty = 0;
+        };
+
+        Transform.prototype.rotate = function (rad) {
+            var sr = Math.sin(rad);
+            var cr = Math.cos(rad);
+            var a = this.a;
+            var b = this.b;
+            var c = this.c;
+            var d = this.d;
+            this.a = a * cr - b * sr;
+            this.b = a * sr + b * cr;
+            this.c = c * cr - d * sr;
+            this.d = c * sr + d * cr;
+        };
+
+        Transform.prototype.scale = function (sx, sy) {
+            this.a *= sx;
+            this.b *= sy;
+            this.c *= sx;
+            this.d *= sy;
+        };
+
+        Transform.prototype.translate = function (tx, ty) {
+            this.tx += tx;
+            this.ty += ty;
+        };
+
+        Transform.prototype.decompose = function () {
+            var a = this.a;
+            var b = this.b;
+            var c = this.c;
+            var d = this.d;
+
+            var scaleX = Math.sqrt(a * a + b * b);
+            a /= scaleX;
+            b /= scaleX;
+
+            var shear = a * c + b * d;
+            c -= a * shear;
+            d -= b * shear;
+
+            var scaleY = Math.sqrt(c * c + d * d);
+            c /= scaleY;
+            d /= scaleY;
+            shear /= scaleY;
+
+            if (a * d < b * c) {
+                a = -a;
+                b = -b;
+                shear = -shear;
+                scaleX = -scaleX;
+            }
+
+            return new SimpleTransform(scaleX, scaleY, shear, Math.atan2(b, a), this.tx, this.ty);
         };
 
         Transform.prototype.calcXY = function (lx, ly) {
-            var sr = Math.sin(this.rotate);
-            var cr = Math.cos(this.rotate);
-
-            var nx = lx * this.sx;
-            var ny = ly * this.sy;
-            var x = (nx * cr - ny * sr) + this.tx;
-            var y = (nx * sr + ny * cr) + this.ty;
-
             return {
-                x: x,
-                y: y
+                x: lx * this.a + ly * this.c + this.tx,
+                y: lx * this.b + ly * this.d + this.ty
             };
+        };
+
+        Transform.prototype.copy = function () {
+            var t = new Transform();
+            t.a = this.a;
+            t.b = this.b;
+            t.c = this.c;
+            t.d = this.d;
+            t.tx = this.tx;
+            t.ty = this.ty;
+            return t;
         };
 
         Transform.prototype.invXY = function (x, y) {
-            var sr = Math.sin(this.rotate);
-            var cr = Math.cos(this.rotate);
+            var det = this.a * this.d - this.b * this.c;
+            Helper.assert(Math.abs(det) > LayoutEditor.EPSILON);
 
-            var nx = x - this.tx;
-            var ny = y - this.ty;
-
-            var lx = 0;
-            var ly = 0;
-
-            if (Math.abs(cr) < LayoutEditor.EPSILON) {
-                lx = ny / sr;
-                ly = -nx / sr;
-            } else if (Math.abs(sr) < LayoutEditor.EPSILON) {
-                lx = nx / cr;
-                ly = ny / cr;
-            } else {
-                lx = (nx * cr + ny * sr) / (cr * cr + sr * sr);
-                ly = (ny - lx * sr) / cr;
-            }
-
-            lx /= this.sx;
-            ly /= this.sy;
+            var a = this.d;
+            var b = -this.c;
+            var c = -this.b;
+            var d = this.a;
+            var tx = (this.b * this.ty - this.d * this.tx);
+            var ty = (this.c * this.tx - this.a * this.ty);
 
             return {
-                x: lx,
-                y: ly
+                x: (x * a + y * c + tx) / det,
+                y: (x * b + y * d + ty) / det
             };
         };
 
-        Transform.prototype.subtract = function (transform) {
-            var subTransform = new Transform();
-            subTransform.rotate = this.rotate - transform.rotate;
-            subTransform.tx = this.tx - transform.tx;
-            subTransform.ty = this.ty - transform.ty;
-            subTransform.sx = this.sx - transform.sx;
-            subTransform.sy = this.sy - transform.sy;
-
-            return subTransform;
-        };
-
         Transform.prototype.isEqual = function (other) {
-            return this.rotate === other.rotate && this.tx === other.tx && this.ty === other.ty && this.sx === other.sx && this.sy === other.sy;
+            return this.tx === other.tx && this.ty === other.ty && this.a === other.a && this.b === other.b && this.c === other.c && this.d === other.d;
         };
         return Transform;
     })();
@@ -1193,7 +1237,7 @@ var LayoutEditor;
 
     //------------------------------
     var Shape = (function () {
-        function Shape() {
+        function Shape(name) {
             this.style = LayoutEditor.g_style;
             this.isDeleted = false;
             this.oabb = new Bounds();
@@ -1201,7 +1245,10 @@ var LayoutEditor;
             this.transform = new Transform();
             this.name = "";
             this.text = "";
-            this.makeUnique();
+            if (typeof name === "undefined")
+                this.makeUnique();
+            else
+                this.name = name;
         }
         Shape.prototype.makeUnique = function () {
             this.name = "Shape" + Shape.uniqueID++;
@@ -1209,6 +1256,10 @@ var LayoutEditor;
 
         Shape.prototype.setStyle = function (style) {
             this.style = style;
+        };
+
+        Shape.prototype.getStyle = function () {
+            return this.style;
         };
 
         Shape.prototype.draw = function (ctx) {
@@ -1309,8 +1360,8 @@ var LayoutEditor;
         };
 
         Shape.prototype.isInsideXY = function (ctx, x, y) {
-            var u = x * LayoutEditor.g_panZoom.zoom + LayoutEditor.g_panZoom.pan.x;
-            var v = y * LayoutEditor.g_panZoom.zoom + LayoutEditor.g_panZoom.pan.y;
+            var u = x * LayoutEditor.g_panZoom.zoom + LayoutEditor.g_panZoom.panX;
+            var v = y * LayoutEditor.g_panZoom.zoom + LayoutEditor.g_panZoom.panY;
 
             this.buildPath(ctx);
             return ctx.isPointInPath(u, v);
@@ -1411,7 +1462,7 @@ var LayoutEditor;
             var transform = this.transform;
 
             ctx.save();
-            LayoutEditor.g_panZoom.transform(ctx, transform.tx, transform.ty, transform.rotate, transform.sx, transform.sy);
+            LayoutEditor.g_panZoom.transformComplete(ctx, transform);
 
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
@@ -1439,9 +1490,10 @@ var LayoutEditor;
             var dx = this.w * 0.5;
             var dy = this.h * 0.5;
 
-            this.oabb.rotate = transform.rotate;
-            this.oabb.hw = Math.abs(dx) * transform.sx;
-            this.oabb.hh = Math.abs(dy) * transform.sy;
+            var info = transform.decompose();
+            this.oabb.rotate = info.rotate;
+            this.oabb.hw = Math.abs(dx * info.scaleX);
+            this.oabb.hh = Math.abs(dy * info.scaleY);
             this.oabb.cx = transform.tx;
             this.oabb.cy = transform.ty;
 
@@ -1491,7 +1543,7 @@ var LayoutEditor;
             var ry = Math.abs(this.ry);
 
             ctx.save();
-            LayoutEditor.g_panZoom.transform(ctx, transform.tx, transform.ty, transform.rotate, transform.sx, transform.sy);
+            LayoutEditor.g_panZoom.transformComplete(ctx, transform);
 
             var kappa = .5522848, ox = rx * kappa, oy = ry * kappa;
 
@@ -1526,10 +1578,11 @@ var LayoutEditor;
         EllipseShape.prototype.calculateBounds = function () {
             var transform = this.transform;
 
-            var hw = this.rx * transform.sx;
-            var hh = this.ry * transform.sy;
+            var info = transform.decompose();
+            var hw = Math.abs(this.rx * info.scaleX);
+            var hh = Math.abs(this.ry * info.scaleY);
 
-            this.oabb.rotate = transform.rotate;
+            this.oabb.rotate = info.rotate;
             this.oabb.hw = hw;
             this.oabb.hh = hh;
             this.oabb.cx = transform.tx;
@@ -1537,7 +1590,7 @@ var LayoutEditor;
 
             this.aabb.rotate = 0;
 
-            var rot = this.transform.rotate;
+            var rot = info.rotate;
             var ux = hw * Math.cos(rot);
             var uy = hw * Math.sin(rot);
             var vx = hh * Math.cos(rot + Math.PI * 0.5);
@@ -1639,8 +1692,8 @@ var LayoutEditor;
 
     var GroupShape = (function (_super) {
         __extends(GroupShape, _super);
-        function GroupShape() {
-            _super.call(this);
+        function GroupShape(name) {
+            _super.call(this, name);
             this.shapes = [];
             this.oldTransforms = [];
             this.lastTransform = new Transform();
@@ -1663,6 +1716,14 @@ var LayoutEditor;
             this.encloseShapes();
         };
 
+        GroupShape.prototype.setStyle = function (style) {
+            _super.prototype.setStyle.call(this, style);
+
+            for (var i = 0; i < this.shapes.length; ++i) {
+                this.shapes[i].setStyle(style);
+            }
+        };
+
         GroupShape.prototype.copy = function (base) {
             if (!base)
                 base = new GroupShape();
@@ -1681,13 +1742,18 @@ var LayoutEditor;
         GroupShape.prototype.draw = function (ctx) {
         };
 
-        // draw the the subelements
+        // use a standard draw for the subelements, when selected
         GroupShape.prototype.drawSelect = function (ctx) {
-            _super.prototype.drawSelect.call(this, ctx);
+            if (this.shapes.length === 0)
+                return;
 
             for (var i = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].drawSelect(ctx);
+                this.shapes[i].draw(ctx);
             }
+
+            // draw the bounds
+            LayoutEditor.g_selectStyle.draw(ctx);
+            _super.prototype.drawSelect.call(this, ctx);
         };
 
         // check each sub-shape individually
@@ -1704,8 +1770,8 @@ var LayoutEditor;
             if (this.transform.isEqual(this.lastTransform))
                 return;
 
-            var deltaTransform = this.transform.subtract(this.lastTransform);
             var transform = this.transform;
+            var info = transform.decompose();
 
             for (var i = 0; i < this.shapes.length; ++i) {
                 var shape = this.shapes[i];
@@ -1713,13 +1779,13 @@ var LayoutEditor;
 
                 var newPos = transform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
 
+                Helper.extend(shape.transform, oldTransform);
                 shape.transform.tx = newPos.x;
                 shape.transform.ty = newPos.y;
 
                 // TODO - this is wrong
-                shape.transform.rotate = oldTransform.rotate + transform.rotate;
-                shape.transform.sx = oldTransform.sx * transform.sx;
-                shape.transform.sy = oldTransform.sy * transform.sy;
+                shape.transform.scale(info.scaleX, info.scaleY);
+                shape.transform.rotate(info.rotate);
 
                 shape.calculateBounds();
             }
@@ -1730,14 +1796,12 @@ var LayoutEditor;
         GroupShape.prototype.encloseShapes = function () {
             var aabb = this.aabb;
             var oabb = this.oabb;
-            var transform = this.transform;
 
+            var numShapes = this.shapes.length;
             aabb.reset();
-            oabb.reset();
-            transform.reset();
 
             this.oldTransforms.length = 0;
-            for (var i = 0; i < this.shapes.length; ++i) {
+            for (var i = 0; i < numShapes; ++i) {
                 var shape = this.shapes[i];
 
                 this.oldTransforms[i] = new Transform();
@@ -1746,13 +1810,16 @@ var LayoutEditor;
                 aabb.enclose(shape.aabb);
             }
 
-            Helper.extend(oabb, aabb); // initial oabb matches aabb
+            if (numShapes === 1) {
+                Helper.extend(oabb, this.shapes[0].oabb); // if only one shape then mimic it
+            } else {
+                Helper.extend(oabb, aabb); // initial oabb matches aabb
+            }
 
+            var transform = this.transform;
+            transform.setIdentity();
             transform.tx = aabb.cx;
             transform.ty = aabb.cy;
-            transform.sx = 1;
-            transform.sy = 1;
-            transform.rotate = 0;
 
             Helper.extend(this.lastTransform, transform);
 
@@ -1769,10 +1836,11 @@ var LayoutEditor;
             var transform = this.transform;
             var oabb = this.oabb;
             var aabb = this.aabb;
+            var info = transform.decompose();
 
-            oabb.rotate = transform.rotate;
-            oabb.hw = this.encloseHW * transform.sx;
-            oabb.hh = this.encloseHH * transform.sy;
+            oabb.rotate = info.rotate;
+            oabb.hw = Math.abs(this.encloseHW * info.scaleX);
+            oabb.hh = Math.abs(this.encloseHH * info.scaleY);
             oabb.cx = transform.tx;
             oabb.cy = transform.ty;
 
@@ -1886,7 +1954,7 @@ var LayoutEditor;
         ShapeList.prototype.getShapesInBounds = function (bounds) {
             var shapes = [];
 
-            for (var i = this.shapes.length - 1; i >= 0; --i) {
+            for (var i = 0; i < this.shapes.length; ++i) {
                 var shape = this.shapes[i];
                 if (shape.isOverlapBounds(bounds)) {
                     shape.isOverlapBounds(bounds);
@@ -1937,7 +2005,7 @@ var LayoutEditor;
     var SelectList = (function () {
         function SelectList() {
             this.selectedShapes = [];
-            this.selectGroup = new GroupShape();
+            this.selectGroup = new GroupShape("Select");
         }
         SelectList.prototype.reset = function () {
             this.selectedShapes.length = 0;
@@ -2008,17 +2076,12 @@ var LayoutEditor;
         };
 
         SelectList.prototype.draw = function (ctx) {
-            LayoutEditor.g_selectStyle.draw(ctx);
-
-            var numSelectedShapes = this.selectedShapes.length;
-            if (numSelectedShapes > 0)
-                this.selectGroup.drawSelect(ctx);
-
-            for (var i = 0; i < numSelectedShapes; ++i) {
-                var shape = this.selectedShapes[i];
-                Helper.assert(!shape.isDeleted);
-                shape.drawSelect(ctx);
-            }
+            this.selectGroup.drawSelect(ctx);
+            // for (var i: number = 0; i < numSelectedShapes; ++i) {
+            //     var shape: Shape = this.selectedShapes[i];
+            //     Helper.assert(!shape.isDeleted);
+            //     shape.drawSelect(ctx);
+            // }
         };
 
         SelectList.prototype.rebuildSelectGroup = function () {
@@ -2114,6 +2177,11 @@ var LayoutEditor;
             }
 
             return bestIndex;
+        };
+
+        Grid.prototype.clearSnap = function () {
+            this.snappedX = undefined;
+            this.snappedY = undefined;
         };
 
         Grid.prototype.snapX = function (x) {
@@ -2317,11 +2385,16 @@ var LayoutEditor;
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     var TransformCommand = (function () {
-        function TransformCommand(shape, transform) {
+        function TransformCommand(shape, transform, oldTransform) {
             this.shape = shape;
-            this.transform = transform;
             this.originalTransform = new LayoutEditor.Transform();
-            Helper.extend(this.originalTransform, shape.transform);
+            this.transform = new LayoutEditor.Transform();
+            Helper.extend(this.transform, transform);
+
+            if (typeof oldTransform === "undefined")
+                Helper.extend(this.originalTransform, shape.transform);
+            else
+                Helper.extend(this.originalTransform, oldTransform);
         }
         TransformCommand.prototype.redo = function () {
             Helper.extend(this.shape.transform, this.transform);
@@ -2470,7 +2543,7 @@ var LayoutEditor;
             this.x2 = -1;
             this.y2 = -1;
             this.shape = this.rectShape;
-            this.rectShape.style = LayoutEditor.g_drawStyle;
+            this.rectShape.setStyle(LayoutEditor.g_drawStyle);
         }
         RectTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -2538,7 +2611,7 @@ var LayoutEditor;
             _super.call(this);
             this.ellipseShape = new LayoutEditor.EllipseShape(0, 0);
             this.shape = this.ellipseShape;
-            this.ellipseShape.style = LayoutEditor.g_drawStyle;
+            this.ellipseShape.setStyle(LayoutEditor.g_drawStyle);
         }
         EllipseTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -2601,7 +2674,7 @@ var LayoutEditor;
         function SelectTool() {
             this.aabbShape = new LayoutEditor.AABBShape();
             this.isDrawing = false;
-            this.aabbShape.style = LayoutEditor.g_selectStyle;
+            this.aabbShape.setStyle(LayoutEditor.g_selectStyle);
         }
         SelectTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -2681,12 +2754,16 @@ var LayoutEditor;
 
     var ResizeTool = (function () {
         function ResizeTool() {
-            this.resizeShape = null;
-            this.handle = 0 /* None */;
+            this.isDrawing = false;
             this.handleSize = 20;
+            this.handle = 0 /* None */;
             this.canUse = false;
             this.startLocalPos = null;
-            this.isDrawing = false;
+            this.oldInfo = null;
+            this.oldTransform = new LayoutEditor.Transform();
+            this.deltaX = 0;
+            this.deltaY = 0;
+            this.oldOABB = new LayoutEditor.Bounds();
         }
         ResizeTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -2705,12 +2782,15 @@ var LayoutEditor;
                     var selectGroup = LayoutEditor.g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
                         LayoutEditor.g_grid.rebuildTabs();
-                        this.resizeShape = selectGroup.copy();
 
-                        var oldOABB = selectGroup.oabb;
+                        Helper.extend(this.oldOABB, selectGroup.oabb);
+                        Helper.extend(this.oldTransform, selectGroup.transform);
+
+                        var oldOABB = this.oldOABB;
                         var localPos = oldOABB.invXY(e.x, e.y);
                         var handleX = this.handleSize;
                         var handleY = this.handleSize;
+                        this.oldInfo = selectGroup.transform.decompose();
 
                         if (localPos.x + oldOABB.hw < handleX)
                             this.handle = (this.handle | 1 /* Left */);
@@ -2728,54 +2808,63 @@ var LayoutEditor;
                         this.startLocalPos = localPos;
                         isHandled = true;
                         this.isDrawing = true;
+                        this.deltaX = 0;
+                        this.deltaY = 0;
                     }
                     break;
 
                 case 2 /* Move */:
                     if (this.isDrawing) {
-                        var transform = this.resizeShape.transform;
-                        var oldTransform = LayoutEditor.g_selectList.selectGroup.transform;
-                        var oldOABB = LayoutEditor.g_selectList.selectGroup.oabb;
+                        var transform = LayoutEditor.g_selectList.selectGroup.transform;
+                        var oldOABB = this.oldOABB;
+                        var oldInfo = this.oldInfo;
 
                         var localPos = oldOABB.invXY(e.x, e.y);
                         var dx = (localPos.x - this.startLocalPos.x);
                         var dy = (localPos.y - this.startLocalPos.y);
-                        var sx = dx * oldTransform.sx / (oldOABB.hw * 2);
-                        var sy = dy * oldTransform.sy / (oldOABB.hh * 2);
+                        var sx = dx * oldInfo.scaleX / (oldOABB.hw * 2);
+                        var sy = dy * oldInfo.scaleY / (oldOABB.hh * 2);
                         var cr = Math.cos(oldOABB.rotate);
                         var sr = Math.sin(oldOABB.rotate);
 
-                        var newX = oldTransform.tx;
-                        var newY = oldTransform.ty;
+                        var newX = oldInfo.tx;
+                        var newY = oldInfo.ty;
+                        var newScaleX = oldInfo.scaleX;
+                        var newScaleY = oldInfo.scaleY;
+
                         if (this.handle & 1 /* Left */) {
                             newX += dx * cr * 0.5;
                             newY += dx * sr * 0.5;
-                            transform.sx = oldTransform.sx - sx;
+                            newScaleX -= sx;
                         } else if (this.handle & 2 /* Right */) {
                             newX += dx * cr * 0.5;
                             newY += dx * sr * 0.5;
-                            transform.sx = oldTransform.sx + sx;
+                            newScaleX += sx;
                         }
 
                         if (this.handle & 4 /* Top */) {
                             newX -= dy * sr * 0.5;
                             newY += dy * cr * 0.5;
-                            transform.sy = oldTransform.sy - sy;
+                            newScaleY -= sy;
                         } else if (this.handle & 8 /* Bottom */) {
                             newX -= dy * sr * 0.5;
                             newY += dy * cr * 0.5;
-                            transform.sy = oldTransform.sy + sy;
+                            newScaleY += sy;
                         }
 
                         if (this.handle === 16 /* Middle */) {
-                            transform.tx += e.deltaX;
-                            transform.ty += e.deltaY;
-                        } else {
-                            transform.tx = newX;
-                            transform.ty = newY;
+                            this.deltaX += e.deltaX;
+                            this.deltaY += e.deltaY;
+                            newX = this.deltaX;
+                            newY = this.deltaY;
                         }
 
-                        this.resizeShape.calculateBounds();
+                        transform.setIdentity();
+                        transform.scale(newScaleX, newScaleY);
+                        transform.rotate(this.oldInfo.rotate);
+                        transform.translate(newX, newY);
+
+                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
                         this.canUse = this.handle !== 0 /* None */;
                         LayoutEditor.g_draw(this);
                         isHandled = true;
@@ -2784,11 +2873,10 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.isDrawing && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, this.resizeShape.transform);
+                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, LayoutEditor.g_selectList.selectGroup.transform, this.oldTransform);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_draw(this);
                         isHandled = true;
-                        this.resizeShape = null;
                     }
                     this.canUse = false;
                     this.isDrawing = false;
@@ -2802,10 +2890,6 @@ var LayoutEditor;
         };
 
         ResizeTool.prototype.draw = function (ctx) {
-            if (!this.resizeShape)
-                return;
-
-            this.resizeShape.drawSelect(ctx);
         };
         return ResizeTool;
     })();
@@ -2828,9 +2912,9 @@ var LayoutEditor;
     var RotateTool = (function () {
         function RotateTool() {
             this.lastAngle = 0;
-            this.rotateShape = null;
             this.pivotX = 0;
             this.pivotY = 0;
+            this.oldTransform = new LayoutEditor.Transform();
             this.isDrawing = false;
         }
         RotateTool.prototype.onPointer = function (e) {
@@ -2848,9 +2932,12 @@ var LayoutEditor;
                     var selectGroup = LayoutEditor.g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
                         LayoutEditor.g_grid.rebuildTabs();
-                        this.rotateShape = selectGroup.copy();
-                        this.pivotX = this.rotateShape.transform.tx;
-                        this.pivotY = this.rotateShape.transform.tx;
+
+                        // this.rotateShape = selectGroup.copy();
+                        Helper.extend(this.oldTransform, selectGroup.transform);
+
+                        this.pivotX = selectGroup.transform.tx;
+                        this.pivotY = selectGroup.transform.tx;
                         this.lastAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
                         this.isDrawing = true;
                         isHandled = true;
@@ -2860,22 +2947,22 @@ var LayoutEditor;
                 case 2 /* Move */:
                     if (this.isDrawing) {
                         var newAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
-                        this.rotateShape.transform.rotate += newAngle - this.lastAngle;
-                        this.lastAngle = newAngle;
-                        this.rotateShape.calculateBounds();
+                        LayoutEditor.g_selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
+                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
                         LayoutEditor.g_draw(this);
+
                         isHandled = true;
+                        this.lastAngle = newAngle;
                     }
                     break;
 
                 case 3 /* End */:
                     if (this.isDrawing) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, this.rotateShape.transform);
+                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, LayoutEditor.g_selectList.selectGroup.transform, this.oldTransform);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_draw(this);
                         isHandled = true;
                         this.isDrawing = false;
-                        this.rotateShape = null;
                     }
 
                     break;
@@ -2888,10 +2975,6 @@ var LayoutEditor;
         };
 
         RotateTool.prototype.draw = function (ctx) {
-            if (!this.rotateShape)
-                return;
-
-            this.rotateShape.drawSelect(ctx);
         };
 
         RotateTool.prototype.getAngle = function (x, y, px, py) {
@@ -2908,11 +2991,12 @@ var LayoutEditor;
 
     var MoveTool = (function () {
         function MoveTool() {
-            this.moveShape = null;
             this.shape = null;
             this.canUse = false;
             this.deltaX = 0;
             this.deltaY = 0;
+            this.oldTransform = new LayoutEditor.Transform();
+            this.oldAABB = new LayoutEditor.Bounds();
         }
         MoveTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -2927,7 +3011,8 @@ var LayoutEditor;
                         }
 
                         LayoutEditor.g_grid.rebuildTabs();
-                        this.moveShape = LayoutEditor.g_selectList.selectGroup.copy();
+                        Helper.extend(this.oldTransform, LayoutEditor.g_selectList.selectGroup.transform);
+                        Helper.extend(this.oldAABB, LayoutEditor.g_selectList.selectGroup.aabb);
                         this.deltaX = 0;
                         this.deltaY = 0;
 
@@ -2943,13 +3028,12 @@ var LayoutEditor;
 
                         var delta = this.snapAABBToGrid(this.deltaX, this.deltaY);
 
-                        var oldTransform = LayoutEditor.g_selectList.selectGroup.transform;
-                        var moveTransform = this.moveShape.transform;
+                        var moveTransform = LayoutEditor.g_selectList.selectGroup.transform;
 
-                        moveTransform.tx = oldTransform.tx + delta.x;
-                        moveTransform.ty = oldTransform.ty + delta.y;
+                        moveTransform.tx = this.oldTransform.tx + delta.x;
+                        moveTransform.ty = this.oldTransform.ty + delta.y;
 
-                        this.moveShape.calculateBounds();
+                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
 
                         this.canUse = true;
 
@@ -2960,14 +3044,14 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.shape && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, this.moveShape.transform);
+                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, LayoutEditor.g_selectList.selectGroup.transform, this.oldTransform);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_draw(this);
+                        LayoutEditor.g_grid.clearSnap();
                         isHandled = true;
                     }
                     this.canUse = false;
                     this.shape = null;
-                    this.moveShape = null;
                     break;
             }
 
@@ -2978,17 +3062,12 @@ var LayoutEditor;
         };
 
         MoveTool.prototype.draw = function (ctx) {
-            if (!this.shape)
-                return;
-
-            this.moveShape.drawSelect(ctx);
-
             LayoutEditor.g_grid.draw(ctx);
         };
 
         MoveTool.prototype.snapAABBToGrid = function (dx, dy) {
             // the delta is wrt to the original aabb
-            var aabb = LayoutEditor.g_selectList.selectGroup.aabb;
+            var aabb = this.oldAABB;
 
             var centerX = aabb.cx + dx;
             var centerY = aabb.cy + dy;
@@ -3002,9 +3081,6 @@ var LayoutEditor;
                 y: dy
             };
 
-            LayoutEditor.g_grid.snappedX = -1;
-            LayoutEditor.g_grid.snappedY = -1;
-
             var newLeft = LayoutEditor.g_grid.snapX(left);
             if (left !== newLeft) {
                 delta.x += newLeft - left;
@@ -3013,9 +3089,9 @@ var LayoutEditor;
                 if (right !== newRight) {
                     delta.x += newRight - right;
                 } else {
-                    var newCenterX = LayoutEditor.g_grid.snapX(aabb.cx);
-                    if (newCenterX !== aabb.cx) {
-                        delta.x += newCenterX - aabb.cx;
+                    var newCenterX = LayoutEditor.g_grid.snapX(centerX);
+                    if (newCenterX !== centerX) {
+                        delta.x += newCenterX - centerX;
                     }
                 }
             }
@@ -3028,9 +3104,9 @@ var LayoutEditor;
                 if (bottom !== newBottom) {
                     delta.y += newBottom - bottom;
                 } else {
-                    var newCenterY = LayoutEditor.g_grid.snapY(aabb.cy);
-                    if (newCenterY !== aabb.cy) {
-                        delta.y += newCenterY - aabb.cy;
+                    var newCenterY = LayoutEditor.g_grid.snapY(centerY);
+                    if (newCenterY !== centerY) {
+                        delta.y += newCenterY - centerY;
                     }
                 }
             }
@@ -3054,16 +3130,16 @@ var LayoutEditor;
                     break;
 
                 case 2 /* Move */:
-                    LayoutEditor.g_panZoom.pan.x += LayoutEditor.g_panZoom.deltaX;
-                    LayoutEditor.g_panZoom.pan.y += LayoutEditor.g_panZoom.deltaY;
+                    LayoutEditor.g_panZoom.panX += LayoutEditor.g_panZoom.deltaX;
+                    LayoutEditor.g_panZoom.panY += LayoutEditor.g_panZoom.deltaY;
                     LayoutEditor.g_draw(LayoutEditor.g_panZoom);
                     isHandled = true;
                     break;
 
                 case 6 /* MouseWheel */:
                     var scale = (LayoutEditor.g_panZoom.deltaY > 0 ? 1 / 1.15 : 1.15);
-                    LayoutEditor.g_panZoom.pan.x += e.x * LayoutEditor.g_panZoom.zoom * (1 - scale);
-                    LayoutEditor.g_panZoom.pan.y += e.y * LayoutEditor.g_panZoom.zoom * (1 - scale);
+                    LayoutEditor.g_panZoom.panX += e.x * LayoutEditor.g_panZoom.zoom * (1 - scale);
+                    LayoutEditor.g_panZoom.panY += e.y * LayoutEditor.g_panZoom.zoom * (1 - scale);
                     LayoutEditor.g_panZoom.zoom *= scale;
 
                     LayoutEditor.g_draw(LayoutEditor.g_panZoom);
@@ -3341,6 +3417,10 @@ var LayoutEditor;
         LayoutEditor.g_styleList.reset();
         LayoutEditor.g_selectList.reset();
 
+        // provide a slide border so we can see the screen box
+        LayoutEditor.g_panZoom.panX = -10;
+        LayoutEditor.g_panZoom.panY = -10;
+
         LayoutEditor.g_draw(LayoutEditor.g_shapeList);
         LayoutEditor.g_draw(LayoutEditor.g_screen);
         LayoutEditor.g_draw(LayoutEditor.g_panZoom);
@@ -3445,10 +3525,6 @@ var LayoutEditor;
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");
 
         g_propertyTool = new LayoutEditor.PropertyTool();
-
-        // provide a slide border so we can see the screen box
-        LayoutEditor.g_panZoom.pan.x = -10;
-        LayoutEditor.g_panZoom.pan.y = -10;
 
         setTool("rectTool");
 

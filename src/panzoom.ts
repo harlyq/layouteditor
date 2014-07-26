@@ -1,15 +1,13 @@
-/// <reference path="helper.ts" />
+/// <reference path="_dependencies.ts" />
 module LayoutEditor {
 
     //------------------------------
     export class PanZoom {
-        pan: XY = {
-            x: 0,
-            y: 0
-        }
+        panX: number = 0;
+        panY: number = 0;
         zoom: number = 1;
 
-        // raw input values
+        // raw input values, prior to panZoom scaling
         x: number = 0;
         y: number = 0;
         deltaX: number = 0;
@@ -23,10 +21,10 @@ module LayoutEditor {
         }
 
         toX(x: number): number {
-            return (x - this.pan.x) / this.zoom;
+            return (x - this.panX) / this.zoom;
         }
         toY(y: number): number {
-            return (y - this.pan.y) / this.zoom;
+            return (y - this.panY) / this.zoom;
         }
         toH(h: number): number {
             return h / this.zoom;
@@ -36,46 +34,35 @@ module LayoutEditor {
         }
 
         calcXY(x: number, y: number): XY {
-            var newPos: XY = {
-                x: 0,
-                y: 0
+            return {
+                x: x * this.zoom + this.panX,
+                y: y * this.zoom + this.panY
             };
-            newPos.x = x * this.zoom + this.pan.x;
-            newPos.y = y * this.zoom + this.pan.y;
-            return newPos;
         }
 
         invXY(x: number, y: number): XY {
-            var invPos: XY = {
-                x: 0,
-                y: 0
+            return {
+                x: (x - this.panX) / this.zoom,
+                y: (y - this.panY) / this.zoom
             };
-            invPos.x = (x - this.pan.x) / this.zoom;
-            invPos.y = (y - this.pan.y) / this.zoom;
-            return invPos;
-        }
-
-        translate(ctx, x: number, y: number) {
-            ctx.translate(x * this.zoom + this.pan.x, y * this.zoom + this.pan.y);
-        }
-
-        scale(ctx, x: number, y: number) {
-            ctx.scale(x * this.zoom, y * this.zoom);
         }
 
         transform(ctx, tx: number = 0, ty: number = 0, rotate: number = 0, sx: number = 1, sy: number = 1) {
-            ctx.translate(tx * this.zoom + this.pan.x, ty * this.zoom + this.pan.y);
+            ctx.translate(tx * this.zoom + this.panX, ty * this.zoom + this.panY);
             ctx.rotate(rotate);
             ctx.scale(sx * this.zoom, sy * this.zoom);
+        }
+
+        transformComplete(ctx, t: Transform) {
+            var zoom: number = this.zoom;
+            ctx.transform(zoom * t.a, zoom * t.b, zoom * t.c, zoom * t.d, t.tx * zoom + this.panX, t.ty * zoom + this.panY);
         }
 
         saveData(): any {
             return {
                 type: "PanZoom",
-                pan: {
-                    x: this.pan.x,
-                    y: this.pan.y
-                },
+                panX: this.panX,
+                panY: this.panY,
                 zoom: this.zoom
             };
         }

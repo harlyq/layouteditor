@@ -69,6 +69,11 @@ module LayoutEditor {
             return bestIndex;
         }
 
+        clearSnap() {
+            this.snappedX = undefined;
+            this.snappedY = undefined;
+        }
+
         snapX(x: number): number {
             this.snappedX = undefined;
             if (this.snapToGrid) {

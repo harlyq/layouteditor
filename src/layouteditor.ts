@@ -81,6 +81,10 @@ module LayoutEditor {
         g_styleList.reset();
         g_selectList.reset();
 
+        // provide a slide border so we can see the screen box
+        g_panZoom.panX = -10;
+        g_panZoom.panY = -10;
+
         g_draw(g_shapeList);
         g_draw(g_screen);
         g_draw(g_panZoom);
@@ -190,10 +194,6 @@ module LayoutEditor {
         g_inputMultiLine = document.getElementById("inputMultiLine");
 
         g_propertyTool = new PropertyTool();
-
-        // provide a slide border so we can see the screen box
-        g_panZoom.pan.x = -10;
-        g_panZoom.pan.y = -10;
 
         setTool("rectTool");
 

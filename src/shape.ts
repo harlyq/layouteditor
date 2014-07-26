@@ -109,87 +109,138 @@ module LayoutEditor {
 
 
     //------------------------------
+    export class SimpleTransform {
+        constructor(public scaleX: number, public scaleY: number, public shear: number,
+            public rotate: number, public tx: number, public ty: number) {}
+    }
+
     export class Transform {
-        rotate: number = 0;
-        sx: number = 1;
-        sy: number = 1;
+        // | a| b|
+        // | c| d|
+        // |tx|ty|
+        a: number = 1;
+        b: number = 0;
+        c: number = 0;
+        d: number = 1;
         tx: number = 0;
         ty: number = 0;
 
-        reset() {
-            this.rotate = 0;
-            this.sx = 1;
-            this.sy = 1;
-            this.tx = 0;
-            this.ty = 0;
+        constructor() {}
+
+        setIdentity() {
+            this.constructor();
+        }
+
+        setRotate(rad) {
+            var sr: number = Math.sin(rad);
+            var cr: number = Math.cos(rad);
+            this.a = cr;
+            this.b = -sr;
+            this.c = sr;
+            this.d = cr;
+            // this.tx = 0;
+            // this.ty = 0;
+        }
+
+        rotate(rad) {
+            var sr: number = Math.sin(rad);
+            var cr: number = Math.cos(rad);
+            var a: number = this.a;
+            var b: number = this.b;
+            var c: number = this.c;
+            var d: number = this.d;
+            this.a = a * cr - b * sr;
+            this.b = a * sr + b * cr;
+            this.c = c * cr - d * sr;
+            this.d = c * sr + d * cr;
+        }
+
+        scale(sx: number, sy: number) {
+            this.a *= sx;
+            this.b *= sy;
+            this.c *= sx;
+            this.d *= sy;
+        }
+
+        translate(tx: number, ty: number) {
+            this.tx += tx;
+            this.ty += ty;
+        }
+
+        decompose(): SimpleTransform {
+            var a: number = this.a;
+            var b: number = this.b;
+            var c: number = this.c;
+            var d: number = this.d;
+
+            var scaleX: number = Math.sqrt(a * a + b * b);
+            a /= scaleX;
+            b /= scaleX;
+
+            var shear: number = a * c + b * d;
+            c -= a * shear;
+            d -= b * shear;
+
+            var scaleY: number = Math.sqrt(c * c + d * d);
+            c /= scaleY;
+            d /= scaleY;
+            shear /= scaleY;
+
+            if (a * d < b * c) {
+                a = -a;
+                b = -b;
+                shear = -shear;
+                scaleX = -scaleX;
+            }
+
+            return new SimpleTransform(scaleX, scaleY, shear, Math.atan2(b, a), this.tx, this.ty);
         }
 
         calcXY(lx: number, ly: number): XY {
-            var sr: number = Math.sin(this.rotate);
-            var cr: number = Math.cos(this.rotate);
-
-            var nx: number = lx * this.sx;
-            var ny: number = ly * this.sy;
-            var x: number = (nx * cr - ny * sr) + this.tx;
-            var y: number = (nx * sr + ny * cr) + this.ty;
-
             return {
-                x: x,
-                y: y
+                x: lx * this.a + ly * this.c + this.tx,
+                y: lx * this.b + ly * this.d + this.ty
             };
+        }
+
+        copy(): Transform {
+            var t: Transform = new Transform();
+            t.a = this.a;
+            t.b = this.b;
+            t.c = this.c;
+            t.d = this.d;
+            t.tx = this.tx;
+            t.ty = this.ty
+            return t;
         }
 
         invXY(x: number, y: number): XY {
-            var sr: number = Math.sin(this.rotate);
-            var cr: number = Math.cos(this.rotate);
+            var det: number = this.a * this.d - this.b * this.c;
+            Helper.assert(Math.abs(det) > EPSILON);
 
-            var nx: number = x - this.tx;
-            var ny: number = y - this.ty;
-
-            var lx: number = 0;
-            var ly: number = 0;
-
-            if (Math.abs(cr) < EPSILON) {
-                lx = ny / sr;
-                ly = -nx / sr;
-            } else if (Math.abs(sr) < EPSILON) {
-                lx = nx / cr;
-                ly = ny / cr;
-            } else {
-                lx = (nx * cr + ny * sr) / (cr * cr + sr * sr);
-                ly = (ny - lx * sr) / cr;
-            }
-
-            lx /= this.sx;
-            ly /= this.sy;
+            var a = this.d;
+            var b = -this.c;
+            var c = -this.b;
+            var d = this.a;
+            var tx = (this.b * this.ty - this.d * this.tx);
+            var ty = (this.c * this.tx - this.a * this.ty);
 
             return {
-                x: lx,
-                y: ly
+                x: (x * a + y * c + tx) / det,
+                y: (x * b + y * d + ty) / det
             };
         }
 
-        subtract(transform: Transform): Transform {
-            var subTransform = new Transform();
-            subTransform.rotate = this.rotate - transform.rotate;
-            subTransform.tx = this.tx - transform.tx;
-            subTransform.ty = this.ty - transform.ty;
-            subTransform.sx = this.sx - transform.sx;
-            subTransform.sy = this.sy - transform.sy;
-
-            return subTransform;
-        }
-
         isEqual(other: Transform): boolean {
-            return this.rotate === other.rotate &&
-                this.tx === other.tx && this.ty === other.ty &&
-                this.sx === other.sx && this.sy === other.sy;
+            return this.tx === other.tx && this.ty === other.ty &&
+                this.a === other.a && this.b === other.b &&
+                this.c === other.c && this.d === other.d;
         }
     }
 
     //------------------------------
     export class Shape {
-        style: Style = g_style;
+        private style: Style = g_style;
         isDeleted: boolean = false;
         oabb: Bounds = new Bounds();
         aabb: Bounds = new Bounds();
@@ -199,8 +250,11 @@ module LayoutEditor {
 
         static uniqueID: number = 0;
 
-        constructor() {
-            this.makeUnique();
+        constructor(name ? : string) {
+            if (typeof name === "undefined")
+                this.makeUnique();
+            else
+                this.name = name;
         }
 
         makeUnique() {
@@ -209,6 +263,10 @@ module LayoutEditor {
 
         setStyle(style: Style) {
             this.style = style;
+        }
+
+        getStyle(): Style {
+            return this.style;
         }
 
         draw(ctx) {
@@ -307,8 +365,8 @@ module LayoutEditor {
         calculateBounds() {}
 
         isInsideXY(ctx, x: number, y: number): boolean {
-            var u = x * g_panZoom.zoom + g_panZoom.pan.x;
-            var v = y * g_panZoom.zoom + g_panZoom.pan.y;
+            var u = x * g_panZoom.zoom + g_panZoom.panX;
+            var v = y * g_panZoom.zoom + g_panZoom.panY;
 
             this.buildPath(ctx);
             return ctx.isPointInPath(u, v);
@@ -405,8 +463,7 @@ module LayoutEditor {
             var transform = this.transform;
 
             ctx.save();
-            g_panZoom.transform(ctx, transform.tx, transform.ty,
-                transform.rotate, transform.sx, transform.sy);
+            g_panZoom.transformComplete(ctx, transform);
 
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
@@ -434,9 +491,10 @@ module LayoutEditor {
             var dx = this.w * 0.5;
             var dy = this.h * 0.5;
 
-            this.oabb.rotate = transform.rotate;
-            this.oabb.hw = Math.abs(dx) * transform.sx;
-            this.oabb.hh = Math.abs(dy) * transform.sy;
+            var info: SimpleTransform = transform.decompose();
+            this.oabb.rotate = info.rotate;
+            this.oabb.hw = Math.abs(dx * info.scaleX);
+            this.oabb.hh = Math.abs(dy * info.scaleY);
             this.oabb.cx = transform.tx;
             this.oabb.cy = transform.ty;
 
@@ -482,8 +540,7 @@ module LayoutEditor {
             var ry = Math.abs(this.ry);
 
             ctx.save();
-            g_panZoom.transform(ctx, transform.tx, transform.ty,
-                transform.rotate, transform.sx, transform.sy);
+            g_panZoom.transformComplete(ctx, transform);
 
             var kappa = .5522848,
                 ox = rx * kappa, // control point offset horizontal
@@ -520,10 +577,11 @@ module LayoutEditor {
         calculateBounds() {
             var transform = this.transform;
 
-            var hw = this.rx * transform.sx;
-            var hh = this.ry * transform.sy;
+            var info: SimpleTransform = transform.decompose();
+            var hw = Math.abs(this.rx * info.scaleX);
+            var hh = Math.abs(this.ry * info.scaleY);
 
-            this.oabb.rotate = transform.rotate;
+            this.oabb.rotate = info.rotate;
             this.oabb.hw = hw;
             this.oabb.hh = hh;
             this.oabb.cx = transform.tx;
@@ -531,7 +589,7 @@ module LayoutEditor {
 
             this.aabb.rotate = 0;
 
-            var rot = this.transform.rotate
+            var rot = info.rotate
             var ux = hw * Math.cos(rot);
             var uy = hw * Math.sin(rot);
             var vx = hh * Math.cos(rot + Math.PI * 0.5);
@@ -641,8 +699,8 @@ module LayoutEditor {
         private encloseCX: number = 0;
         private encloseCY: number = 0;
 
-        constructor() {
-            super();
+        constructor(name ? : string) {
+            super(name);
         }
 
         reset() {
@@ -658,6 +716,15 @@ module LayoutEditor {
 
             this.encloseShapes();
         }
+
+        setStyle(style: Style) {
+            super.setStyle(style);
+
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                this.shapes[i].setStyle(style);
+            }
+        }
+
 
         copy(base ? : GroupShape): GroupShape {
             if (!base)
@@ -676,13 +743,18 @@ module LayoutEditor {
         // shapes in this group will be drawn independently
         draw(ctx) {}
 
-        // draw the the subelements
+        // use a standard draw for the subelements, when selected
         drawSelect(ctx) {
-            super.drawSelect(ctx);
+            if (this.shapes.length === 0)
+                return; // nothing to draw
 
             for (var i: number = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].drawSelect(ctx);
+                this.shapes[i].draw(ctx);
             }
+
+            // draw the bounds
+            g_selectStyle.draw(ctx);
+            super.drawSelect(ctx);
         }
 
         // check each sub-shape individually
@@ -699,8 +771,8 @@ module LayoutEditor {
             if (this.transform.isEqual(this.lastTransform))
                 return;
 
-            var deltaTransform: Transform = this.transform.subtract(this.lastTransform);
             var transform: Transform = this.transform;
+            var info: SimpleTransform = transform.decompose();
 
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 var shape: Shape = this.shapes[i];
@@ -708,13 +780,13 @@ module LayoutEditor {
 
                 var newPos: XY = transform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
 
+                Helper.extend(shape.transform, oldTransform);
                 shape.transform.tx = newPos.x;
                 shape.transform.ty = newPos.y;
 
                 // TODO - this is wrong
-                shape.transform.rotate = oldTransform.rotate + transform.rotate;
-                shape.transform.sx = oldTransform.sx * transform.sx;
-                shape.transform.sy = oldTransform.sy * transform.sy;
+                shape.transform.scale(info.scaleX, info.scaleY);
+                shape.transform.rotate(info.rotate);
 
                 shape.calculateBounds();
             }
@@ -725,14 +797,12 @@ module LayoutEditor {
         encloseShapes() {
             var aabb: Bounds = this.aabb;
             var oabb: Bounds = this.oabb;
-            var transform: Transform = this.transform;
 
+            var numShapes: number = this.shapes.length;
             aabb.reset();
-            oabb.reset();
-            transform.reset();
 
             this.oldTransforms.length = 0;
-            for (var i: number = 0; i < this.shapes.length; ++i) {
+            for (var i: number = 0; i < numShapes; ++i) {
                 var shape: Shape = this.shapes[i];
 
                 this.oldTransforms[i] = new Transform();
@@ -741,13 +811,16 @@ module LayoutEditor {
                 aabb.enclose(shape.aabb);
             }
 
-            Helper.extend(oabb, aabb); // initial oabb matches aabb
+            if (numShapes === 1) {
+                Helper.extend(oabb, this.shapes[0].oabb); // if only one shape then mimic it
+            } else {
+                Helper.extend(oabb, aabb); // initial oabb matches aabb
+            }
 
+            var transform: Transform = this.transform;
+            transform.setIdentity();
             transform.tx = aabb.cx;
             transform.ty = aabb.cy;
-            transform.sx = 1;
-            transform.sy = 1;
-            transform.rotate = 0;
 
             Helper.extend(this.lastTransform, transform);
 
@@ -764,10 +837,11 @@ module LayoutEditor {
             var transform: Transform = this.transform;
             var oabb: Bounds = this.oabb;
             var aabb: Bounds = this.aabb;
+            var info: SimpleTransform = transform.decompose();
 
-            oabb.rotate = transform.rotate;
-            oabb.hw = this.encloseHW * transform.sx;
-            oabb.hh = this.encloseHH * transform.sy;
+            oabb.rotate = info.rotate;
+            oabb.hw = Math.abs(this.encloseHW * info.scaleX);
+            oabb.hh = Math.abs(this.encloseHH * info.scaleY);
             oabb.cx = transform.tx;
             oabb.cy = transform.ty;
 
@@ -883,7 +957,8 @@ module LayoutEditor {
         getShapesInBounds(bounds: Bounds): Shape[] {
             var shapes: Shape[] = [];
 
-            for (var i: number = this.shapes.length - 1; i >= 0; --i) {
+            // forward, so the list order is the same as the draw order
+            for (var i: number = 0; i < this.shapes.length; ++i) {
                 var shape: Shape = this.shapes[i];
                 if (shape.isOverlapBounds(bounds)) {
                     shape.isOverlapBounds(bounds);
@@ -931,7 +1006,7 @@ module LayoutEditor {
     //------------------------------
     export class SelectList {
         selectedShapes: Shape[] = [];
-        selectGroup: GroupShape = new GroupShape();
+        selectGroup: GroupShape = new GroupShape("Select");
 
         constructor() {}
 
@@ -1004,17 +1079,13 @@ module LayoutEditor {
         }
 
         draw(ctx) {
-            g_selectStyle.draw(ctx);
+            this.selectGroup.drawSelect(ctx);
 
-            var numSelectedShapes: number = this.selectedShapes.length;
-            if (numSelectedShapes > 0)
-                this.selectGroup.drawSelect(ctx);
-
-            for (var i: number = 0; i < numSelectedShapes; ++i) {
-                var shape: Shape = this.selectedShapes[i];
-                Helper.assert(!shape.isDeleted);
-                shape.drawSelect(ctx);
-            }
+            // for (var i: number = 0; i < numSelectedShapes; ++i) {
+            //     var shape: Shape = this.selectedShapes[i];
+            //     Helper.assert(!shape.isDeleted);
+            //     shape.drawSelect(ctx);
+            // }
         }
 
         rebuildSelectGroup() {

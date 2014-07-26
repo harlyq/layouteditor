@@ -88,10 +88,16 @@ module LayoutEditor {
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     export class TransformCommand implements Command {
-        originalTransform: Transform = new Transform();
+        private originalTransform: Transform = new Transform();
+        private transform: Transform = new Transform();
 
-        constructor(public shape: Shape, public transform: Transform) {
-            Helper.extend(this.originalTransform, shape.transform);
+        constructor(public shape: Shape, transform: Transform, oldTransform ? : Transform) {
+            Helper.extend(this.transform, transform);
+
+            if (typeof oldTransform === "undefined")
+                Helper.extend(this.originalTransform, shape.transform);
+            else
+                Helper.extend(this.originalTransform, oldTransform);
         }
 
         redo() {

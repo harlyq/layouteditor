@@ -451,173 +451,274 @@ var LayoutEditor;
 
     LayoutEditor.g_draw = null;
 })(LayoutEditor || (LayoutEditor = {}));
-/// <reference path="_dependencies.ts" />
+/// <reference path='_dependencies.ts' />
 var LayoutEditor;
 (function (LayoutEditor) {
-    
+    var PropertyBinding = (function () {
+        function PropertyBinding(object, prop) {
+            this.object = object;
+            this.prop = prop;
+            this.elem = null;
+            this.state = "";
+            this.editor = null;
+        }
+        return PropertyBinding;
+    })();
+    LayoutEditor.PropertyBinding = PropertyBinding;
 
-    var PropertyPanel = (function () {
-        function PropertyPanel(width) {
-            if (typeof width === "undefined") { width = 150; }
+    var WebPropertyPanel = (function () {
+        function WebPropertyPanel() {
+            this.object = null;
             this.propertyLists = [];
             this.width = 0;
-            this.nameWidth = 0;
-            this.object = null;
-            this.lineHeight = 0;
-            this.propertyInfos = [];
-            this.fontSize = 12;
-            this.fontSpacing = 1.1;
-            this.fontStyle = "black";
-            this.setWidth(width);
+            this.rootElem = null;
+            this.editing = null;
+            this.clickHandler = null;
+            this.bindings = [];
+            this.editors = [];
+            var self = this;
+            this.clickHandler = function (e) {
+                self.onClick(e);
+            };
         }
-        PropertyPanel.prototype.setWidth = function (width) {
-            this.width = width;
-            this.nameWidth = width * 0.5;
+        WebPropertyPanel.prototype.setRootElem = function (rootElem) {
+            if (this.rootElem) {
+                this.rootElem.removeEventListener('click', this.clickHandler);
+            }
+
+            this.rootElem = rootElem;
+            this.rootElem.addEventListener('click', this.clickHandler);
         };
 
-        PropertyPanel.prototype.setObject = function (obj) {
-            this.object = obj;
-            LayoutEditor.g_draw(this); // always redraw
+        WebPropertyPanel.prototype.setObject = function (obj) {
+            if (this.object !== obj) {
+                this.object = obj;
+                this.bindings.length = 0;
+
+                var rootElem = this.rootElem;
+                while (rootElem.lastChild) {
+                    rootElem.removeChild(rootElem.lastChild);
+                }
+
+                this.createBinding(obj, "", "object", this.rootElem);
+            }
+
+            this.refresh();
         };
 
-        PropertyPanel.prototype.addPropertyList = function (propertyList) {
+        WebPropertyPanel.prototype.addPropertyList = function (propertyList) {
             this.propertyLists.push(propertyList);
         };
 
-        PropertyPanel.prototype.getPropertyList = function (obj) {
+        WebPropertyPanel.prototype.getPropertyList = function (obj) {
             for (var i = this.propertyLists.length - 1; i >= 0; --i) {
-                if (this.propertyLists[i].isA(obj))
+                if (this.propertyLists[i].canHandle(obj))
                     return this.propertyLists[i];
             }
         };
 
-        // returns y position of the next property
-        PropertyPanel.prototype.drawObject = function (ctx, object, name, x, y) {
-            if (name.length > 0) {
-                ctx.fillText("+ " + name, x, y);
-                y += this.lineHeight;
+        WebPropertyPanel.prototype.refresh = function () {
+            for (var i = 0; i < this.bindings.length; ++i) {
+                var binding = this.bindings[i];
+                binding.editor.refresh(binding);
+            }
+        };
+
+        WebPropertyPanel.prototype.onClick = function (e) {
+            var elem = e.target;
+            var idString = "";
+            while (elem && !elem.hasAttribute('data-id'))
+                elem = elem.parentNode;
+
+            if (!elem)
+                return;
+
+            var id = parseInt(elem.getAttribute('data-id'));
+            var binding = this.bindings[id];
+            if (binding) {
+                this.startEditing(binding);
+            }
+        };
+
+        WebPropertyPanel.prototype.startEditing = function (binding) {
+            this.editing = binding;
+            binding.editor.startEdit(binding);
+        };
+
+        WebPropertyPanel.prototype.commitEditing = function () {
+            var binding = this.editing;
+            if (!binding)
+                return;
+
+            binding.editor.commitEdit(binding);
+        };
+
+        WebPropertyPanel.prototype.postChange = function (binding) {
+            LayoutEditor.g_draw(LayoutEditor.g_shapeList); // TODO tell client instead
+        };
+
+        WebPropertyPanel.prototype.addEditor = function (editor) {
+            this.editors.push(editor);
+        };
+
+        WebPropertyPanel.prototype.createBinding = function (object, prop, editorType, parentElem) {
+            var binding = new PropertyBinding(object, prop);
+            this.bindings.push(binding);
+
+            var id = this.bindings.length - 1;
+
+            for (var i = this.editors.length - 1; i >= 0; --i) {
+                var editor = this.editors[i];
+                if (editor.canEdit(editorType)) {
+                    var elem = editor.createElement(parentElem, binding);
+                    binding.elem = elem;
+                    binding.editor = editor;
+
+                    if (elem)
+                        elem.setAttribute('data-id', id.toString());
+                    break;
+                }
             }
 
-            var propertyList = this.getPropertyList(object);
+            return binding;
+        };
+        return WebPropertyPanel;
+    })();
+    LayoutEditor.WebPropertyPanel = WebPropertyPanel;
+
+    var TextPropertyEditor = (function () {
+        function TextPropertyEditor() {
+        }
+        TextPropertyEditor.prototype.setInputElem = function (elem) {
+            elem.classList.add('inputText');
+
+            var self = this;
+            elem.addEventListener("change", function (e) {
+                self.onChange(e);
+            });
+
+            this.inputText = elem;
+        };
+
+        TextPropertyEditor.prototype.canEdit = function (type) {
+            return type === "string" || type === "number";
+        };
+
+        TextPropertyEditor.prototype.createElement = function (parentElem, binding) {
+            var textDiv = document.createElement('div');
+            textDiv.classList.add('propertyText');
+            var nameSpan = document.createElement('span');
+            var valueSpan = document.createElement('span');
+
+            nameSpan.innerHTML = binding.prop + ": ";
+
+            textDiv.appendChild(nameSpan);
+            textDiv.appendChild(valueSpan);
+
+            binding.elem = textDiv;
+            this.refresh(binding);
+
+            parentElem.appendChild(textDiv);
+
+            return textDiv;
+        };
+
+        TextPropertyEditor.prototype.refresh = function (binding) {
+            binding.elem.lastChild.innerHTML = binding.object[binding.prop];
+        };
+
+        TextPropertyEditor.prototype.startEdit = function (binding) {
+            var rectObject = binding.elem.lastChild.getBoundingClientRect();
+
+            this.inputText.style.top = rectObject.top + 'px';
+            this.inputText.style.left = rectObject.left + 'px';
+            this.inputText.value = binding.object[binding.prop].toString();
+            this.inputText.type = 'input';
+
+            this.inputText.setSelectionRange(0, LayoutEditor.g_inputText.value.length);
+            this.inputText.focus();
+        };
+
+        TextPropertyEditor.prototype.commitEdit = function (binding) {
+            binding.object[binding.prop] = LayoutEditor.g_inputText.value;
+            LayoutEditor.g_propertyPanel.postChange(binding);
+
+            this.inputText.blur();
+            this.inputText.type = 'hidden';
+
+            this.refresh(binding);
+        };
+
+        TextPropertyEditor.prototype.onChange = function (e) {
+            LayoutEditor.g_propertyPanel.commitEditing();
+        };
+        return TextPropertyEditor;
+    })();
+    LayoutEditor.TextPropertyEditor = TextPropertyEditor;
+
+    var ObjectPropertyEditor = (function () {
+        function ObjectPropertyEditor() {
+        }
+        ObjectPropertyEditor.prototype.canEdit = function (type) {
+            return type === "object";
+        };
+
+        ObjectPropertyEditor.prototype.createElement = function (parentElem, binding) {
+            var objectElem = null;
+            var object = binding.object;
+
+            if (binding.prop.length !== 0) {
+                // this is a sub-element
+                binding.state = 'closed';
+                objectElem = document.createElement('div');
+                objectElem.innerHTML = binding.prop;
+                objectElem.classList.add('propertyObject');
+                objectElem.setAttribute('data-state', binding.state);
+
+                parentElem.appendChild(objectElem);
+                parentElem = objectElem; // make this the new parent
+
+                object = object[binding.prop]; // inspect the object in this property
+            }
+
+            var propertyList = LayoutEditor.g_propertyPanel.getPropertyList(object);
 
             for (var i = 0; i < propertyList.items.length; ++i) {
                 var propItem = propertyList.items[i];
-                var name = propItem.name;
+                var prop = propItem.prop;
+                var type = propItem.type || typeof object[prop];
 
-                var propInfo = {
-                    y: y,
-                    height: 0,
-                    propertyItem: propItem,
-                    object: object,
-                    name: name
-                };
-
-                this.propertyInfos.push(propInfo);
-
-                switch (propItem.type) {
-                    case "object":
-                        y = this.drawObject(ctx, object[name], name, x, y);
-                        break;
-
-                    case undefined:
-                    case "":
-                    case "string":
-                    case "number":
-                        y = this.drawText(ctx, object, name, x, y);
-                }
-
-                propInfo.height = y - propInfo.y;
+                LayoutEditor.g_propertyPanel.createBinding(object, prop, type, parentElem);
             }
 
-            return y;
+            return objectElem;
         };
 
-        PropertyPanel.prototype.drawText = function (ctx, object, name, x, y) {
-            ctx.fillText(name + " : " + object[name], x, y);
-            return y + this.lineHeight;
+        ObjectPropertyEditor.prototype.refresh = function (binding) {
+            // do nothing
         };
 
-        PropertyPanel.prototype.editText = function (ctx, object, name, value, x, y) {
-            ctx.fillText(name + " : " + value, x, y);
-            return y + this.lineHeight;
+        ObjectPropertyEditor.prototype.startEdit = function (binding) {
+            var wasOpen = (binding.elem.getAttribute('data-state') === 'open');
+            binding.state = wasOpen ? 'closed' : 'open';
+            binding.elem.setAttribute('data-state', binding.state);
         };
 
-        // TODO this needs to relate to how we draw properties
-        PropertyPanel.prototype.drawEditing = function (info, value) {
-            var x = LayoutEditor.g_propertyCtx.canvas.width - this.width;
-
-            LayoutEditor.g_propertyCtx.clearRect(x, info.y, this.width, info.height);
-
-            switch (info.propertyItem.type) {
-                case "object":
-                    break;
-
-                case undefined:
-                case "":
-                case "string":
-                case "number":
-                    this.editText(LayoutEditor.g_propertyCtx, info.object, info.name, value, x, info.y);
-            }
+        ObjectPropertyEditor.prototype.commitEdit = function (binding) {
+            // do nothing
         };
-
-        PropertyPanel.prototype.getPropertyInfoXY = function (x, y) {
-            var index = Helper.getIndexOfSorted(this.propertyInfos, y - this.lineHeight, function (list, index) {
-                return list[index].y;
-            });
-            return this.propertyInfos[index];
-        };
-
-        PropertyPanel.prototype.draw = function (ctx) {
-            if (this.object === null)
-                return;
-
-            this.propertyInfos.length = 0;
-
-            this.lineHeight = this.fontSize * this.fontSpacing;
-
-            var propertyList = this.getPropertyList(this.object);
-
-            var propertyWidth = LayoutEditor.g_propertyCtx.canvas.width;
-            var propertyHeight = LayoutEditor.g_propertyCtx.canvas.height;
-            var padding = 2;
-            var x = propertyWidth - this.width;
-            var y = 0;
-
-            // keep these properties for all property rendering
-            ctx.strokeStyle = "black";
-            ctx.textBaseline = "top";
-
-            ctx.save();
-            ctx.fillStyle = "#aaa";
-            ctx.beginPath();
-            ctx.rect(x, 0, this.width, propertyHeight);
-            ctx.fill();
-            ctx.clip();
-
-            ctx.fillStyle = this.fontStyle;
-
-            x += padding;
-
-            this.drawObject(ctx, this.object, "", x, y);
-
-            ctx.restore();
-        };
-        return PropertyPanel;
+        return ObjectPropertyEditor;
     })();
-    LayoutEditor.PropertyPanel = PropertyPanel;
+    LayoutEditor.ObjectPropertyEditor = ObjectPropertyEditor;
 
-    (function (PropertyPanel) {
-        (function (DrawType) {
-            DrawType[DrawType["Names"] = 0] = "Names";
-            DrawType[DrawType["Values"] = 1] = "Values";
-        })(PropertyPanel.DrawType || (PropertyPanel.DrawType = {}));
-        var DrawType = PropertyPanel.DrawType;
-        ;
-    })(LayoutEditor.PropertyPanel || (LayoutEditor.PropertyPanel = {}));
-    var PropertyPanel = LayoutEditor.PropertyPanel;
+    LayoutEditor.g_propertyPanel = new WebPropertyPanel();
 
-    LayoutEditor.g_propertyPanel = new PropertyPanel();
-    LayoutEditor.g_propertyCtx = null;
+    LayoutEditor.g_textPropertyEditor = new TextPropertyEditor();
+
+    LayoutEditor.g_propertyPanel.addEditor(LayoutEditor.g_textPropertyEditor);
+    LayoutEditor.g_propertyPanel.addEditor(new ObjectPropertyEditor());
+
+    LayoutEditor.g_inputText = null;
 })(LayoutEditor || (LayoutEditor = {}));
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
@@ -766,30 +867,30 @@ var LayoutEditor;
     LayoutEditor.g_styleList = new StyleList();
 
     LayoutEditor.g_propertyPanel.addPropertyList({
-        isA: function (obj) {
+        canHandle: function (obj) {
             return obj instanceof Style;
         },
         items: [
             {
-                name: "strokeStyle"
+                prop: "strokeStyle"
             }, {
-                name: "fillStyle"
+                prop: "fillStyle"
             }, {
-                name: "lineWidth"
+                prop: "lineWidth"
             }, {
-                name: "textAlign"
+                prop: "textAlign"
             }, {
-                name: "textBaseline"
+                prop: "textBaseline"
             }, {
-                name: "fontSize"
+                prop: "fontSize"
             }, {
-                name: "fontFamily"
+                prop: "fontFamily"
             }, {
-                name: "fontWeight"
+                prop: "fontWeight"
             }, {
-                name: "fontStyle"
+                prop: "fontStyle"
             }, {
-                name: "fontSpacing"
+                prop: "fontSpacing"
             }]
     });
 })(LayoutEditor || (LayoutEditor = {}));
@@ -1012,6 +1113,20 @@ var LayoutEditor;
             return this.hw * this.hh * 4;
         };
 
+        Bounds.prototype.copy = function (other) {
+            this.rotate = other.rotate;
+            this.cx = other.cx;
+            this.cy = other.cy;
+            this.hw = other.hw;
+            this.hh = other.hh;
+        };
+
+        Bounds.prototype.clone = function () {
+            var newBounds = new Bounds();
+            newBounds.copy(this);
+            return newBounds;
+        };
+
         Bounds.prototype.enclose = function (aabb) {
             Helper.assert(aabb.rotate === 0); // only works with unrotated bounds 0
             Helper.assert(this.rotate === 0);
@@ -1200,14 +1315,18 @@ var LayoutEditor;
             };
         };
 
-        Transform.prototype.copy = function () {
+        Transform.prototype.copy = function (other) {
+            this.a = other.a;
+            this.b = other.b;
+            this.c = other.c;
+            this.d = other.d;
+            this.tx = other.tx;
+            this.ty = other.ty;
+        };
+
+        Transform.prototype.clone = function () {
             var t = new Transform();
-            t.a = this.a;
-            t.b = this.b;
-            t.c = this.c;
-            t.d = this.d;
-            t.tx = this.tx;
-            t.ty = this.ty;
+            t.copy(this);
             return t;
         };
 
@@ -1240,6 +1359,7 @@ var LayoutEditor;
         function Shape(name) {
             this.style = LayoutEditor.g_style;
             this.isDeleted = false;
+            this.isHidden = false;
             this.oabb = new Bounds();
             this.aabb = new Bounds();
             this.transform = new Transform();
@@ -1747,10 +1867,6 @@ var LayoutEditor;
             if (this.shapes.length === 0)
                 return;
 
-            for (var i = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].draw(ctx);
-            }
-
             // draw the bounds
             LayoutEditor.g_selectStyle.draw(ctx);
             _super.prototype.drawSelect.call(this, ctx);
@@ -1920,7 +2036,20 @@ var LayoutEditor;
             if (deletedIndex === -1)
                 this.deletedShapes.push(shape);
 
-            LayoutEditor.g_selectList.removeSelected(shape); // TODO should we remove this dependency?
+            LayoutEditor.g_draw(this);
+        };
+
+        ShapeList.prototype.hideShapes = function (shapes) {
+            for (var i = 0; i < shapes.length; ++i) {
+                shapes[i].isHidden = true;
+            }
+            LayoutEditor.g_draw(this);
+        };
+
+        ShapeList.prototype.showShapes = function (shapes) {
+            for (var i = 0; i < shapes.length; ++i) {
+                shapes[i].isHidden = false;
+            }
             LayoutEditor.g_draw(this);
         };
 
@@ -1937,14 +2066,15 @@ var LayoutEditor;
             var numShapes = this.shapes.length;
             for (var i = 0; i < numShapes; ++i) {
                 var shape = this.shapes[i];
-                shape.draw(ctx);
+                if (!shape.isHidden)
+                    shape.draw(ctx);
             }
         };
 
         ShapeList.prototype.getShapeInXY = function (x, y) {
             for (var i = this.shapes.length - 1; i >= 0; --i) {
                 var shape = this.shapes[i];
-                if (shape.isInsideXY(this.hitCtx, x, y))
+                if (!shape.isHidden && shape.isInsideXY(this.hitCtx, x, y))
                     return shape;
             }
 
@@ -1956,7 +2086,7 @@ var LayoutEditor;
 
             for (var i = 0; i < this.shapes.length; ++i) {
                 var shape = this.shapes[i];
-                if (shape.isOverlapBounds(bounds)) {
+                if (!shape.isHidden && shape.isOverlapBounds(bounds)) {
                     shape.isOverlapBounds(bounds);
                     shapes.push(shape);
                 }
@@ -2001,11 +2131,32 @@ var LayoutEditor;
     })();
     LayoutEditor.ShapeList = ShapeList;
 
+    LayoutEditor.g_shapeList = new ShapeList();
+
+    LayoutEditor.g_propertyPanel.addPropertyList({
+        canHandle: function (obj) {
+            return obj instanceof Shape;
+        },
+        items: [
+            {
+                prop: "name"
+            }, {
+                prop: "style",
+                type: "object",
+                getReferenceList: function () {
+                    return LayoutEditor.g_styleList.getReferenceList();
+                }
+            }]
+    });
+})(LayoutEditor || (LayoutEditor = {}));
+/// <reference path="_dependencies.ts" />
+var LayoutEditor;
+(function (LayoutEditor) {
     //------------------------------
     var SelectList = (function () {
         function SelectList() {
             this.selectedShapes = [];
-            this.selectGroup = new GroupShape("Select");
+            this.selectGroup = new LayoutEditor.GroupShape("Select");
         }
         SelectList.prototype.reset = function () {
             this.selectedShapes.length = 0;
@@ -2053,12 +2204,20 @@ var LayoutEditor;
 
         // deletes all of the selected shapes
         SelectList.prototype.deleteSelected = function () {
-            for (var i = 0; i < this.selectedShapes.length; ++i) {
+            for (var i = this.selectedShapes.length - 1; i >= 0; --i) {
                 LayoutEditor.g_shapeList.removeShape(this.selectedShapes[i]);
             }
             this.selectedShapes.length = 0;
 
             this.rebuildSelectGroup();
+        };
+
+        SelectList.prototype.showSelected = function () {
+            LayoutEditor.g_shapeList.showShapes(this.selectedShapes);
+        };
+
+        SelectList.prototype.hideSelected = function () {
+            LayoutEditor.g_shapeList.hideShapes(this.selectedShapes);
         };
 
         // duplicates all of the selected shapes
@@ -2077,11 +2236,6 @@ var LayoutEditor;
 
         SelectList.prototype.draw = function (ctx) {
             this.selectGroup.drawSelect(ctx);
-            // for (var i: number = 0; i < numSelectedShapes; ++i) {
-            //     var shape: Shape = this.selectedShapes[i];
-            //     Helper.assert(!shape.isDeleted);
-            //     shape.drawSelect(ctx);
-            // }
         };
 
         SelectList.prototype.rebuildSelectGroup = function () {
@@ -2089,29 +2243,17 @@ var LayoutEditor;
             this.selectGroup.setShapes(this.selectedShapes);
 
             LayoutEditor.g_draw(this);
+
+            if (this.selectedShapes.length > 0)
+                LayoutEditor.g_propertyPanel.setObject(this.selectedShapes[0]);
+            else
+                LayoutEditor.g_propertyPanel.setObject(null);
         };
         return SelectList;
     })();
     LayoutEditor.SelectList = SelectList;
 
     LayoutEditor.g_selectList = new SelectList();
-    LayoutEditor.g_shapeList = new ShapeList();
-
-    LayoutEditor.g_propertyPanel.addPropertyList({
-        isA: function (obj) {
-            return obj instanceof Shape;
-        },
-        items: [
-            {
-                name: "name"
-            }, {
-                name: "style",
-                type: "object",
-                getReferenceList: function () {
-                    return LayoutEditor.g_styleList.getReferenceList();
-                }
-            }]
-    });
 })(LayoutEditor || (LayoutEditor = {}));
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
@@ -2233,7 +2375,7 @@ var LayoutEditor;
 
             for (var i = 0; i < LayoutEditor.g_shapeList.shapes.length; ++i) {
                 var shape = LayoutEditor.g_shapeList.shapes[i];
-                if (shape.isDeleted || excludeShapes.indexOf(shape) !== -1)
+                if (shape.isHidden || excludeShapes.indexOf(shape) !== -1)
                     continue;
 
                 var polygon = shape.aabb.toPolygon();
@@ -2385,31 +2527,30 @@ var LayoutEditor;
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     var TransformCommand = (function () {
-        function TransformCommand(shape, transform, oldTransform) {
-            this.shape = shape;
-            this.originalTransform = new LayoutEditor.Transform();
-            this.transform = new LayoutEditor.Transform();
-            Helper.extend(this.transform, transform);
-
-            if (typeof oldTransform === "undefined")
-                Helper.extend(this.originalTransform, shape.transform);
-            else
-                Helper.extend(this.originalTransform, oldTransform);
+        function TransformCommand(shapes, oldTransforms) {
+            this.shapes = [];
+            this.oldTransforms = [];
+            this.transforms = [];
+            for (var i = 0; i < shapes.length; ++i) {
+                this.shapes[i] = shapes[i];
+                this.transforms[i] = shapes[i].transform.clone();
+                this.oldTransforms[i] = oldTransforms[i].clone();
+            }
         }
         TransformCommand.prototype.redo = function () {
-            Helper.extend(this.shape.transform, this.transform);
-            this.shape.calculateBounds();
+            for (var i = 0; i < this.shapes.length; ++i) {
+                this.shapes[i].transform.copy(this.transforms[i]);
+            }
 
             LayoutEditor.g_draw(LayoutEditor.g_shapeList);
-            LayoutEditor.g_draw(LayoutEditor.g_selectList);
         };
 
         TransformCommand.prototype.undo = function () {
-            Helper.extend(this.shape.transform, this.originalTransform);
-            this.shape.calculateBounds();
+            for (var i = 0; i < this.shapes.length; ++i) {
+                this.shapes[i].transform.copy(this.oldTransforms[i]);
+            }
 
             LayoutEditor.g_draw(LayoutEditor.g_shapeList);
-            LayoutEditor.g_draw(LayoutEditor.g_selectList);
         };
         return TransformCommand;
     })();
@@ -2434,37 +2575,30 @@ var LayoutEditor;
     })();
     LayoutEditor.TextCommand = TextCommand;
 
-    var PropertyCommand = (function () {
-        function PropertyCommand(propertyInfo, value) {
-            this.propertyInfo = propertyInfo;
-            this.value = value;
-            this.oldValue = propertyInfo.object[propertyInfo.name].toString();
-        }
-        PropertyCommand.prototype.redo = function () {
-            this.setValue(this.value);
-        };
-
-        PropertyCommand.prototype.undo = function () {
-            this.setValue(this.oldValue);
-        };
-
-        PropertyCommand.prototype.setValue = function (value) {
-            var propertyInfo = this.propertyInfo;
-            var type = typeof propertyInfo.object[propertyInfo.name];
-            if (type === "number")
-                propertyInfo.object[propertyInfo.name] = parseInt(value);
-            else if (type === "string")
-                propertyInfo.object[propertyInfo.name] = value;
-            else
-                Helper.assert(false); // can't handle this type
-
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
-            LayoutEditor.g_draw(LayoutEditor.g_propertyPanel);
-        };
-        return PropertyCommand;
-    })();
-    LayoutEditor.PropertyCommand = PropertyCommand;
-
+    // export class PropertyCommand implements Command {
+    //     oldValue: string;
+    //     constructor(public propertyInfo: PropertyInfo, public value: string) {
+    //         this.oldValue = propertyInfo.object[propertyInfo.name].toString();
+    //     }
+    //     redo() {
+    //         this.setValue(this.value);
+    //     }
+    //     undo() {
+    //         this.setValue(this.oldValue);
+    //     }
+    //     setValue(value: string) {
+    //         var propertyInfo: PropertyInfo = this.propertyInfo;
+    //         var type: string = typeof propertyInfo.object[propertyInfo.name];
+    //         if (type === "number")
+    //             propertyInfo.object[propertyInfo.name] = parseInt(value);
+    //         else if (type === "string")
+    //             propertyInfo.object[propertyInfo.name] = value;
+    //         else
+    //             Helper.assert(false); // can't handle this type
+    //         g_draw(g_shapeList);
+    //         g_draw(g_propertyPanel);
+    //     }
+    // }
     var DuplicateSelectedCommand = (function () {
         function DuplicateSelectedCommand() {
             this.oldSelected = LayoutEditor.g_selectList.getSelectedShapes().slice();
@@ -2696,8 +2830,7 @@ var LayoutEditor;
                     break;
                 case 3 /* End */:
                     var shapes = LayoutEditor.g_shapeList.getShapesInBounds(this.aabbShape.aabb);
-                    if (shapes.length > 0)
-                        LayoutEditor.g_commandList.addCommand(new SelectCommand(shapes, this.aabbShape.aabb.getArea() > 10));
+                    LayoutEditor.g_selectList.setSelectedShapes(shapes);
                     this.isDrawing = false;
                     LayoutEditor.g_draw(this);
                     isHandled = true;
@@ -2726,32 +2859,6 @@ var LayoutEditor;
     })();
     LayoutEditor.SelectTool = SelectTool;
 
-    // TODO Should we be able to undo selection?????
-    var SelectCommand = (function () {
-        function SelectCommand(shapes, isReplace) {
-            if (typeof isReplace === "undefined") { isReplace = false; }
-            this.isReplace = isReplace;
-            this.shapes = [];
-            this.oldSelectedShapes = [];
-            this.shapes = shapes.slice();
-            this.oldSelectedShapes = LayoutEditor.g_selectList.getSelectedShapes().slice();
-        }
-        SelectCommand.prototype.redo = function () {
-            if (this.isReplace) {
-                LayoutEditor.g_selectList.setSelectedShapes(this.shapes);
-            } else {
-                LayoutEditor.g_selectList.setSelectedShapes(this.oldSelectedShapes);
-                LayoutEditor.g_selectList.toggleSelected(this.shapes);
-            }
-        };
-
-        SelectCommand.prototype.undo = function () {
-            LayoutEditor.g_selectList.setSelectedShapes(this.oldSelectedShapes);
-        };
-        return SelectCommand;
-    })();
-    LayoutEditor.SelectCommand = SelectCommand;
-
     var ResizeTool = (function () {
         function ResizeTool() {
             this.isDrawing = false;
@@ -2764,6 +2871,7 @@ var LayoutEditor;
             this.deltaX = 0;
             this.deltaY = 0;
             this.oldOABB = new LayoutEditor.Bounds();
+            this.oldShapeTransforms = [];
         }
         ResizeTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -2781,10 +2889,16 @@ var LayoutEditor;
 
                     var selectGroup = LayoutEditor.g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
+                        LayoutEditor.g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
                         LayoutEditor.g_grid.rebuildTabs();
 
-                        Helper.extend(this.oldOABB, selectGroup.oabb);
-                        Helper.extend(this.oldTransform, selectGroup.transform);
+                        this.oldOABB.copy(selectGroup.oabb);
+                        this.oldTransform.copy(selectGroup.transform);
+
+                        var shapes = LayoutEditor.g_selectList.selectGroup.shapes;
+                        for (var i = 0; i < shapes.length; ++i) {
+                            this.oldShapeTransforms[i] = shapes[i].transform.clone();
+                        }
 
                         var oldOABB = this.oldOABB;
                         var localPos = oldOABB.invXY(e.x, e.y);
@@ -2855,8 +2969,8 @@ var LayoutEditor;
                         if (this.handle === 16 /* Middle */) {
                             this.deltaX += e.deltaX;
                             this.deltaY += e.deltaY;
-                            newX = this.deltaX;
-                            newY = this.deltaY;
+                            newX += this.deltaX;
+                            newY += this.deltaY;
                         }
 
                         transform.setIdentity();
@@ -2873,13 +2987,15 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.isDrawing && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, LayoutEditor.g_selectList.selectGroup.transform, this.oldTransform);
+                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         LayoutEditor.g_commandList.addCommand(newCommand);
+                        LayoutEditor.g_selectList.showSelected();
                         LayoutEditor.g_draw(this);
                         isHandled = true;
                     }
                     this.canUse = false;
                     this.isDrawing = false;
+                    this.oldShapeTransforms.length = 0;
                     break;
             }
 
@@ -2890,6 +3006,12 @@ var LayoutEditor;
         };
 
         ResizeTool.prototype.draw = function (ctx) {
+            if (!this.isDrawing)
+                return;
+
+            for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
+                LayoutEditor.g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+            }
         };
         return ResizeTool;
     })();
@@ -2915,6 +3037,7 @@ var LayoutEditor;
             this.pivotX = 0;
             this.pivotY = 0;
             this.oldTransform = new LayoutEditor.Transform();
+            this.oldShapeTransforms = [];
             this.isDrawing = false;
         }
         RotateTool.prototype.onPointer = function (e) {
@@ -2931,10 +3054,14 @@ var LayoutEditor;
 
                     var selectGroup = LayoutEditor.g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
-                        LayoutEditor.g_grid.rebuildTabs();
+                        LayoutEditor.g_selectList.hideSelected();
 
-                        // this.rotateShape = selectGroup.copy();
-                        Helper.extend(this.oldTransform, selectGroup.transform);
+                        this.oldTransform.copy(selectGroup.transform);
+
+                        var shapes = LayoutEditor.g_selectList.selectGroup.shapes;
+                        for (var i = 0; i < shapes.length; ++i) {
+                            this.oldShapeTransforms[i] = shapes[i].transform.clone();
+                        }
 
                         this.pivotX = selectGroup.transform.tx;
                         this.pivotY = selectGroup.transform.tx;
@@ -2958,8 +3085,9 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.isDrawing) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, LayoutEditor.g_selectList.selectGroup.transform, this.oldTransform);
+                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         LayoutEditor.g_commandList.addCommand(newCommand);
+                        LayoutEditor.g_selectList.showSelected();
                         LayoutEditor.g_draw(this);
                         isHandled = true;
                         this.isDrawing = false;
@@ -2975,6 +3103,12 @@ var LayoutEditor;
         };
 
         RotateTool.prototype.draw = function (ctx) {
+            if (!this.isDrawing)
+                return;
+
+            for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
+                LayoutEditor.g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+            }
         };
 
         RotateTool.prototype.getAngle = function (x, y, px, py) {
@@ -2997,6 +3131,7 @@ var LayoutEditor;
             this.deltaY = 0;
             this.oldTransform = new LayoutEditor.Transform();
             this.oldAABB = new LayoutEditor.Bounds();
+            this.oldShapeTransforms = [];
         }
         MoveTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -3010,9 +3145,15 @@ var LayoutEditor;
                             LayoutEditor.g_selectList.setSelectedShapes([this.shape]);
                         }
 
+                        var shapes = LayoutEditor.g_selectList.selectGroup.shapes;
+                        for (var i = 0; i < shapes.length; ++i) {
+                            this.oldShapeTransforms[i] = shapes[i].transform.clone();
+                        }
+
+                        LayoutEditor.g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
                         LayoutEditor.g_grid.rebuildTabs();
-                        Helper.extend(this.oldTransform, LayoutEditor.g_selectList.selectGroup.transform);
-                        Helper.extend(this.oldAABB, LayoutEditor.g_selectList.selectGroup.aabb);
+                        this.oldTransform.copy(LayoutEditor.g_selectList.selectGroup.transform);
+                        this.oldAABB.copy(LayoutEditor.g_selectList.selectGroup.aabb);
                         this.deltaX = 0;
                         this.deltaY = 0;
 
@@ -3044,8 +3185,9 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.shape && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup, LayoutEditor.g_selectList.selectGroup.transform, this.oldTransform);
+                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         LayoutEditor.g_commandList.addCommand(newCommand);
+                        LayoutEditor.g_selectList.showSelected();
                         LayoutEditor.g_draw(this);
                         LayoutEditor.g_grid.clearSnap();
                         isHandled = true;
@@ -3062,6 +3204,13 @@ var LayoutEditor;
         };
 
         MoveTool.prototype.draw = function (ctx) {
+            if (!this.shape)
+                return;
+
+            for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
+                LayoutEditor.g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+            }
+
             LayoutEditor.g_grid.draw(ctx);
         };
 
@@ -3184,9 +3333,9 @@ var LayoutEditor;
                     if (this.shape) {
                         this.editShape = this.shape.copy();
 
-                        //this.editShape.style = g_selectStyle; keep the same sgridtyle
-                        var left = this.shape.oabb.cx + LayoutEditor.g_propertyCtx.canvas.offsetLeft + "px";
-                        var top = this.shape.oabb.cy + LayoutEditor.g_propertyCtx.canvas.offsetTop + "px";
+                        // TODO remove dependency on g_toolCtx
+                        var left = this.shape.oabb.cx + LayoutEditor.g_toolCtx.canvas.offsetLeft + "px";
+                        var top = this.shape.oabb.cy + LayoutEditor.g_toolCtx.canvas.offsetTop + "px";
                         LayoutEditor.g_inputMultiLine.style.left = left;
                         LayoutEditor.g_inputMultiLine.style.top = top;
                         LayoutEditor.g_inputMultiLine.value = this.editShape.text;
@@ -3238,99 +3387,19 @@ var LayoutEditor;
     })();
     LayoutEditor.TextTool = TextTool;
 
-    var PropertyTool = (function () {
-        function PropertyTool() {
-            this.editing = null;
-            this.changed = false;
-            var self = this;
-            LayoutEditor.g_inputText.addEventListener("input", function (e) {
-                self.onInput(e);
-            });
-            LayoutEditor.g_inputText.addEventListener("change", function (e) {
-                self.onChange(e);
-            });
-        }
-        PropertyTool.prototype.onPointer = function (e) {
-            var canvasWidth = LayoutEditor.g_propertyCtx.canvas.width;
-            var panelWidth = LayoutEditor.g_propertyPanel.width;
-
-            switch (e.state) {
-                case 1 /* Start */:
-                    if (LayoutEditor.g_panZoom.x < canvasWidth - panelWidth || LayoutEditor.g_panZoom.x >= canvasWidth) {
-                        this.edit(null);
-                        break;
-                    }
-
-                    var info = LayoutEditor.g_propertyPanel.getPropertyInfoXY(LayoutEditor.g_panZoom.x, LayoutEditor.g_panZoom.y);
-                    this.edit(info);
-                    break;
-            }
-
-            return this.editing !== null;
-        };
-
-        PropertyTool.prototype.onChangeFocus = function (name) {
-        };
-
-        PropertyTool.prototype.draw = function (ctx) {
-        };
-
-        PropertyTool.prototype.onInput = function (e) {
-            if (this.editing) {
-                LayoutEditor.g_propertyPanel.drawEditing(this.editing, LayoutEditor.g_inputText.value);
-                this.changed = true;
-            }
-        };
-
-        PropertyTool.prototype.onChange = function (e) {
-            if (this.editing)
-                this.edit(null); // finished
-        };
-
-        PropertyTool.prototype.edit = function (propertyInfo) {
-            if (this.editing === propertyInfo)
-                return;
-
-            if (this.editing) {
-                if (this.changed) {
-                    var newCommand = new LayoutEditor.PropertyCommand(this.editing, LayoutEditor.g_inputText.value);
-                    LayoutEditor.g_commandList.addCommand(newCommand);
-                } else {
-                    LayoutEditor.g_draw(LayoutEditor.g_propertyPanel);
-                }
-            }
-
-            this.editing = propertyInfo;
-            this.changed = false;
-
-            if (propertyInfo) {
-                LayoutEditor.g_inputText.value = propertyInfo.object[propertyInfo.name];
-                LayoutEditor.g_propertyPanel.drawEditing(propertyInfo, LayoutEditor.g_inputText.value);
-
-                //window.prompt(propertyInfo.name, g_inputText.value);
-                var left = LayoutEditor.g_propertyCtx.canvas.width - LayoutEditor.g_propertyPanel.width + LayoutEditor.g_propertyCtx.canvas.offsetLeft + "px";
-                var top = propertyInfo.y + LayoutEditor.g_propertyCtx.canvas.offsetTop + "px";
-                LayoutEditor.g_inputText.style.left = left;
-                LayoutEditor.g_inputText.style.top = top;
-                LayoutEditor.g_inputText.focus();
-            }
-        };
-        return PropertyTool;
-    })();
-    LayoutEditor.PropertyTool = PropertyTool;
-
-    LayoutEditor.g_inputText = null;
     LayoutEditor.g_inputMultiLine = null;
-    LayoutEditor.g_inputTextStyle = null;
+
+    LayoutEditor.g_toolCtx = null;
 })(LayoutEditor || (LayoutEditor = {}));
 /// <reference path="interactionhelper.ts" />
 /// <reference path="helper.ts" />
 /// <reference path="system.ts" />
-/// <reference path="property.ts" />
+/// <reference path="webproperty.ts" />
 /// <reference path="style.ts" />
 /// <reference path="panzoom.ts" />
 /// <reference path="screen.ts" />
 /// <reference path="shape.ts" />
+/// <reference path="select.ts" />
 /// <reference path="grid.ts" />
 /// <reference path="command.ts" />
 /// <reference path="tool.ts" />
@@ -3342,7 +3411,6 @@ var LayoutEditor;
 
     var g_tool = null;
     var g_propertyTool = null;
-    var g_toolCtx = null;
 
     function setTool(toolName) {
         var oldTool = g_tool;
@@ -3462,14 +3530,9 @@ var LayoutEditor;
         }
 
         if (drawList.indexOf(LayoutEditor.g_selectList) !== -1 || drawList.indexOf(LayoutEditor.g_panZoom) !== -1 || drawList.indexOf(g_tool) !== -1) {
-            clear(g_toolCtx);
-            LayoutEditor.g_selectList.draw(g_toolCtx);
-            g_tool.draw(g_toolCtx);
-        }
-
-        if (drawList.indexOf(LayoutEditor.g_propertyPanel) !== -1) {
-            clear(LayoutEditor.g_propertyCtx);
-            LayoutEditor.g_propertyPanel.draw(LayoutEditor.g_propertyCtx);
+            clear(LayoutEditor.g_toolCtx);
+            LayoutEditor.g_selectList.draw(LayoutEditor.g_toolCtx);
+            g_tool.draw(LayoutEditor.g_toolCtx);
         }
 
         drawList.length = 0;
@@ -3491,12 +3554,10 @@ var LayoutEditor;
     window.addEventListener("load", function () {
         var canvas = document.getElementById("layoutbase");
         var toolCanvas = document.getElementById("layouttool");
-        var propertyCanvas = document.getElementById("property");
         var interactionCanvas = document.getElementById("interaction");
 
         LayoutEditor.g_drawCtx = canvas.getContext("2d");
-        g_toolCtx = toolCanvas.getContext("2d");
-        LayoutEditor.g_propertyCtx = propertyCanvas.getContext("2d");
+        LayoutEditor.g_toolCtx = toolCanvas.getContext("2d");
 
         LayoutEditor.g_draw = draw;
 
@@ -3524,7 +3585,9 @@ var LayoutEditor;
         LayoutEditor.g_inputText = document.getElementById("inputText");
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");
 
-        g_propertyTool = new LayoutEditor.PropertyTool();
+        // g_propertyTool = new PropertyTool();
+        LayoutEditor.g_propertyPanel.setRootElem(document.getElementById("webPropertyPanel"));
+        LayoutEditor.g_textPropertyEditor.setInputElem(LayoutEditor.g_inputText);
 
         setTool("rectTool");
 
@@ -3543,21 +3606,7 @@ var LayoutEditor;
             e.deltaY = LayoutEditor.g_panZoom.toH(e.deltaY);
             e.pinchDistance *= LayoutEditor.g_panZoom.zoom;
 
-            var panels = [
-                {
-                    name: "Property",
-                    code: g_propertyTool
-                }, {
-                    name: "Tool",
-                    code: g_tool
-                }];
-            for (var i = 0; i < panels.length; ++i) {
-                var panel = panels[i];
-                if (panel.code.onPointer(e)) {
-                    setFocus(panel.name);
-                    break;
-                }
-            }
+            g_tool.onPointer(e);
         });
     });
 })(LayoutEditor || (LayoutEditor = {}));

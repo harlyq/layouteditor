@@ -23,6 +23,20 @@ module LayoutEditor {
             return this.hw * this.hh * 4;
         }
 
+        copy(other: Bounds) {
+            this.rotate = other.rotate;
+            this.cx = other.cx;
+            this.cy = other.cy;
+            this.hw = other.hw;
+            this.hh = other.hh;
+        }
+
+        clone() {
+            var newBounds: Bounds = new Bounds();
+            newBounds.copy(this);
+            return newBounds;
+        }
+
         enclose(aabb: Bounds) {
             Helper.assert(aabb.rotate === 0); // only works with unrotated bounds 0
             Helper.assert(this.rotate === 0);
@@ -203,14 +217,18 @@ module LayoutEditor {
             };
         }
 
-        copy(): Transform {
+        copy(other: Transform) {
+            this.a = other.a;
+            this.b = other.b;
+            this.c = other.c;
+            this.d = other.d;
+            this.tx = other.tx;
+            this.ty = other.ty;
+        }
+
+        clone(): Transform {
             var t: Transform = new Transform();
-            t.a = this.a;
-            t.b = this.b;
-            t.c = this.c;
-            t.d = this.d;
-            t.tx = this.tx;
-            t.ty = this.ty
+            t.copy(this);
             return t;
         }
 
@@ -242,6 +260,7 @@ module LayoutEditor {
     export class Shape {
         private style: Style = g_style;
         isDeleted: boolean = false;
+        isHidden: boolean = false;
         oabb: Bounds = new Bounds();
         aabb: Bounds = new Bounds();
         transform: Transform = new Transform();
@@ -692,7 +711,7 @@ module LayoutEditor {
 
     export class GroupShape extends Shape {
         shapes: Shape[] = [];
-        private oldTransforms: Transform[] = []; // original transform for each shape
+        oldTransforms: Transform[] = []; // original transform for each shape
         private lastTransform: Transform = new Transform();
         private encloseHH: number = 0;
         private encloseHW: number = 0;
@@ -747,10 +766,6 @@ module LayoutEditor {
         drawSelect(ctx) {
             if (this.shapes.length === 0)
                 return; // nothing to draw
-
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].draw(ctx);
-            }
 
             // draw the bounds
             g_selectStyle.draw(ctx);
@@ -922,7 +937,20 @@ module LayoutEditor {
             if (deletedIndex === -1)
                 this.deletedShapes.push(shape);
 
-            g_selectList.removeSelected(shape); // TODO should we remove this dependency?
+            g_draw(this);
+        }
+
+        hideShapes(shapes: Shape[]) {
+            for (var i: number = 0; i < shapes.length; ++i) {
+                shapes[i].isHidden = true;
+            }
+            g_draw(this);
+        }
+
+        showShapes(shapes: Shape[]) {
+            for (var i: number = 0; i < shapes.length; ++i) {
+                shapes[i].isHidden = false;
+            }
             g_draw(this);
         }
 
@@ -939,7 +967,8 @@ module LayoutEditor {
             var numShapes: number = this.shapes.length;
             for (var i: number = 0; i < numShapes; ++i) {
                 var shape: Shape = this.shapes[i];
-                shape.draw(ctx);
+                if (!shape.isHidden)
+                    shape.draw(ctx);
             }
         }
 
@@ -947,7 +976,7 @@ module LayoutEditor {
             // in reverse as the last shapes are drawn on top
             for (var i: number = this.shapes.length - 1; i >= 0; --i) {
                 var shape: Shape = this.shapes[i];
-                if (shape.isInsideXY(this.hitCtx, x, y))
+                if (!shape.isHidden && shape.isInsideXY(this.hitCtx, x, y))
                     return shape;
             }
 
@@ -960,7 +989,7 @@ module LayoutEditor {
             // forward, so the list order is the same as the draw order
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 var shape: Shape = this.shapes[i];
-                if (shape.isOverlapBounds(bounds)) {
+                if (!shape.isHidden && shape.isOverlapBounds(bounds)) {
                     shape.isOverlapBounds(bounds);
                     shapes.push(shape);
                 }
@@ -1003,112 +1032,17 @@ module LayoutEditor {
         }
     }
 
-    //------------------------------
-    export class SelectList {
-        selectedShapes: Shape[] = [];
-        selectGroup: GroupShape = new GroupShape("Select");
-
-        constructor() {}
-
-        reset() {
-            this.selectedShapes.length = 0;
-        }
-
-        // removes the shape from the selected list
-        removeSelected(shape: Shape) {
-            var index: number = this.selectedShapes.indexOf(shape);
-            if (index !== -1) {
-                this.selectedShapes.splice(index, 1);
-                this.rebuildSelectGroup();
-            }
-        }
-
-        toggleSelected(shapes: Shape[]) {
-            for (var i: number = 0; i < shapes.length; ++i) {
-                var shape: Shape = shapes[i];
-                var index: number = this.selectedShapes.indexOf(shape);
-                if (index === -1)
-                    this.selectedShapes.push(shape);
-                else
-                    this.selectedShapes.splice(index, 1);
-            }
-            this.rebuildSelectGroup();
-        }
-
-        isSelected(shape: Shape): boolean {
-            return this.selectedShapes.indexOf(shape) !== -1;
-        }
-
-        setSelectedShapes(shapes: Shape[]) {
-            this.selectedShapes = shapes.slice(); // copy
-            this.rebuildSelectGroup();
-        }
-
-        // returns the instance
-        getSelectedShapes(): Shape[] {
-            return this.selectedShapes;
-        }
-
-        clearSelectedShapes() {
-            this.selectedShapes.length = 0;
-            this.rebuildSelectGroup();
-        }
-
-        // deletes all of the selected shapes
-        deleteSelected() {
-            for (var i: number = 0; i < this.selectedShapes.length; ++i) {
-                g_shapeList.removeShape(this.selectedShapes[i]);
-            }
-            this.selectedShapes.length = 0;
-
-            this.rebuildSelectGroup();
-        }
-
-        // duplicates all of the selected shapes
-        duplicateSelected(): Shape[] {
-            var copyShapes: Shape[] = [];
-            for (var i: number = 0; i < this.selectedShapes.length; ++i) {
-                var copyShape: Shape = g_shapeList.duplicateShape(this.selectedShapes[i]);
-                copyShape.transform.tx += 20;
-                copyShape.calculateBounds();
-                copyShapes.push(copyShape);
-            }
-
-            this.rebuildSelectGroup();
-            return copyShapes;
-        }
-
-        draw(ctx) {
-            this.selectGroup.drawSelect(ctx);
-
-            // for (var i: number = 0; i < numSelectedShapes; ++i) {
-            //     var shape: Shape = this.selectedShapes[i];
-            //     Helper.assert(!shape.isDeleted);
-            //     shape.drawSelect(ctx);
-            // }
-        }
-
-        rebuildSelectGroup() {
-            this.selectGroup.reset();
-            this.selectGroup.setShapes(this.selectedShapes);
-
-            g_draw(this);
-        }
-    }
-
-    export
-    var g_selectList: SelectList = new SelectList();
     export
     var g_shapeList: ShapeList = new ShapeList();
 
     g_propertyPanel.addPropertyList({
-        isA: (obj: any) => {
+        canHandle: (obj: any) => {
             return obj instanceof Shape;
         },
         items: [{
-            name: "name"
+            prop: "name"
         }, {
-            name: "style",
+            prop: "style",
             type: "object",
             getReferenceList: () => {
                 return g_styleList.getReferenceList();

@@ -122,7 +122,7 @@ module LayoutEditor {
 
             for (var i: number = 0; i < g_shapeList.shapes.length; ++i) {
                 var shape: Shape = g_shapeList.shapes[i];
-                if (shape.isDeleted || excludeShapes.indexOf(shape) !== -1)
+                if (shape.isHidden || excludeShapes.indexOf(shape) !== -1)
                     continue;
 
                 var polygon: number[] = shape.aabb.toPolygon();

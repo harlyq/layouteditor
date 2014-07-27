@@ -88,32 +88,32 @@ module LayoutEditor {
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     export class TransformCommand implements Command {
-        private originalTransform: Transform = new Transform();
-        private transform: Transform = new Transform();
+        private shapes: Shape[] = [];
+        private oldTransforms: Transform[] = [];
+        private transforms: Transform[] = [];
 
-        constructor(public shape: Shape, transform: Transform, oldTransform ? : Transform) {
-            Helper.extend(this.transform, transform);
-
-            if (typeof oldTransform === "undefined")
-                Helper.extend(this.originalTransform, shape.transform);
-            else
-                Helper.extend(this.originalTransform, oldTransform);
+        constructor(shapes: Shape[], oldTransforms: Transform[]) {
+            for (var i: number = 0; i < shapes.length; ++i) {
+                this.shapes[i] = shapes[i];
+                this.transforms[i] = shapes[i].transform.clone();
+                this.oldTransforms[i] = oldTransforms[i].clone();
+            }
         }
 
         redo() {
-            Helper.extend(this.shape.transform, this.transform);
-            this.shape.calculateBounds();
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                this.shapes[i].transform.copy(this.transforms[i]);
+            }
 
             g_draw(g_shapeList);
-            g_draw(g_selectList);
         }
 
         undo() {
-            Helper.extend(this.shape.transform, this.originalTransform);
-            this.shape.calculateBounds();
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                this.shapes[i].transform.copy(this.oldTransforms[i]);
+            }
 
             g_draw(g_shapeList);
-            g_draw(g_selectList);
         }
     }
 
@@ -135,35 +135,35 @@ module LayoutEditor {
         }
     }
 
-    export class PropertyCommand implements Command {
-        oldValue: string;
+    // export class PropertyCommand implements Command {
+    //     oldValue: string;
 
-        constructor(public propertyInfo: PropertyInfo, public value: string) {
-            this.oldValue = propertyInfo.object[propertyInfo.name].toString();
-        }
+    //     constructor(public propertyInfo: PropertyInfo, public value: string) {
+    //         this.oldValue = propertyInfo.object[propertyInfo.name].toString();
+    //     }
 
-        redo() {
-            this.setValue(this.value);
-        }
+    //     redo() {
+    //         this.setValue(this.value);
+    //     }
 
-        undo() {
-            this.setValue(this.oldValue);
-        }
+    //     undo() {
+    //         this.setValue(this.oldValue);
+    //     }
 
-        setValue(value: string) {
-            var propertyInfo: PropertyInfo = this.propertyInfo;
-            var type: string = typeof propertyInfo.object[propertyInfo.name];
-            if (type === "number")
-                propertyInfo.object[propertyInfo.name] = parseInt(value);
-            else if (type === "string")
-                propertyInfo.object[propertyInfo.name] = value;
-            else
-                Helper.assert(false); // can't handle this type
+    //     setValue(value: string) {
+    //         var propertyInfo: PropertyInfo = this.propertyInfo;
+    //         var type: string = typeof propertyInfo.object[propertyInfo.name];
+    //         if (type === "number")
+    //             propertyInfo.object[propertyInfo.name] = parseInt(value);
+    //         else if (type === "string")
+    //             propertyInfo.object[propertyInfo.name] = value;
+    //         else
+    //             Helper.assert(false); // can't handle this type
 
-            g_draw(g_shapeList);
-            g_draw(g_propertyPanel);
-        }
-    }
+    //         g_draw(g_shapeList);
+    //         g_draw(g_propertyPanel);
+    //     }
+    // }
 
     export class DuplicateSelectedCommand implements Command {
         oldSelected: Shape[];

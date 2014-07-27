@@ -6,7 +6,6 @@ module LayoutEditor {
 
     var g_tool: Tool = null;
     var g_propertyTool: Tool = null;
-    var g_toolCtx: any = null;
 
     function setTool(toolName: string) {
         var oldTool = g_tool;
@@ -131,11 +130,6 @@ module LayoutEditor {
             g_tool.draw(g_toolCtx);
         }
 
-        if (drawList.indexOf(g_propertyPanel) !== -1) {
-            clear(g_propertyCtx);
-            g_propertyPanel.draw(g_propertyCtx);
-        }
-
         drawList.length = 0;
         requestFrame = false;
     }
@@ -160,12 +154,10 @@ module LayoutEditor {
     window.addEventListener("load", function() {
         var canvas = < HTMLCanvasElement > document.getElementById("layoutbase");
         var toolCanvas = < HTMLCanvasElement > document.getElementById("layouttool");
-        var propertyCanvas = < HTMLCanvasElement > document.getElementById("property");
         var interactionCanvas = < HTMLCanvasElement > document.getElementById("interaction");
 
         g_drawCtx = canvas.getContext("2d");
         g_toolCtx = toolCanvas.getContext("2d");
-        g_propertyCtx = propertyCanvas.getContext("2d");
 
         g_draw = draw;
 
@@ -193,7 +185,9 @@ module LayoutEditor {
         g_inputText = document.getElementById("inputText");
         g_inputMultiLine = document.getElementById("inputMultiLine");
 
-        g_propertyTool = new PropertyTool();
+        // g_propertyTool = new PropertyTool();
+        g_propertyPanel.setRootElem(document.getElementById("webPropertyPanel"));
+        g_textPropertyEditor.setInputElem(g_inputText);
 
         setTool("rectTool");
 
@@ -212,20 +206,7 @@ module LayoutEditor {
             e.deltaY = g_panZoom.toH(e.deltaY);
             e.pinchDistance *= g_panZoom.zoom;
 
-            var panels: PanelInfo[] = [{
-                name: "Property",
-                code: g_propertyTool
-            }, {
-                name: "Tool",
-                code: g_tool
-            }];
-            for (var i: number = 0; i < panels.length; ++i) {
-                var panel: PanelInfo = panels[i];
-                if (panel.code.onPointer(e)) {
-                    setFocus(panel.name);
-                    break;
-                }
-            }
+            g_tool.onPointer(e);
         });
     });
 }

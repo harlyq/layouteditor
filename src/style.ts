@@ -152,29 +152,29 @@ module LayoutEditor {
 
 
     g_propertyPanel.addPropertyList({
-        isA: (obj: any) => {
+        canHandle: (obj: any) => {
             return obj instanceof Style;
         },
         items: [{
-            name: "strokeStyle"
+            prop: "strokeStyle"
         }, {
-            name: "fillStyle"
+            prop: "fillStyle"
         }, {
-            name: "lineWidth"
+            prop: "lineWidth"
         }, {
-            name: "textAlign"
+            prop: "textAlign"
         }, {
-            name: "textBaseline"
+            prop: "textBaseline"
         }, {
-            name: "fontSize"
+            prop: "fontSize"
         }, {
-            name: "fontFamily"
+            prop: "fontFamily"
         }, {
-            name: "fontWeight"
+            prop: "fontWeight"
         }, {
-            name: "fontStyle"
+            prop: "fontStyle"
         }, {
-            name: "fontSpacing"
+            prop: "fontSpacing"
         }]
     });
 

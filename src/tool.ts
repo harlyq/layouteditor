@@ -214,8 +214,7 @@ module LayoutEditor {
                     break;
                 case InteractionHelper.State.End:
                     var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
-                    if (shapes.length > 0)
-                        g_commandList.addCommand(new SelectCommand(shapes, this.aabbShape.aabb.getArea() > 10));
+                    g_selectList.setSelectedShapes(shapes);
                     this.isDrawing = false;
                     g_draw(this);
                     isHandled = true;
@@ -241,30 +240,6 @@ module LayoutEditor {
         }
     }
 
-    // TODO Should we be able to undo selection?????
-    export class SelectCommand implements Command {
-        shapes: Shape[] = [];
-        oldSelectedShapes: Shape[] = [];
-
-        constructor(shapes: Shape[], public isReplace: boolean = false) {
-            this.shapes = shapes.slice();
-            this.oldSelectedShapes = g_selectList.getSelectedShapes().slice();
-        }
-
-        redo() {
-            if (this.isReplace) {
-                g_selectList.setSelectedShapes(this.shapes);
-            } else {
-                g_selectList.setSelectedShapes(this.oldSelectedShapes);
-                g_selectList.toggleSelected(this.shapes);
-            }
-        }
-
-        undo() {
-            g_selectList.setSelectedShapes(this.oldSelectedShapes);
-        }
-    }
-
     export class ResizeTool implements Tool {
         isDrawing: boolean = false;
         handleSize: number = 20;
@@ -277,6 +252,7 @@ module LayoutEditor {
         private deltaX: number = 0;
         private deltaY: number = 0;
         private oldOABB: Bounds = new Bounds();
+        private oldShapeTransforms: Transform[] = [];
 
         constructor() {}
 
@@ -296,10 +272,16 @@ module LayoutEditor {
 
                     var selectGroup: GroupShape = g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
+                        g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
                         g_grid.rebuildTabs();
 
-                        Helper.extend(this.oldOABB, selectGroup.oabb);
-                        Helper.extend(this.oldTransform, selectGroup.transform);
+                        this.oldOABB.copy(selectGroup.oabb);
+                        this.oldTransform.copy(selectGroup.transform);
+
+                        var shapes: Shape[] = g_selectList.selectGroup.shapes;
+                        for (var i: number = 0; i < shapes.length; ++i) {
+                            this.oldShapeTransforms[i] = shapes[i].transform.clone();
+                        }
 
                         var oldOABB: Bounds = this.oldOABB;
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
@@ -370,8 +352,8 @@ module LayoutEditor {
                         if (this.handle === ResizeTool.HandleFlag.Middle) {
                             this.deltaX += e.deltaX;
                             this.deltaY += e.deltaY;
-                            newX = this.deltaX;
-                            newY = this.deltaY;
+                            newX += this.deltaX;
+                            newY += this.deltaY;
                         }
 
                         transform.setIdentity();
@@ -388,13 +370,15 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.isDrawing && this.canUse) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup, g_selectList.selectGroup.transform, this.oldTransform);
+                        var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         g_commandList.addCommand(newCommand);
+                        g_selectList.showSelected();
                         g_draw(this);
                         isHandled = true;
                     }
                     this.canUse = false;
                     this.isDrawing = false;
+                    this.oldShapeTransforms.length = 0;
                     break;
             }
 
@@ -403,7 +387,14 @@ module LayoutEditor {
 
         onChangeFocus(focus: string) {}
 
-        public draw(ctx) {}
+        public draw(ctx) {
+            if (!this.isDrawing)
+                return;
+
+            for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
+                g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+            }
+        }
     }
 
     export module ResizeTool {
@@ -417,6 +408,7 @@ module LayoutEditor {
         private pivotX: number = 0;
         private pivotY: number = 0;
         private oldTransform: Transform = new Transform();
+        private oldShapeTransforms: Transform[] = [];
 
         isDrawing: boolean = false;
 
@@ -438,9 +430,14 @@ module LayoutEditor {
 
                     var selectGroup: GroupShape = g_selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
-                        g_grid.rebuildTabs();
-                        // this.rotateShape = selectGroup.copy();
-                        Helper.extend(this.oldTransform, selectGroup.transform);
+                        g_selectList.hideSelected();
+
+                        this.oldTransform.copy(selectGroup.transform);
+
+                        var shapes: Shape[] = g_selectList.selectGroup.shapes;
+                        for (var i: number = 0; i < shapes.length; ++i) {
+                            this.oldShapeTransforms[i] = shapes[i].transform.clone();
+                        }
 
                         this.pivotX = selectGroup.transform.tx;
                         this.pivotY = selectGroup.transform.tx;
@@ -464,8 +461,9 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.isDrawing) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup, g_selectList.selectGroup.transform, this.oldTransform);
+                        var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         g_commandList.addCommand(newCommand);
+                        g_selectList.showSelected();
                         g_draw(this);
                         isHandled = true;
                         this.isDrawing = false;
@@ -479,7 +477,14 @@ module LayoutEditor {
 
         onChangeFocus(focus: string) {}
 
-        public draw(ctx) {}
+        public draw(ctx) {
+            if (!this.isDrawing)
+                return;
+
+            for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
+                g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+            }
+        }
 
         private getAngle(x: number, y: number, px: number, py: number): number {
             var dx = x - px;
@@ -498,6 +503,7 @@ module LayoutEditor {
         private deltaY: number = 0;
         private oldTransform: Transform = new Transform();
         private oldAABB: Bounds = new Bounds();
+        private oldShapeTransforms: Transform[] = [];
 
         constructor() {}
 
@@ -513,9 +519,15 @@ module LayoutEditor {
                             g_selectList.setSelectedShapes([this.shape]);
                         }
 
+                        var shapes: Shape[] = g_selectList.selectGroup.shapes;
+                        for (var i: number = 0; i < shapes.length; ++i) {
+                            this.oldShapeTransforms[i] = shapes[i].transform.clone();
+                        }
+
+                        g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
                         g_grid.rebuildTabs();
-                        Helper.extend(this.oldTransform, g_selectList.selectGroup.transform);
-                        Helper.extend(this.oldAABB, g_selectList.selectGroup.aabb)
+                        this.oldTransform.copy(g_selectList.selectGroup.transform);
+                        this.oldAABB.copy(g_selectList.selectGroup.aabb);
                         this.deltaX = 0;
                         this.deltaY = 0;
 
@@ -547,8 +559,9 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup, g_selectList.selectGroup.transform, this.oldTransform);
+                        var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         g_commandList.addCommand(newCommand);
+                        g_selectList.showSelected();
                         g_draw(this);
                         g_grid.clearSnap();
                         isHandled = true;
@@ -564,6 +577,13 @@ module LayoutEditor {
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
+            if (!this.shape)
+                return;
+
+            for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
+                g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+            }
+
             g_grid.draw(ctx);
         }
 
@@ -684,10 +704,10 @@ module LayoutEditor {
                     this.shape = g_shapeList.getShapeInXY(e.x, e.y);
                     if (this.shape) {
                         this.editShape = this.shape.copy();
-                        //this.editShape.style = g_selectStyle; keep the same sgridtyle
 
-                        var left: string = this.shape.oabb.cx + g_propertyCtx.canvas.offsetLeft + "px";
-                        var top: string = this.shape.oabb.cy + g_propertyCtx.canvas.offsetTop + "px";
+                        // TODO remove dependency on g_toolCtx
+                        var left: string = this.shape.oabb.cx + g_toolCtx.canvas.offsetLeft + "px";
+                        var top: string = this.shape.oabb.cy + g_toolCtx.canvas.offsetTop + "px";
                         g_inputMultiLine.style.left = left;
                         g_inputMultiLine.style.top = top;
                         g_inputMultiLine.value = this.editShape.text;
@@ -737,90 +757,9 @@ module LayoutEditor {
         }
     }
 
-    export class PropertyTool implements Tool {
-        editing: PropertyInfo = null;
-        changed: boolean = false;
-
-        constructor() {
-            var self = this;
-            g_inputText.addEventListener("input", function(e) {
-                self.onInput(e);
-            })
-            g_inputText.addEventListener("change", function(e) {
-                self.onChange(e);
-            })
-        }
-
-        onPointer(e): boolean {
-            var canvasWidth: number = g_propertyCtx.canvas.width;
-            var panelWidth: number = g_propertyPanel.width;
-
-            switch (e.state) {
-                case InteractionHelper.State.Start:
-                    if (g_panZoom.x < canvasWidth - panelWidth || g_panZoom.x >= canvasWidth) {
-                        this.edit(null);
-                        break;
-                    }
-
-                    var info: PropertyInfo = g_propertyPanel.getPropertyInfoXY(g_panZoom.x, g_panZoom.y);
-                    this.edit(info);
-                    break;
-            }
-
-            return this.editing !== null;
-        }
-
-        onChangeFocus(name: string) {
-
-        }
-
-        draw(ctx) {}
-
-        private onInput(e) {
-            if (this.editing) {
-                g_propertyPanel.drawEditing(this.editing, g_inputText.value);
-                this.changed = true;
-            }
-        }
-
-        private onChange(e) {
-            if (this.editing)
-                this.edit(null); // finished
-        }
-
-        private edit(propertyInfo: PropertyInfo) {
-            if (this.editing === propertyInfo)
-                return;
-
-            if (this.editing) {
-                if (this.changed) {
-                    var newCommand: PropertyCommand = new PropertyCommand(this.editing, g_inputText.value);
-                    g_commandList.addCommand(newCommand);
-                } else {
-                    g_draw(g_propertyPanel);
-                }
-            }
-
-            this.editing = propertyInfo;
-            this.changed = false;
-
-            if (propertyInfo) {
-                g_inputText.value = propertyInfo.object[propertyInfo.name];
-                g_propertyPanel.drawEditing(propertyInfo, g_inputText.value);
-                //window.prompt(propertyInfo.name, g_inputText.value);
-                var left: string = g_propertyCtx.canvas.width - g_propertyPanel.width + g_propertyCtx.canvas.offsetLeft + "px";
-                var top: string = propertyInfo.y + g_propertyCtx.canvas.offsetTop + "px";
-                g_inputText.style.left = left;
-                g_inputText.style.top = top;
-                g_inputText.focus();
-            }
-        }
-    }
-
-    export
-    var g_inputText = null;
     export
     var g_inputMultiLine = null;
+
     export
-    var g_inputTextStyle = null;
+    var g_toolCtx = null;
 }

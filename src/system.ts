@@ -3,7 +3,7 @@ module LayoutEditor {
     var EPSILON = 0.001;
 
     export interface ReferenceItem {
-        object: any;
+        value: any;
         name: string;
     }
 

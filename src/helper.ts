@@ -83,4 +83,20 @@ module Helper {
 
         return i; // value is less than this index
     }
+
+    export
+
+    function enumList(enumObj) {
+        var list = [];
+        for (var prop in enumObj) {
+            var value = enumObj[prop];
+            if (value - parseFloat(value) >= 0) {
+                list.push({
+                    name: prop,
+                    value: value
+                });
+            }
+        }
+        return list;
+    }
 }

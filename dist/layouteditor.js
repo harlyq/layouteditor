@@ -442,6 +442,21 @@ var Helper;
         return i;
     }
     Helper.getIndexOfSorted = getIndexOfSorted;
+
+    function enumList(enumObj) {
+        var list = [];
+        for (var prop in enumObj) {
+            var value = enumObj[prop];
+            if (value - parseFloat(value) >= 0) {
+                list.push({
+                    name: prop,
+                    value: value
+                });
+            }
+        }
+        return list;
+    }
+    Helper.enumList = enumList;
 })(Helper || (Helper = {}));
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -461,13 +476,14 @@ var LayoutEditor;
             this.elem = null;
             this.state = "";
             this.editor = null;
+            this.item = null;
         }
         return PropertyBinding;
     })();
     LayoutEditor.PropertyBinding = PropertyBinding;
 
-    var WebPropertyPanel = (function () {
-        function WebPropertyPanel() {
+    var PropertyPanel = (function () {
+        function PropertyPanel() {
             this.object = null;
             this.propertyLists = [];
             this.width = 0;
@@ -476,12 +492,13 @@ var LayoutEditor;
             this.clickHandler = null;
             this.bindings = [];
             this.editors = [];
+            this.onChangeCallback = null;
             var self = this;
             this.clickHandler = function (e) {
                 self.onClick(e);
             };
         }
-        WebPropertyPanel.prototype.setRootElem = function (rootElem) {
+        PropertyPanel.prototype.setRootElem = function (rootElem) {
             if (this.rootElem) {
                 this.rootElem.removeEventListener('click', this.clickHandler);
             }
@@ -490,9 +507,10 @@ var LayoutEditor;
             this.rootElem.addEventListener('click', this.clickHandler);
         };
 
-        WebPropertyPanel.prototype.setObject = function (obj) {
+        PropertyPanel.prototype.setObject = function (obj, onChangeCallback) {
             if (this.object !== obj) {
                 this.object = obj;
+                this.onChangeCallback = onChangeCallback;
                 this.bindings.length = 0;
 
                 var rootElem = this.rootElem;
@@ -500,31 +518,31 @@ var LayoutEditor;
                     rootElem.removeChild(rootElem.lastChild);
                 }
 
-                this.createBinding(obj, "", "object", this.rootElem);
+                this.createBinding(obj, "", "object", null, this.rootElem);
             }
 
             this.refresh();
         };
 
-        WebPropertyPanel.prototype.addPropertyList = function (propertyList) {
+        PropertyPanel.prototype.addPropertyList = function (propertyList) {
             this.propertyLists.push(propertyList);
         };
 
-        WebPropertyPanel.prototype.getPropertyList = function (obj) {
+        PropertyPanel.prototype.getPropertyList = function (obj) {
             for (var i = this.propertyLists.length - 1; i >= 0; --i) {
                 if (this.propertyLists[i].canHandle(obj))
                     return this.propertyLists[i];
             }
         };
 
-        WebPropertyPanel.prototype.refresh = function () {
+        PropertyPanel.prototype.refresh = function () {
             for (var i = 0; i < this.bindings.length; ++i) {
                 var binding = this.bindings[i];
                 binding.editor.refresh(binding);
             }
         };
 
-        WebPropertyPanel.prototype.onClick = function (e) {
+        PropertyPanel.prototype.onClick = function (e) {
             var elem = e.target;
             var idString = "";
             while (elem && !elem.hasAttribute('data-id'))
@@ -540,28 +558,34 @@ var LayoutEditor;
             }
         };
 
-        WebPropertyPanel.prototype.startEditing = function (binding) {
+        PropertyPanel.prototype.startEditing = function (binding) {
+            if (this.editing === binding)
+                return;
+
+            if (this.editing)
+                this.commitEditing();
+
             this.editing = binding;
             binding.editor.startEdit(binding);
         };
 
-        WebPropertyPanel.prototype.commitEditing = function () {
+        PropertyPanel.prototype.commitEditing = function () {
             var binding = this.editing;
             if (!binding)
                 return;
 
             binding.editor.commitEdit(binding);
+            if (this.onChangeCallback !== null)
+                this.onChangeCallback();
+
+            this.editing = null;
         };
 
-        WebPropertyPanel.prototype.postChange = function (binding) {
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList); // TODO tell client instead
-        };
-
-        WebPropertyPanel.prototype.addEditor = function (editor) {
+        PropertyPanel.prototype.addEditor = function (editor) {
             this.editors.push(editor);
         };
 
-        WebPropertyPanel.prototype.createBinding = function (object, prop, editorType, parentElem) {
+        PropertyPanel.prototype.createBinding = function (object, prop, editorType, propItem, parentElem) {
             var binding = new PropertyBinding(object, prop);
             this.bindings.push(binding);
 
@@ -570,9 +594,11 @@ var LayoutEditor;
             for (var i = this.editors.length - 1; i >= 0; --i) {
                 var editor = this.editors[i];
                 if (editor.canEdit(editorType)) {
+                    binding.editor = editor;
+                    binding.item = propItem;
+
                     var elem = editor.createElement(parentElem, binding);
                     binding.elem = elem;
-                    binding.editor = editor;
 
                     if (elem)
                         elem.setAttribute('data-id', id.toString());
@@ -582,9 +608,9 @@ var LayoutEditor;
 
             return binding;
         };
-        return WebPropertyPanel;
+        return PropertyPanel;
     })();
-    LayoutEditor.WebPropertyPanel = WebPropertyPanel;
+    LayoutEditor.PropertyPanel = PropertyPanel;
 
     var TextPropertyEditor = (function () {
         function TextPropertyEditor() {
@@ -641,7 +667,6 @@ var LayoutEditor;
 
         TextPropertyEditor.prototype.commitEdit = function (binding) {
             binding.object[binding.prop] = LayoutEditor.g_inputText.value;
-            LayoutEditor.g_propertyPanel.postChange(binding);
 
             this.inputText.blur();
             this.inputText.type = 'hidden';
@@ -688,7 +713,7 @@ var LayoutEditor;
                 var prop = propItem.prop;
                 var type = propItem.type || typeof object[prop];
 
-                LayoutEditor.g_propertyPanel.createBinding(object, prop, type, parentElem);
+                LayoutEditor.g_propertyPanel.createBinding(object, prop, type, propItem, parentElem);
             }
 
             return objectElem;
@@ -711,32 +736,159 @@ var LayoutEditor;
     })();
     LayoutEditor.ObjectPropertyEditor = ObjectPropertyEditor;
 
-    LayoutEditor.g_propertyPanel = new WebPropertyPanel();
+    var ListPropertyEditor = (function () {
+        function ListPropertyEditor() {
+        }
+        // returns true if we can edit this type of property
+        ListPropertyEditor.prototype.canEdit = function (type) {
+            return type === 'list';
+        };
+
+        // creates an element for this binding
+        ListPropertyEditor.prototype.createElement = function (parentElem, binding) {
+            var textDiv = document.createElement('div');
+            textDiv.classList.add('propertyText');
+            var nameSpan = document.createElement('span');
+            var valueSpan = document.createElement('span');
+
+            nameSpan.innerHTML = binding.prop + ": ";
+
+            textDiv.appendChild(nameSpan);
+            textDiv.appendChild(valueSpan);
+
+            binding.elem = textDiv;
+            this.refresh(binding);
+
+            parentElem.appendChild(textDiv);
+
+            return textDiv;
+        };
+
+        // refreshes the element in binding
+        ListPropertyEditor.prototype.refresh = function (binding) {
+            var list = binding.item.getList();
+            var value = binding.object[binding.prop];
+
+            for (var i = 0; i < list.length; ++i) {
+                if (list[i].value === value) {
+                    binding.elem.lastChild.innerHTML = list[i].name;
+                    break;
+                }
+            }
+        };
+
+        // edits the element in binding
+        ListPropertyEditor.prototype.startEdit = function (binding) {
+            var rectObject = binding.elem.lastChild.getBoundingClientRect();
+
+            var list = binding.item.getList();
+            var selected = binding.object[binding.prop];
+
+            var inputSelect = document.createElement('select');
+            inputSelect.classList.add('inputSelect');
+
+            for (var i = 0; i < list.length; ++i) {
+                var item = list[i];
+                var option = document.createElement('option');
+
+                option.setAttribute('value', item.name);
+                option.innerHTML = item.name;
+                if (selected == item.value)
+                    option.setAttribute('selected', 'selected');
+
+                inputSelect.appendChild(option);
+            }
+            binding.elem.appendChild(inputSelect);
+
+            inputSelect.style.top = rectObject.top + 'px';
+            inputSelect.style.left = rectObject.left + 'px';
+
+            // inputSelect.style.height = '20px';
+            // inputSelect.style.width = '100px';
+            var sizeStr = Math.min(10, list.length).toString();
+            inputSelect.setAttribute('size', sizeStr);
+            inputSelect.setAttribute('expandto', sizeStr);
+
+            inputSelect.addEventListener('change', this.onChange.bind(this));
+
+            inputSelect.focus();
+        };
+
+        ListPropertyEditor.prototype.onChange = function (e) {
+            LayoutEditor.g_propertyPanel.commitEditing();
+        };
+
+        // stops editing the element in binding and commits the result
+        ListPropertyEditor.prototype.commitEdit = function (binding) {
+            var inputSelect = binding.elem.lastChild;
+            var list = binding.item.getList();
+            binding.object[binding.prop] = list[inputSelect.selectedIndex].value;
+
+            binding.elem.removeChild(inputSelect);
+
+            this.refresh(binding);
+        };
+        return ListPropertyEditor;
+    })();
+    LayoutEditor.ListPropertyEditor = ListPropertyEditor;
+
+    LayoutEditor.g_propertyPanel = new PropertyPanel();
 
     LayoutEditor.g_textPropertyEditor = new TextPropertyEditor();
 
     LayoutEditor.g_propertyPanel.addEditor(LayoutEditor.g_textPropertyEditor);
     LayoutEditor.g_propertyPanel.addEditor(new ObjectPropertyEditor());
+    LayoutEditor.g_propertyPanel.addEditor(new ListPropertyEditor());
 
     LayoutEditor.g_inputText = null;
 })(LayoutEditor || (LayoutEditor = {}));
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
+    (function (StyleTextAlign) {
+        StyleTextAlign[StyleTextAlign["center"] = 0] = "center";
+        StyleTextAlign[StyleTextAlign["left"] = 1] = "left";
+        StyleTextAlign[StyleTextAlign["right"] = 2] = "right";
+    })(LayoutEditor.StyleTextAlign || (LayoutEditor.StyleTextAlign = {}));
+    var StyleTextAlign = LayoutEditor.StyleTextAlign;
+
+    (function (StyleTextBaseline) {
+        StyleTextBaseline[StyleTextBaseline["top"] = 0] = "top";
+        StyleTextBaseline[StyleTextBaseline["middle"] = 1] = "middle";
+        StyleTextBaseline[StyleTextBaseline["bottom"] = 2] = "bottom";
+    })(LayoutEditor.StyleTextBaseline || (LayoutEditor.StyleTextBaseline = {}));
+    var StyleTextBaseline = LayoutEditor.StyleTextBaseline;
+
+    (function (StyleFontWeight) {
+        StyleFontWeight[StyleFontWeight["normal"] = 0] = "normal";
+        StyleFontWeight[StyleFontWeight["bold"] = 1] = "bold";
+        StyleFontWeight[StyleFontWeight["bolder"] = 2] = "bolder";
+        StyleFontWeight[StyleFontWeight["lighter"] = 3] = "lighter";
+    })(LayoutEditor.StyleFontWeight || (LayoutEditor.StyleFontWeight = {}));
+    var StyleFontWeight = LayoutEditor.StyleFontWeight;
+
+    (function (StyleFontStyle) {
+        StyleFontStyle[StyleFontStyle["normal"] = 0] = "normal";
+        StyleFontStyle[StyleFontStyle["italic"] = 1] = "italic";
+        StyleFontStyle[StyleFontStyle["oblique"] = 2] = "oblique";
+    })(LayoutEditor.StyleFontStyle || (LayoutEditor.StyleFontStyle = {}));
+    var StyleFontStyle = LayoutEditor.StyleFontStyle;
+
     //------------------------------
     var Style = (function () {
         function Style(name) {
             this.name = "";
-            this.strokeStyle = "black";
-            this.fillStyle = "none";
+            this.strokeColor = "black";
+            this.fillColor = "none";
             this.lineWidth = 1;
             this.lineDash = [];
-            this.textAlign = "center";
-            this.textBaseline = "middle";
+            this.textAlign = 0 /* center */;
+            this.textBaseline = 1 /* middle */;
             this.fontSize = 20;
             this.fontFamily = "arial";
-            this.fontWeight = "normal";
-            this.fontStyle = "black";
+            this.fontWeight = 0 /* normal */;
+            this.fontStyle = 0 /* normal */;
+            this.fontColor = "black";
             this.fontSpacing = 1;
             if (typeof name === "undefined")
                 this.name = "Style" + Style.uniqueID++;
@@ -744,23 +896,28 @@ var LayoutEditor;
                 this.name = name;
         }
         Style.prototype.drawShape = function (ctx) {
-            if (ctx.strokeStyle !== this.strokeStyle)
-                ctx.strokeStyle = this.strokeStyle;
-            if (ctx.fillStyle !== this.fillStyle)
-                ctx.fillStyle = this.fillStyle;
+            if (ctx.strokeStyle !== this.strokeColor)
+                ctx.strokeStyle = this.strokeColor;
+            if (ctx.fillStyle !== this.fillColor)
+                ctx.fillStyle = this.fillColor;
             if (ctx.lineWidth !== this.lineWidth.toString())
                 ctx.lineWidth = this.lineWidth.toString();
             ctx.setLineDash(this.lineDash);
         };
 
         Style.prototype.drawFont = function (ctx) {
-            if (ctx.textAlign !== this.textAlign)
-                ctx.textAlign = this.textAlign;
-            if (ctx.textBaseline !== this.textBaseline)
-                ctx.textBaseline = this.textBaseline;
-            if (ctx.fillStyle !== this.fontStyle)
-                ctx.fillStyle = this.fontStyle;
-            var font = this.fontWeight + " " + this.fontSize + "px " + this.fontFamily;
+            var textAlign = StyleTextAlign[this.textAlign];
+            if (ctx.textAlign !== textAlign)
+                ctx.textAlign = textAlign;
+
+            var textBaseline = StyleTextBaseline[this.textBaseline];
+            if (ctx.textBaseline !== textBaseline)
+                ctx.textBaseline = textBaseline;
+
+            if (ctx.fillStyle !== this.fontColor)
+                ctx.fillStyle = this.fontColor;
+
+            var font = StyleFontWeight[this.fontWeight] + " " + StyleFontStyle[this.fontStyle] + ' ' + this.fontSize + "px " + this.fontFamily;
             if (ctx.font !== font)
                 ctx.font = font;
         };
@@ -780,12 +937,12 @@ var LayoutEditor;
     LayoutEditor.g_selectStyle = new Style("select");
     LayoutEditor.g_snapStyle = new Style("snap");
 
-    LayoutEditor.g_drawStyle.strokeStyle = "red";
+    LayoutEditor.g_drawStyle.strokeColor = "red";
     LayoutEditor.g_drawStyle.lineDash = [2, 2];
-    LayoutEditor.g_selectStyle.strokeStyle = "blue";
+    LayoutEditor.g_selectStyle.strokeColor = "blue";
     LayoutEditor.g_selectStyle.lineDash = [5, 5];
-    LayoutEditor.g_selectStyle.fontStyle = "blue";
-    LayoutEditor.g_snapStyle.strokeStyle = "red";
+    LayoutEditor.g_selectStyle.fontColor = "blue";
+    LayoutEditor.g_snapStyle.strokeColor = "red";
 
     LayoutEditor.g_style = null;
 
@@ -798,15 +955,15 @@ var LayoutEditor;
             this.styles.length = 0;
 
             var defaultStyle = new Style("default");
-            defaultStyle.fillStyle = "white";
+            defaultStyle.fillColor = "white";
 
             var defaultStyle2 = new Style("default2");
-            defaultStyle2.fillStyle = "none";
+            defaultStyle2.fillColor = "none";
             defaultStyle2.lineWidth = 2;
-            defaultStyle2.strokeStyle = "green";
-            defaultStyle2.textAlign = "left";
+            defaultStyle2.strokeColor = "green";
+            defaultStyle2.textAlign = 1 /* left */;
             defaultStyle2.fontSize = 15;
-            defaultStyle2.fontStyle = "green";
+            defaultStyle2.fontColor = "green";
 
             this.styles.push(defaultStyle);
             this.styles.push(defaultStyle2);
@@ -863,12 +1020,12 @@ var LayoutEditor;
             LayoutEditor.g_style = this.getStyle("default");
         };
 
-        StyleList.prototype.getReferenceList = function () {
-            var items;
+        StyleList.prototype.getList = function () {
+            var items = [];
             for (var i = 0; i < this.styles.length; i++) {
                 var style = this.styles[i];
                 items.push({
-                    object: style,
+                    value: style,
                     name: style.name
                 });
             }
@@ -886,23 +1043,41 @@ var LayoutEditor;
         },
         items: [
             {
-                prop: "strokeStyle"
+                prop: "strokeColor"
             }, {
-                prop: "fillStyle"
+                prop: "fillColor"
             }, {
                 prop: "lineWidth"
             }, {
-                prop: "textAlign"
+                prop: "textAlign",
+                type: 'list',
+                getList: function () {
+                    return Helper.enumList(StyleTextAlign);
+                }
             }, {
-                prop: "textBaseline"
+                prop: "textBaseline",
+                type: 'list',
+                getList: function () {
+                    return Helper.enumList(StyleTextBaseline);
+                }
             }, {
                 prop: "fontSize"
             }, {
                 prop: "fontFamily"
             }, {
-                prop: "fontWeight"
+                prop: "fontWeight",
+                type: 'list',
+                getList: function () {
+                    return Helper.enumList(StyleFontWeight);
+                }
             }, {
-                prop: "fontStyle"
+                prop: "fontStyle",
+                type: 'list',
+                getList: function () {
+                    return Helper.enumList(StyleFontStyle);
+                }
+            }, {
+                prop: "fontColor"
             }, {
                 prop: "fontSpacing"
             }]
@@ -1402,9 +1577,9 @@ var LayoutEditor;
 
             this.buildPath(ctx, panZoom);
 
-            if (this.style.fillStyle !== "none")
+            if (this.style.fillColor !== "none")
                 ctx.fill();
-            if (this.style.strokeStyle !== "none")
+            if (this.style.strokeColor !== "none")
                 ctx.stroke();
 
             this.drawText(ctx, panZoom);
@@ -1461,22 +1636,22 @@ var LayoutEditor;
             var x = 0;
             var y = 0;
             switch (this.style.textBaseline) {
-                case "top":
+                case 0 /* top */:
                     y = -hh;
                     break;
-                case "middle":
+                case 1 /* middle */:
                     y = (lineHeight - textHeight) * 0.5;
                     break;
-                case "bottom":
+                case 2 /* bottom */:
                     y = hh - textHeight + lineHeight;
                     break;
             }
 
             switch (this.style.textAlign) {
-                case "left":
+                case 1 /* left */:
                     x = -hw;
                     break;
-                case "right":
+                case 2 /* right */:
                     x = hw;
                     break;
             }
@@ -2153,10 +2328,8 @@ var LayoutEditor;
                 prop: "name"
             }, {
                 prop: "style",
-                type: "object",
-                getReferenceList: function () {
-                    return LayoutEditor.g_styleList.getReferenceList();
-                }
+                type: "list",
+                getList: LayoutEditor.g_styleList.getList.bind(LayoutEditor.g_styleList)
             }]
     });
 })(LayoutEditor || (LayoutEditor = {}));
@@ -2256,9 +2429,13 @@ var LayoutEditor;
             LayoutEditor.g_draw(this);
 
             if (this.selectedShapes.length > 0)
-                LayoutEditor.g_propertyPanel.setObject(this.selectedShapes[0]);
+                LayoutEditor.g_propertyPanel.setObject(this.selectedShapes[0], this.onPropertyChanged.bind(this));
             else
-                LayoutEditor.g_propertyPanel.setObject(null);
+                LayoutEditor.g_propertyPanel.setObject(null, null);
+        };
+
+        SelectList.prototype.onPropertyChanged = function () {
+            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
         };
         return SelectList;
     })();
@@ -2495,12 +2672,16 @@ var LayoutEditor;
         ShapeCommand.prototype.redo = function () {
             LayoutEditor.g_shapeList.addShape(this.shape);
             LayoutEditor.g_selectList.setSelectedShapes([this.shape]);
-            LayoutEditor.g_propertyPanel.setObject(this.shape);
+            LayoutEditor.g_propertyPanel.setObject(this.shape, this.onPropertyChanged.bind(this));
         };
 
         ShapeCommand.prototype.undo = function () {
             LayoutEditor.g_shapeList.removeShape(this.shape);
             // what do we set the property panel to display?
+        };
+
+        ShapeCommand.prototype.onPropertyChanged = function () {
+            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
         };
         return ShapeCommand;
     })();
@@ -3447,6 +3628,11 @@ var LayoutEditor;
         };
 
         StylePanel.prototype.refresh = function () {
+            // do nothing
+        };
+
+        StylePanel.prototype.onPropertyChanged = function () {
+            this.selected.refresh();
         };
 
         StylePanel.prototype.selectStyle = function (styleName) {
@@ -3454,8 +3640,10 @@ var LayoutEditor;
                 this.selected.classList.remove('selectedStyle');
 
             this.selected = this.elems[styleName];
-            if (this.selected)
+            if (this.selected) {
                 this.selected.classList.add('selectedStyle');
+                LayoutEditor.g_propertyPanel.setObject(LayoutEditor.g_styleList.getStyle(styleName), this.onPropertyChanged.bind(this));
+            }
         };
 
         StylePanel.prototype.buildHTML = function () {
@@ -3550,7 +3738,7 @@ var LayoutEditor;
 /// <reference path="interactionhelper.ts" />
 /// <reference path="helper.ts" />
 /// <reference path="system.ts" />
-/// <reference path="webpropertypanel.ts" />
+/// <reference path="propertypanel.ts" />
 /// <reference path="style.ts" />
 /// <reference path="panzoom.ts" />
 /// <reference path="screen.ts" />
@@ -3716,11 +3904,13 @@ var LayoutEditor;
 
     function shapesSelect() {
         document.getElementById('layoutShapes').classList.remove('hidden');
+        document.getElementById('layoutTool').classList.remove('hidden');
         document.getElementById('layoutStyles').classList.add('hidden');
     }
 
     function stylesSelect() {
         document.getElementById('layoutShapes').classList.add('hidden');
+        document.getElementById('layoutTool').classList.add('hidden');
         document.getElementById('layoutStyles').classList.remove('hidden');
     }
 
@@ -3761,7 +3951,7 @@ var LayoutEditor;
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");
 
         // g_propertyTool = new PropertyTool();
-        LayoutEditor.g_propertyPanel.setRootElem(document.getElementById("webPropertyPanel"));
+        LayoutEditor.g_propertyPanel.setRootElem(document.getElementById("PropertyPanel"));
         LayoutEditor.g_textPropertyEditor.setInputElem(LayoutEditor.g_inputText);
 
         LayoutEditor.g_stylePanel.setRootElem(document.getElementById("layoutStyles"));

@@ -1,19 +1,36 @@
 /// <reference path="_dependencies.ts" />
 module LayoutEditor {
 
+    export enum StyleTextAlign {
+        center, left, right
+    }
+
+    export enum StyleTextBaseline {
+        top, middle, bottom
+    }
+
+    export enum StyleFontWeight {
+        normal, bold, bolder, lighter
+    }
+
+    export enum StyleFontStyle {
+        normal, italic, oblique
+    }
+
     //------------------------------
     export class Style {
         name: string = "";
-        strokeStyle: string = "black";
-        fillStyle: string = "none";
+        strokeColor: string = "black";
+        fillColor: string = "none";
         lineWidth: number = 1;
         lineDash: number[] = [];
-        textAlign: string = "center";
-        textBaseline: string = "middle";
+        textAlign: StyleTextAlign = StyleTextAlign.center;
+        textBaseline: StyleTextBaseline = StyleTextBaseline.middle;
         fontSize: number = 20;
         fontFamily: string = "arial";
-        fontWeight: string = "normal";
-        fontStyle: string = "black";
+        fontWeight: StyleFontWeight = StyleFontWeight.normal;
+        fontStyle: StyleFontStyle = StyleFontStyle.normal;
+        fontColor: string = "black"
         fontSpacing: number = 1;
 
         static uniqueID: number = 1;
@@ -26,23 +43,29 @@ module LayoutEditor {
         }
 
         drawShape(ctx) {
-            if (ctx.strokeStyle !== this.strokeStyle)
-                ctx.strokeStyle = this.strokeStyle;
-            if (ctx.fillStyle !== this.fillStyle)
-                ctx.fillStyle = this.fillStyle;
+            if (ctx.strokeStyle !== this.strokeColor)
+                ctx.strokeStyle = this.strokeColor;
+            if (ctx.fillStyle !== this.fillColor)
+                ctx.fillStyle = this.fillColor;
             if (ctx.lineWidth !== this.lineWidth.toString())
                 ctx.lineWidth = this.lineWidth.toString();
             ctx.setLineDash(this.lineDash);
         }
 
         drawFont(ctx) {
-            if (ctx.textAlign !== this.textAlign)
-                ctx.textAlign = this.textAlign;
-            if (ctx.textBaseline !== this.textBaseline)
-                ctx.textBaseline = this.textBaseline;
-            if (ctx.fillStyle !== this.fontStyle)
-                ctx.fillStyle = this.fontStyle;
-            var font = this.fontWeight + " " + this.fontSize + "px " + this.fontFamily;
+            var textAlign: string = StyleTextAlign[this.textAlign];
+            if (ctx.textAlign !== textAlign)
+                ctx.textAlign = textAlign;
+
+            var textBaseline: string = StyleTextBaseline[this.textBaseline];
+            if (ctx.textBaseline !== textBaseline)
+                ctx.textBaseline = textBaseline;
+
+            if (ctx.fillStyle !== this.fontColor)
+                ctx.fillStyle = this.fontColor;
+
+            var font = StyleFontWeight[this.fontWeight] + " " + StyleFontStyle[this.fontStyle] + ' ' +
+                this.fontSize + "px " + this.fontFamily;
             if (ctx.font !== font)
                 ctx.font = font;
         }
@@ -62,12 +85,12 @@ module LayoutEditor {
     export
     var g_snapStyle: Style = new Style("snap");
 
-    g_drawStyle.strokeStyle = "red";
+    g_drawStyle.strokeColor = "red";
     g_drawStyle.lineDash = [2, 2];
-    g_selectStyle.strokeStyle = "blue";
+    g_selectStyle.strokeColor = "blue";
     g_selectStyle.lineDash = [5, 5];
-    g_selectStyle.fontStyle = "blue";
-    g_snapStyle.strokeStyle = "red";
+    g_selectStyle.fontColor = "blue";
+    g_snapStyle.strokeColor = "red";
 
     export
     var g_style: Style = null;
@@ -83,15 +106,15 @@ module LayoutEditor {
             this.styles.length = 0;
 
             var defaultStyle = new Style("default");
-            defaultStyle.fillStyle = "white";
+            defaultStyle.fillColor = "white";
 
             var defaultStyle2 = new Style("default2");
-            defaultStyle2.fillStyle = "none";
+            defaultStyle2.fillColor = "none";
             defaultStyle2.lineWidth = 2;
-            defaultStyle2.strokeStyle = "green";
-            defaultStyle2.textAlign = "left";
+            defaultStyle2.strokeColor = "green";
+            defaultStyle2.textAlign = StyleTextAlign.left;
             defaultStyle2.fontSize = 15;
-            defaultStyle2.fontStyle = "green";
+            defaultStyle2.fontColor = "green";
 
             this.styles.push(defaultStyle);
             this.styles.push(defaultStyle2);
@@ -148,12 +171,12 @@ module LayoutEditor {
             g_style = this.getStyle("default");
         }
 
-        getReferenceList(): ReferenceItem[] {
-            var items: ReferenceItem[];
+        getList(): ReferenceItem[] {
+            var items: ReferenceItem[] = [];
             for (var i: number = 0; i < this.styles.length; i++) {
                 var style: Style = this.styles[i];
                 items.push({
-                    object: style,
+                    value: style,
                     name: style.name
                 });
             }
@@ -164,29 +187,46 @@ module LayoutEditor {
     export
     var g_styleList = new StyleList();
 
-
     g_propertyPanel.addPropertyList({
         canHandle: (obj: any) => {
             return obj instanceof Style;
         },
         items: [{
-            prop: "strokeStyle"
+            prop: "strokeColor"
         }, {
-            prop: "fillStyle"
+            prop: "fillColor"
         }, {
             prop: "lineWidth"
         }, {
-            prop: "textAlign"
+            prop: "textAlign",
+            type: 'list',
+            getList: () => {
+                return Helper.enumList(StyleTextAlign);
+            }
         }, {
-            prop: "textBaseline"
+            prop: "textBaseline",
+            type: 'list',
+            getList: () => {
+                return Helper.enumList(StyleTextBaseline);
+            }
         }, {
             prop: "fontSize"
         }, {
             prop: "fontFamily"
         }, {
-            prop: "fontWeight"
+            prop: "fontWeight",
+            type: 'list',
+            getList: () => {
+                return Helper.enumList(StyleFontWeight);
+            }
         }, {
-            prop: "fontStyle"
+            prop: "fontStyle",
+            type: 'list',
+            getList: () => {
+                return Helper.enumList(StyleFontStyle);
+            }
+        }, {
+            prop: "fontColor"
         }, {
             prop: "fontSpacing"
         }]

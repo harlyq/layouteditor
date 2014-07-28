@@ -47,7 +47,11 @@ module LayoutEditor {
         }
 
         refresh() {
+            // do nothing
+        }
 
+        onPropertyChanged() {
+            ( < any > this.selected).refresh();
         }
 
         selectStyle(styleName: string) {
@@ -55,8 +59,10 @@ module LayoutEditor {
                 this.selected.classList.remove('selectedStyle');
 
             this.selected = this.elems[styleName];
-            if (this.selected)
+            if (this.selected) {
                 this.selected.classList.add('selectedStyle')
+                g_propertyPanel.setObject(g_styleList.getStyle(styleName), this.onPropertyChanged.bind(this));
+            }
         }
 
         private buildHTML() {

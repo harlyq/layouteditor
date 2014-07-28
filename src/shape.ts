@@ -293,9 +293,9 @@ module LayoutEditor {
 
             this.buildPath(ctx, panZoom);
 
-            if (this.style.fillStyle !== "none")
+            if (this.style.fillColor !== "none")
                 ctx.fill();
-            if (this.style.strokeStyle !== "none")
+            if (this.style.strokeColor !== "none")
                 ctx.stroke();
 
             this.drawText(ctx, panZoom);
@@ -351,22 +351,22 @@ module LayoutEditor {
             var x: number = 0;
             var y: number = 0;
             switch (this.style.textBaseline) {
-                case "top":
+                case StyleTextBaseline.top:
                     y = -hh;
                     break
-                case "middle":
+                case StyleTextBaseline.middle:
                     y = (lineHeight - textHeight) * 0.5;
                     break;
-                case "bottom":
+                case StyleTextBaseline.bottom:
                     y = hh - textHeight + lineHeight;
                     break
             }
 
             switch (this.style.textAlign) {
-                case "left":
+                case StyleTextAlign.left:
                     x = -hw;
                     break
-                case "right":
+                case StyleTextAlign.right:
                     x = hw;
                     break
             }
@@ -1039,10 +1039,8 @@ module LayoutEditor {
             prop: "name"
         }, {
             prop: "style",
-            type: "object",
-            getReferenceList: () => {
-                return g_styleList.getReferenceList();
-            }
+            type: "list",
+            getList: g_styleList.getList.bind(g_styleList)
         }]
     });
 

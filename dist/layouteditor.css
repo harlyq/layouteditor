@@ -8,11 +8,15 @@ body {
   border: black solid 1px;
 }
 #inputText,
-#inputMultiLine {
+#inputMultiLine,
+.inputSelect {
   position: fixed;
   top: 450px;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
+  -ms-user-select: auto;
 }
-#webPropertyPanel {
+#PropertyPanel {
   position: fixed;
   background-color: #aaa;
   left: 500px;

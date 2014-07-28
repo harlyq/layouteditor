@@ -4,7 +4,7 @@ module LayoutEditor {
     export interface PropertyItem {
         prop: string;
         type ? : string;
-        getReferenceList ? : () => LayoutEditor.ReferenceItem[];
+        getList ? : () => LayoutEditor.ReferenceItem[];
     }
 
     export interface PropertyList {
@@ -16,11 +16,12 @@ module LayoutEditor {
         elem: HTMLElement = null;
         state: string = "";
         editor: PropertyEditor = null;
+        item: PropertyItem = null;
 
         constructor(public object: any, public prop: string) {}
     }
 
-    export class WebPropertyPanel {
+    export class PropertyPanel {
         object: any = null;
         propertyLists: PropertyList[] = [];
         width: number = 0; // dummy
@@ -29,6 +30,7 @@ module LayoutEditor {
         private clickHandler = null;
         private bindings: PropertyBinding[] = [];
         private editors: PropertyEditor[] = [];
+        private onChangeCallback: () => void = null;
 
         constructor() {
             var self = this;
@@ -46,9 +48,10 @@ module LayoutEditor {
             this.rootElem.addEventListener('click', this.clickHandler);
         }
 
-        setObject(obj: any) {
+        setObject(obj: any, onChangeCallback: () => void) {
             if (this.object !== obj) {
                 this.object = obj;
+                this.onChangeCallback = onChangeCallback;
                 this.bindings.length = 0;
 
                 var rootElem: HTMLElement = this.rootElem;
@@ -56,7 +59,7 @@ module LayoutEditor {
                     rootElem.removeChild(rootElem.lastChild);
                 }
 
-                this.createBinding(obj, "", "object", this.rootElem);
+                this.createBinding(obj, "", "object", null, this.rootElem);
             }
 
             this.refresh();
@@ -98,6 +101,12 @@ module LayoutEditor {
         }
 
         startEditing(binding: PropertyBinding) {
+            if (this.editing === binding)
+                return;
+
+            if (this.editing)
+                this.commitEditing();
+
             this.editing = binding;
             binding.editor.startEdit(binding);
         }
@@ -108,17 +117,17 @@ module LayoutEditor {
                 return;
 
             binding.editor.commitEdit(binding);
-        }
+            if (this.onChangeCallback !== null)
+                this.onChangeCallback();
 
-        postChange(binding: PropertyBinding) {
-            g_draw(g_shapeList); // TODO tell client instead
+            this.editing = null;
         }
 
         addEditor(editor: PropertyEditor) {
             this.editors.push(editor);
         }
 
-        createBinding(object: any, prop: string, editorType: string, parentElem: HTMLElement): PropertyBinding {
+        createBinding(object: any, prop: string, editorType: string, propItem: PropertyItem, parentElem: HTMLElement): PropertyBinding {
             var binding: PropertyBinding = new PropertyBinding(object, prop);
             this.bindings.push(binding);
 
@@ -128,9 +137,11 @@ module LayoutEditor {
             for (var i: number = this.editors.length - 1; i >= 0; --i) {
                 var editor: PropertyEditor = this.editors[i];
                 if (editor.canEdit(editorType)) {
+                    binding.editor = editor;
+                    binding.item = propItem;
+
                     var elem: HTMLElement = editor.createElement(parentElem, binding);
                     binding.elem = elem;
-                    binding.editor = editor;
 
                     if (elem)
                         elem.setAttribute('data-id', id.toString());
@@ -216,7 +227,6 @@ module LayoutEditor {
 
         public commitEdit(binding: PropertyBinding) {
             binding.object[binding.prop] = g_inputText.value;
-            g_propertyPanel.postChange(binding);
 
             this.inputText.blur();
             this.inputText.type = 'hidden';
@@ -259,7 +269,7 @@ module LayoutEditor {
                 var prop: string = propItem.prop;
                 var type: string = propItem.type || typeof object[prop];
 
-                g_propertyPanel.createBinding(object, prop, type, parentElem);
+                g_propertyPanel.createBinding(object, prop, type, propItem, parentElem);
             }
 
             return objectElem;
@@ -280,14 +290,106 @@ module LayoutEditor {
         }
     }
 
+    export class ListPropertyEditor implements PropertyEditor {
+        // returns true if we can edit this type of property
+        canEdit(type: string): boolean {
+            return type === 'list';
+        }
+
+        // creates an element for this binding
+        createElement(parentElem: HTMLElement, binding: PropertyBinding): HTMLElement {
+            var textDiv = document.createElement('div');
+            textDiv.classList.add('propertyText');
+            var nameSpan = document.createElement('span');
+            var valueSpan = document.createElement('span');
+
+            nameSpan.innerHTML = binding.prop + ": ";
+
+            textDiv.appendChild(nameSpan);
+            textDiv.appendChild(valueSpan);
+
+            binding.elem = textDiv;
+            this.refresh(binding);
+
+            parentElem.appendChild(textDiv);
+
+            return textDiv;
+        }
+
+        // refreshes the element in binding
+        refresh(binding: PropertyBinding) {
+            var list: ReferenceItem[] = binding.item.getList();
+            var value = binding.object[binding.prop];
+
+            for (var i: number = 0; i < list.length; ++i) {
+                if (list[i].value === value) {
+                    ( < HTMLElement > binding.elem.lastChild).innerHTML = list[i].name;
+                    break;
+                }
+            }
+        }
+
+        // edits the element in binding
+        startEdit(binding: PropertyBinding) {
+            var rectObject = ( < HTMLElement > binding.elem.lastChild).getBoundingClientRect();
+
+            var list: ReferenceItem[] = binding.item.getList();
+            var selected = binding.object[binding.prop];
+
+            var inputSelect = document.createElement('select');
+            inputSelect.classList.add('inputSelect');
+
+            for (var i: number = 0; i < list.length; ++i) {
+                var item: ReferenceItem = list[i];
+                var option = document.createElement('option');
+
+                option.setAttribute('value', item.name);
+                option.innerHTML = item.name;
+                if (selected == item.value)
+                    option.setAttribute('selected', 'selected');
+
+                inputSelect.appendChild(option);
+            }
+            binding.elem.appendChild(inputSelect);
+
+            inputSelect.style.top = rectObject.top + 'px';
+            inputSelect.style.left = rectObject.left + 'px';
+            // inputSelect.style.height = '20px';
+            // inputSelect.style.width = '100px';
+            var sizeStr: string = Math.min(10, list.length).toString();
+            inputSelect.setAttribute('size', sizeStr);
+            inputSelect.setAttribute('expandto', sizeStr);
+
+            inputSelect.addEventListener('change', this.onChange.bind(this));
+
+            inputSelect.focus();
+        }
+
+        onChange(e) {
+            g_propertyPanel.commitEditing();
+        }
+
+        // stops editing the element in binding and commits the result
+        commitEdit(binding: PropertyBinding) {
+            var inputSelect: any = binding.elem.lastChild;
+            var list: ReferenceItem[] = binding.item.getList();
+            binding.object[binding.prop] = list[inputSelect.selectedIndex].value;
+
+            binding.elem.removeChild(inputSelect);
+
+            this.refresh(binding);
+        }
+    }
+
     export
-    var g_propertyPanel: WebPropertyPanel = new WebPropertyPanel();
+    var g_propertyPanel: PropertyPanel = new PropertyPanel();
 
     export
     var g_textPropertyEditor = new TextPropertyEditor();
 
     g_propertyPanel.addEditor(g_textPropertyEditor);
     g_propertyPanel.addEditor(new ObjectPropertyEditor());
+    g_propertyPanel.addEditor(new ListPropertyEditor());
 
     export
     var g_inputText = null;

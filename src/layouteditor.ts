@@ -154,11 +154,13 @@ module LayoutEditor {
 
     function shapesSelect() {
         document.getElementById('layoutShapes').classList.remove('hidden');
+        document.getElementById('layoutTool').classList.remove('hidden');
         document.getElementById('layoutStyles').classList.add('hidden');
     }
 
     function stylesSelect() {
         document.getElementById('layoutShapes').classList.add('hidden');
+        document.getElementById('layoutTool').classList.add('hidden');
         document.getElementById('layoutStyles').classList.remove('hidden');
     }
 
@@ -204,7 +206,7 @@ module LayoutEditor {
         g_inputMultiLine = document.getElementById("inputMultiLine");
 
         // g_propertyTool = new PropertyTool();
-        g_propertyPanel.setRootElem(document.getElementById("webPropertyPanel"));
+        g_propertyPanel.setRootElem(document.getElementById("PropertyPanel"));
         g_textPropertyEditor.setInputElem(g_inputText);
 
         g_stylePanel.setRootElem(document.getElementById("layoutStyles"));

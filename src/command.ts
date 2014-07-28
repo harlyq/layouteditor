@@ -50,13 +50,17 @@ module LayoutEditor {
         redo() {
             g_shapeList.addShape(this.shape);
             g_selectList.setSelectedShapes([this.shape]);
-            g_propertyPanel.setObject(this.shape);
+            g_propertyPanel.setObject(this.shape, this.onPropertyChanged.bind(this));
         }
 
         undo() {
             g_shapeList.removeShape(this.shape);
 
             // what do we set the property panel to display?
+        }
+
+        onPropertyChanged() {
+            g_draw(g_shapeList);
         }
     }
 

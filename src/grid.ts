@@ -144,7 +144,7 @@ module LayoutEditor {
 
         draw(ctx) {
             if (this.snappedX !== undefined || this.snappedY !== undefined) {
-                g_snapStyle.draw(ctx);
+                g_snapStyle.drawShape(ctx);
 
                 ctx.save();
                 g_panZoom.transform(ctx);

@@ -25,7 +25,7 @@ module LayoutEditor {
                 this.name = name;
         }
 
-        draw(ctx) {
+        drawShape(ctx) {
             if (ctx.strokeStyle !== this.strokeStyle)
                 ctx.strokeStyle = this.strokeStyle;
             if (ctx.fillStyle !== this.fillStyle)
@@ -33,10 +33,15 @@ module LayoutEditor {
             if (ctx.lineWidth !== this.lineWidth.toString())
                 ctx.lineWidth = this.lineWidth.toString();
             ctx.setLineDash(this.lineDash);
+        }
+
+        drawFont(ctx) {
             if (ctx.textAlign !== this.textAlign)
                 ctx.textAlign = this.textAlign;
             if (ctx.textBaseline !== this.textBaseline)
                 ctx.textBaseline = this.textBaseline;
+            if (ctx.fillStyle !== this.fontStyle)
+                ctx.fillStyle = this.fontStyle;
             var font = this.fontWeight + " " + this.fontSize + "px " + this.fontFamily;
             if (ctx.font !== font)
                 ctx.font = font;
@@ -80,7 +85,16 @@ module LayoutEditor {
             var defaultStyle = new Style("default");
             defaultStyle.fillStyle = "white";
 
+            var defaultStyle2 = new Style("default2");
+            defaultStyle2.fillStyle = "none";
+            defaultStyle2.lineWidth = 2;
+            defaultStyle2.strokeStyle = "green";
+            defaultStyle2.textAlign = "left";
+            defaultStyle2.fontSize = 15;
+            defaultStyle2.fontStyle = "green";
+
             this.styles.push(defaultStyle);
+            this.styles.push(defaultStyle2);
             g_style = defaultStyle;
         }
 

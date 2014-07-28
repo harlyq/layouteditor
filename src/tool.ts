@@ -17,7 +17,7 @@ module LayoutEditor {
         public draw(ctx) {
             if (this.shape && this.isDrawing) {
                 this.shape.calculateBounds();
-                this.shape.draw(ctx);
+                this.shape.draw(ctx, g_panZoom);
             }
         }
 
@@ -96,7 +96,7 @@ module LayoutEditor {
                 ctx.save();
                 g_panZoom.transform(ctx);
                 ctx.beginPath();
-                g_snapStyle.draw(ctx);
+                g_snapStyle.drawShape(ctx);
                 ctx.moveTo(g_grid.snappedX, 0);
                 ctx.lineTo(g_grid.snappedX, 1000);
                 ctx.moveTo(0, g_grid.snappedY);
@@ -172,7 +172,7 @@ module LayoutEditor {
                 ctx.save();
                 g_panZoom.transform(ctx);
                 ctx.beginPath();
-                g_snapStyle.draw(ctx);
+                g_snapStyle.drawShape(ctx);
                 ctx.moveTo(g_grid.snappedX, 0);
                 ctx.lineTo(g_grid.snappedX, 1000);
                 ctx.moveTo(0, g_grid.snappedY);
@@ -230,9 +230,9 @@ module LayoutEditor {
             if (!this.isDrawing)
                 return;
 
-            this.aabbShape.draw(ctx);
+            this.aabbShape.draw(ctx, g_panZoom);
 
-            g_selectStyle.draw(ctx);
+            g_selectStyle.drawShape(ctx);
             var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
             for (var i = 0; i < shapes.length; ++i) {
                 shapes[i].drawSelect(ctx);
@@ -392,7 +392,7 @@ module LayoutEditor {
                 return;
 
             for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
-                g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+                g_selectList.selectedShapes[i].draw(ctx, g_panZoom); // draw the shape in the tool context
             }
         }
     }
@@ -482,7 +482,7 @@ module LayoutEditor {
                 return;
 
             for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
-                g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+                g_selectList.selectedShapes[i].draw(ctx, g_panZoom); // draw the shape in the tool context
             }
         }
 
@@ -581,7 +581,7 @@ module LayoutEditor {
                 return;
 
             for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
-                g_selectList.selectedShapes[i].draw(ctx); // draw the shape in the tool context
+                g_selectList.selectedShapes[i].draw(ctx, g_panZoom); // draw the shape in the tool context
             }
 
             g_grid.draw(ctx);
@@ -753,7 +753,7 @@ module LayoutEditor {
             if (!this.shape)
                 return;
 
-            this.editShape.draw(ctx);
+            this.editShape.draw(ctx, g_panZoom);
         }
     }
 

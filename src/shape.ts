@@ -288,21 +288,21 @@ module LayoutEditor {
             return this.style;
         }
 
-        draw(ctx) {
-            this.style.draw(ctx);
+        draw(ctx, panZoom) {
+            this.style.drawShape(ctx);
 
-            this.buildPath(ctx);
+            this.buildPath(ctx, panZoom);
 
             if (this.style.fillStyle !== "none")
                 ctx.fill();
             if (this.style.strokeStyle !== "none")
                 ctx.stroke();
 
-            this.drawText(ctx);
+            this.drawText(ctx, panZoom);
         }
 
         // implemented in the derived class
-        public buildPath(ctx) {}
+        public buildPath(ctx, panZoom: PanZoom) {}
 
         drawSelect(ctx) {
             var oabb = this.oabb;
@@ -324,14 +324,16 @@ module LayoutEditor {
             ctx.stroke();
         }
 
-        drawText(ctx) {
+        drawText(ctx, panZoom) {
             if (this.text.length === 0)
                 return;
 
             var oabb = this.oabb;
 
             ctx.save();
-            g_panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
+            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
+
+            this.style.drawFont(ctx);
 
             var textLines: string[] = this.text.split("\n");
             var lineHeight: number = this.style.fontSize * this.style.fontSpacing;
@@ -369,9 +371,6 @@ module LayoutEditor {
                     break
             }
 
-            if (ctx.fillStlye !== this.style.fontStyle)
-                ctx.fillStyle = this.style.fontStyle;
-
             for (var i: number = 0; i < textLines.length; ++i) {
                 ctx.fillText(textLines[i], x, y);
                 y += lineHeight;
@@ -384,11 +383,8 @@ module LayoutEditor {
         calculateBounds() {}
 
         isInsideXY(ctx, x: number, y: number): boolean {
-            var u = x * g_panZoom.zoom + g_panZoom.panX;
-            var v = y * g_panZoom.zoom + g_panZoom.panY;
-
-            this.buildPath(ctx);
-            return ctx.isPointInPath(u, v);
+            this.buildPath(ctx, g_noPanZoom);
+            return ctx.isPointInPath(x, y);
         }
 
         isInsideOABBXY(x: number, y: number): boolean {
@@ -478,11 +474,11 @@ module LayoutEditor {
             super();
         }
 
-        buildPath(ctx) {
+        buildPath(ctx, panZoom: PanZoom) {
             var transform = this.transform;
 
             ctx.save();
-            g_panZoom.transformComplete(ctx, transform);
+            panZoom.transformComplete(ctx, transform);
 
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
@@ -553,13 +549,13 @@ module LayoutEditor {
             super();
         }
 
-        buildPath(ctx) {
+        buildPath(ctx, panZoom: PanZoom) {
             var transform = this.transform;
             var rx = Math.abs(this.rx);
             var ry = Math.abs(this.ry);
 
             ctx.save();
-            g_panZoom.transformComplete(ctx, transform);
+            panZoom.transformComplete(ctx, transform);
 
             var kappa = .5522848,
                 ox = rx * kappa, // control point offset horizontal
@@ -665,12 +661,12 @@ module LayoutEditor {
             this.y2 = undefined;
         }
 
-        buildPath(ctx) {
+        buildPath(ctx, panZoom: PanZoom) {
             // don't apply transform!
             var x1 = this.oabb.cx - this.oabb.hw;
             var y1 = this.oabb.cy - this.oabb.hh;
             ctx.save();
-            g_panZoom.transform(ctx);
+            panZoom.transform(ctx);
             ctx.beginPath();
             ctx.rect(x1, y1, this.oabb.hw * 2, this.oabb.hh * 2);
             ctx.restore();
@@ -768,7 +764,7 @@ module LayoutEditor {
                 return; // nothing to draw
 
             // draw the bounds
-            g_selectStyle.draw(ctx);
+            g_selectStyle.drawShape(ctx);
             super.drawSelect(ctx);
         }
 
@@ -968,7 +964,7 @@ module LayoutEditor {
             for (var i: number = 0; i < numShapes; ++i) {
                 var shape: Shape = this.shapes[i];
                 if (!shape.isHidden)
-                    shape.draw(ctx);
+                    shape.draw(ctx, g_panZoom);
             }
         }
 

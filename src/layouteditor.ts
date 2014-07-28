@@ -79,6 +79,7 @@ module LayoutEditor {
         g_panZoom.reset();
         g_styleList.reset();
         g_selectList.reset();
+        g_stylePanel.reset();
 
         // provide a slide border so we can see the screen box
         g_panZoom.panX = -10;
@@ -88,6 +89,7 @@ module LayoutEditor {
         g_draw(g_screen);
         g_draw(g_panZoom);
         g_draw(g_selectList);
+        g_draw(g_stylePanel);
     }
 
     var focus = "";
@@ -130,6 +132,10 @@ module LayoutEditor {
             g_tool.draw(g_toolCtx);
         }
 
+        if (drawList.indexOf(g_stylePanel)) {
+            g_stylePanel.refresh();
+        }
+
         drawList.length = 0;
         requestFrame = false;
     }
@@ -146,14 +152,24 @@ module LayoutEditor {
         g_screen.setPlatform(parseInt(e.target.value));
     }
 
+    function shapesSelect() {
+        document.getElementById('layoutShapes').classList.remove('hidden');
+        document.getElementById('layoutStyles').classList.add('hidden');
+    }
+
+    function stylesSelect() {
+        document.getElementById('layoutShapes').classList.add('hidden');
+        document.getElementById('layoutStyles').classList.remove('hidden');
+    }
+
     interface PanelInfo {
         name: string;
         code: Tool;
     }
 
     window.addEventListener("load", function() {
-        var canvas = < HTMLCanvasElement > document.getElementById("layoutbase");
-        var toolCanvas = < HTMLCanvasElement > document.getElementById("layouttool");
+        var canvas = < HTMLCanvasElement > document.getElementById("layoutShapes");
+        var toolCanvas = < HTMLCanvasElement > document.getElementById("layoutTool");
         var interactionCanvas = < HTMLCanvasElement > document.getElementById("interaction");
 
         g_drawCtx = canvas.getContext("2d");
@@ -177,6 +193,8 @@ module LayoutEditor {
         document.getElementById("save").addEventListener("click", saveData);
         document.getElementById("duplicate").addEventListener("click", duplicateSelect);
         document.getElementById("delete").addEventListener("click", deleteSelect);
+        document.getElementById("shapes").addEventListener("click", shapesSelect);
+        document.getElementById("styles").addEventListener("click", stylesSelect);
 
         var platformSelect = < HTMLSelectElement > document.getElementById("platform");
         platformSelect.addEventListener("change", changePlatform);
@@ -189,7 +207,10 @@ module LayoutEditor {
         g_propertyPanel.setRootElem(document.getElementById("webPropertyPanel"));
         g_textPropertyEditor.setInputElem(g_inputText);
 
+        g_stylePanel.setRootElem(document.getElementById("layoutStyles"));
+
         setTool("rectTool");
+        shapesSelect();
 
         reset();
 

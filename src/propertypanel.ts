@@ -133,7 +133,7 @@ module LayoutEditor {
 
             var id: number = this.bindings.length - 1;
 
-            // loop backwards, most specific editors are last
+            // loop backwards, the most specific editors are last
             for (var i: number = this.editors.length - 1; i >= 0; --i) {
                 var editor: PropertyEditor = this.editors[i];
                 if (editor.canEdit(editorType)) {
@@ -263,6 +263,7 @@ module LayoutEditor {
             }
 
             var propertyList: PropertyList = g_propertyPanel.getPropertyList(object);
+            Helper.assert(propertyList !== null);
 
             for (var i: number = 0; i < propertyList.items.length; ++i) {
                 var propItem: PropertyItem = propertyList.items[i];

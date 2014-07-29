@@ -8,13 +8,15 @@ module LayoutEditor {
         private canvas = null;
         private ctx = null;
         private rootElem: HTMLElement = null;
+        private addButton: HTMLElement = null;
         private styleShape: RectShape = new RectShape(80, 60);
         private selected: HTMLElement = null;
         private elems: {
             [key: string]: HTMLElement
         } = {};
+        selectChanged = new Helper.Callback();
 
-        constructor() {
+        constructor(private styleList: StyleList) {
             this.styleShape.text = "Text"
         }
 
@@ -26,7 +28,7 @@ module LayoutEditor {
                 self.onClick(e)
             });
 
-            this.buildHTML();
+            this.reset();
         }
 
         private onClick(e) {
@@ -44,13 +46,12 @@ module LayoutEditor {
 
         reset() {
             this.buildHTML();
+
+            if (this.styleList.styles.length > 0)
+                this.selectStyle(this.styleList.styles[0].name);
         }
 
         refresh() {
-            // do nothing
-        }
-
-        onPropertyChanged() {
             ( < any > this.selected).refresh();
         }
 
@@ -60,8 +61,8 @@ module LayoutEditor {
 
             this.selected = this.elems[styleName];
             if (this.selected) {
-                this.selected.classList.add('selectedStyle')
-                g_propertyPanel.setObject(g_styleList.getStyle(styleName), this.onPropertyChanged.bind(this));
+                this.selected.classList.add('selectedStyle');
+                this.selectChanged.fire(styleName);
             }
         }
 
@@ -71,18 +72,28 @@ module LayoutEditor {
             while (this.rootElem.lastChild)
                 this.rootElem.removeChild(this.rootElem.lastChild);
 
-            for (var i: number = 0; i < g_styleList.styles.length; ++i) {
+            this.addButton = document.createElement('div');
+            this.addButton.classList.add('StylePanelAddButton');
+            this.addButton.addEventListener("click", this.onAddStyle.bind(this));
+            this.addButton.innerHTML = "+";
+            this.rootElem.appendChild(this.addButton);
+
+            for (var i: number = 0; i < this.styleList.styles.length; ++i) {
                 var newElem = document.createElement('x-styleButton');
-                var name = g_styleList.styles[i].name;
+                var name = this.styleList.styles[i].name;
 
                 newElem.setAttribute('value', name);
 
                 this.rootElem.appendChild(newElem);
                 this.elems[name] = newElem;
             }
+        }
 
-            if (g_styleList.styles.length > 0)
-                this.selectStyle(g_styleList.styles[0].name);
+        private onAddStyle() {
+            var newStyle: Style = new Style();
+            this.styleList.addStyle(newStyle);
+            this.buildHTML();
+            this.selectStyle(newStyle.name);
         }
     }
 
@@ -152,6 +163,4 @@ module LayoutEditor {
         prototype: XStyleButton
     });
 
-    export
-    var g_stylePanel: StylePanel = new StylePanel();
 }

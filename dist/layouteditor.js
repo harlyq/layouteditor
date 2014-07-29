@@ -359,6 +359,50 @@ var InteractionHelper;
 })(InteractionHelper || (InteractionHelper = {}));
 var Helper;
 (function (Helper) {
+    var Callback = (function () {
+        function Callback() {
+            this.list = [];
+            this.dead = [];
+            this.isProcessing = false;
+        }
+        Callback.prototype.add = function (callback) {
+            this.list.push(callback);
+        };
+
+        Callback.prototype.remove = function (callback) {
+            if (this.isProcessing) {
+                this.dead.push(callback);
+            } else {
+                // if we're not processing then remove the callback immediately, freeing the dependency
+                var index = this.list.indexOf(callback);
+                if (index !== -1)
+                    this.list.splice(index, 1);
+            }
+        };
+
+        Callback.prototype.fire = function (params) {
+            this.isProcessing = true;
+
+            for (var i = 0; i < this.list.length; i++) {
+                var callback = this.list[i];
+                var isDead = this.dead.indexOf(callback) !== -1;
+                if (!isDead)
+                    callback.apply(null, arguments); // use the arguments for apply()
+            }
+
+            this.isProcessing = false;
+
+            for (var i = 0; i < this.dead.length; ++i) {
+                var deadCallback = this.dead[i];
+                var deadIndex = this.list.indexOf(deadCallback);
+                if (deadIndex !== -1)
+                    this.list.splice(deadIndex, 1);
+            }
+        };
+        return Callback;
+    })();
+    Helper.Callback = Callback;
+
     function assert(cond) {
         if (!cond)
             debugger;
@@ -707,6 +751,7 @@ var LayoutEditor;
             }
 
             var propertyList = LayoutEditor.g_propertyPanel.getPropertyList(object);
+            Helper.assert(propertyList !== null);
 
             for (var i = 0; i < propertyList.items.length; ++i) {
                 var propItem = propertyList.items[i];
@@ -986,6 +1031,10 @@ var LayoutEditor;
             this.styles.push(newStyle);
 
             return newStyle;
+        };
+
+        StyleList.prototype.addStyle = function (newStyle) {
+            this.styles.push(newStyle);
         };
 
         StyleList.prototype.removeStyle = function (style) {
@@ -3590,13 +3639,16 @@ var LayoutEditor;
     "use strict";
 
     var StylePanel = (function () {
-        function StylePanel() {
+        function StylePanel(styleList) {
+            this.styleList = styleList;
             this.canvas = null;
             this.ctx = null;
             this.rootElem = null;
+            this.addButton = null;
             this.styleShape = new LayoutEditor.RectShape(80, 60);
             this.selected = null;
             this.elems = {};
+            this.selectChanged = new Helper.Callback();
             this.styleShape.text = "Text";
         }
         StylePanel.prototype.setRootElem = function (elem) {
@@ -3607,7 +3659,7 @@ var LayoutEditor;
                 self.onClick(e);
             });
 
-            this.buildHTML();
+            this.reset();
         };
 
         StylePanel.prototype.onClick = function (e) {
@@ -3625,13 +3677,12 @@ var LayoutEditor;
 
         StylePanel.prototype.reset = function () {
             this.buildHTML();
+
+            if (this.styleList.styles.length > 0)
+                this.selectStyle(this.styleList.styles[0].name);
         };
 
         StylePanel.prototype.refresh = function () {
-            // do nothing
-        };
-
-        StylePanel.prototype.onPropertyChanged = function () {
             this.selected.refresh();
         };
 
@@ -3642,7 +3693,7 @@ var LayoutEditor;
             this.selected = this.elems[styleName];
             if (this.selected) {
                 this.selected.classList.add('selectedStyle');
-                LayoutEditor.g_propertyPanel.setObject(LayoutEditor.g_styleList.getStyle(styleName), this.onPropertyChanged.bind(this));
+                this.selectChanged.fire(styleName);
             }
         };
 
@@ -3652,18 +3703,28 @@ var LayoutEditor;
             while (this.rootElem.lastChild)
                 this.rootElem.removeChild(this.rootElem.lastChild);
 
-            for (var i = 0; i < LayoutEditor.g_styleList.styles.length; ++i) {
+            this.addButton = document.createElement('div');
+            this.addButton.classList.add('StylePanelAddButton');
+            this.addButton.addEventListener("click", this.onAddStyle.bind(this));
+            this.addButton.innerHTML = "+";
+            this.rootElem.appendChild(this.addButton);
+
+            for (var i = 0; i < this.styleList.styles.length; ++i) {
                 var newElem = document.createElement('x-styleButton');
-                var name = LayoutEditor.g_styleList.styles[i].name;
+                var name = this.styleList.styles[i].name;
 
                 newElem.setAttribute('value', name);
 
                 this.rootElem.appendChild(newElem);
                 this.elems[name] = newElem;
             }
+        };
 
-            if (LayoutEditor.g_styleList.styles.length > 0)
-                this.selectStyle(LayoutEditor.g_styleList.styles[0].name);
+        StylePanel.prototype.onAddStyle = function () {
+            var newStyle = new LayoutEditor.Style();
+            this.styleList.addStyle(newStyle);
+            this.buildHTML();
+            this.selectStyle(newStyle.name);
         };
         return StylePanel;
     })();
@@ -3732,8 +3793,6 @@ var LayoutEditor;
     altDocument.registerElement("x-styleButton", {
         prototype: LayoutEditor.XStyleButton
     });
-
-    LayoutEditor.g_stylePanel = new StylePanel();
 })(LayoutEditor || (LayoutEditor = {}));
 /// <reference path="interactionhelper.ts" />
 /// <reference path="helper.ts" />
@@ -3756,6 +3815,7 @@ var LayoutEditor;
 
     var g_tool = null;
     var g_propertyTool = null;
+    var stylePanel = new LayoutEditor.StylePanel(LayoutEditor.g_styleList);
 
     function setTool(toolName) {
         var oldTool = g_tool;
@@ -3812,7 +3872,12 @@ var LayoutEditor;
             shapeList: LayoutEditor.g_shapeList.saveData(),
             panZoom: LayoutEditor.g_panZoom.saveData()
         };
-        localStorage['layouteditor'] = JSON.stringify(obj);
+        var objString = JSON.stringify(obj);
+        localStorage['layouteditor'] = objString;
+
+        var downloadElem = document.getElementById("download");
+        downloadElem.setAttribute("href", "data:text/plain," + encodeURIComponent(objString));
+        downloadElem.setAttribute("target", "_blank");
     }
 
     function loadData() {
@@ -3829,7 +3894,7 @@ var LayoutEditor;
         LayoutEditor.g_panZoom.reset();
         LayoutEditor.g_styleList.reset();
         LayoutEditor.g_selectList.reset();
-        LayoutEditor.g_stylePanel.reset();
+        stylePanel.reset();
 
         // provide a slide border so we can see the screen box
         LayoutEditor.g_panZoom.panX = -10;
@@ -3839,7 +3904,7 @@ var LayoutEditor;
         LayoutEditor.g_draw(LayoutEditor.g_screen);
         LayoutEditor.g_draw(LayoutEditor.g_panZoom);
         LayoutEditor.g_draw(LayoutEditor.g_selectList);
-        LayoutEditor.g_draw(LayoutEditor.g_stylePanel);
+        LayoutEditor.g_draw(stylePanel);
     }
 
     var focus = "";
@@ -3882,8 +3947,8 @@ var LayoutEditor;
             g_tool.draw(LayoutEditor.g_toolCtx);
         }
 
-        if (drawList.indexOf(LayoutEditor.g_stylePanel)) {
-            LayoutEditor.g_stylePanel.refresh();
+        if (drawList.indexOf(stylePanel)) {
+            stylePanel.refresh();
         }
 
         drawList.length = 0;
@@ -3954,7 +4019,12 @@ var LayoutEditor;
         LayoutEditor.g_propertyPanel.setRootElem(document.getElementById("PropertyPanel"));
         LayoutEditor.g_textPropertyEditor.setInputElem(LayoutEditor.g_inputText);
 
-        LayoutEditor.g_stylePanel.setRootElem(document.getElementById("layoutStyles"));
+        stylePanel.setRootElem(document.getElementById("layoutStyles"));
+        stylePanel.selectChanged.add(function (styleName) {
+            LayoutEditor.g_propertyPanel.setObject(LayoutEditor.g_styleList.getStyle(styleName), function () {
+                stylePanel.refresh();
+            });
+        });
 
         setTool("rectTool");
         shapesSelect();

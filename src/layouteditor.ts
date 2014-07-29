@@ -6,6 +6,7 @@ module LayoutEditor {
 
     var g_tool: Tool = null;
     var g_propertyTool: Tool = null;
+    var stylePanel: StylePanel = new StylePanel(g_styleList);
 
     function setTool(toolName: string) {
         var oldTool = g_tool;
@@ -62,7 +63,12 @@ module LayoutEditor {
             shapeList: g_shapeList.saveData(),
             panZoom: g_panZoom.saveData()
         };
-        localStorage['layouteditor'] = JSON.stringify(obj);
+        var objString: string = JSON.stringify(obj);
+        localStorage['layouteditor'] = objString;
+
+        var downloadElem = document.getElementById("download");
+        downloadElem.setAttribute("href", "data:text/plain," + encodeURIComponent(objString));
+        downloadElem.setAttribute("target", "_blank");
     }
 
     function loadData() {
@@ -79,7 +85,7 @@ module LayoutEditor {
         g_panZoom.reset();
         g_styleList.reset();
         g_selectList.reset();
-        g_stylePanel.reset();
+        stylePanel.reset();
 
         // provide a slide border so we can see the screen box
         g_panZoom.panX = -10;
@@ -89,7 +95,7 @@ module LayoutEditor {
         g_draw(g_screen);
         g_draw(g_panZoom);
         g_draw(g_selectList);
-        g_draw(g_stylePanel);
+        g_draw(stylePanel);
     }
 
     var focus = "";
@@ -132,8 +138,8 @@ module LayoutEditor {
             g_tool.draw(g_toolCtx);
         }
 
-        if (drawList.indexOf(g_stylePanel)) {
-            g_stylePanel.refresh();
+        if (drawList.indexOf(stylePanel)) {
+            stylePanel.refresh();
         }
 
         drawList.length = 0;
@@ -209,7 +215,12 @@ module LayoutEditor {
         g_propertyPanel.setRootElem(document.getElementById("PropertyPanel"));
         g_textPropertyEditor.setInputElem(g_inputText);
 
-        g_stylePanel.setRootElem(document.getElementById("layoutStyles"));
+        stylePanel.setRootElem(document.getElementById("layoutStyles"));
+        stylePanel.selectChanged.add(function(styleName) {
+            g_propertyPanel.setObject(g_styleList.getStyle(styleName), function() {
+                stylePanel.refresh();
+            });
+        });
 
         setTool("rectTool");
         shapesSelect();

@@ -1,4 +1,55 @@
 module Helper {
+    export interface CallbackFunction {
+        apply(p1: any, p2: any);
+    }
+
+    export class Callback < T extends CallbackFunction > {
+        list: T[] = [];
+        dead: T[] = [];
+        isProcessing: boolean = false;
+
+        constructor() {}
+
+        add(callback: T) {
+            this.list.push(callback);
+        }
+
+        remove(callback: T) {
+            if (this.isProcessing) {
+                this.dead.push(callback);
+            } else {
+                // if we're not processing then remove the callback immediately, freeing the dependency
+                var index: number = this.list.indexOf(callback);
+                if (index !== -1)
+                    this.list.splice(index, 1);
+            }
+
+        }
+
+        fire(params: any) {
+            this.isProcessing = true;
+
+            // call each callback, skipping removed ones
+            for (var i: number = 0; i < this.list.length; i++) {
+                var callback = this.list[i];
+                var isDead: boolean = this.dead.indexOf(callback) !== -1;
+                if (!isDead)
+                    callback.apply(null, arguments); // use the arguments for apply()
+            }
+
+            this.isProcessing = false;
+
+            // remove dead callbacks after processing
+            for (var i: number = 0; i < this.dead.length; ++i) {
+                var deadCallback: T = this.dead[i];
+                var deadIndex: number = this.list.indexOf(deadCallback);
+                if (deadIndex !== -1)
+                    this.list.splice(deadIndex, 1);
+            }
+
+        }
+    }
+
     export
 
     function assert(cond: boolean) {

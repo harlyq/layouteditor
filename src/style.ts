@@ -139,6 +139,10 @@ module LayoutEditor {
             return newStyle;
         }
 
+        addStyle(newStyle: Style) {
+            this.styles.push(newStyle);
+        }
+
         removeStyle(style: Style): boolean {
             var index: number = this.styles.indexOf(style);
             if (index !== -1)

@@ -1,3 +1,4 @@
+// Copyright 2014 Reece Elliott
 module Helper {
     export interface CallbackFunction {
         apply(p1: any, p2: any);

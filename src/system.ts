@@ -1,3 +1,5 @@
+// Copyright 2014 Reece Elliott
+
 module LayoutEditor {
     export
     var EPSILON = 0.001;

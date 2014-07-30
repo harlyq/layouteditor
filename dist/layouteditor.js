@@ -135,12 +135,12 @@ var InteractionHelper;
             var x = e.pageX - this.elem.offsetLeft;
             var y = e.pageY - this.elem.offsetTop;
 
-            var DoubleClick = false;
+            var doubleClick = false;
             var timeMS = Date.now();
 
             if (timeMS - this.tapTimeMS < this.options.DoubleClickTimeMS) {
                 if (Math.abs(this.tapPosition.x - x) < this.options.MouseCancelTapDistance && Math.abs(this.tapPosition.y - y) < this.options.MouseCancelTapDistance) {
-                    DoubleClick = true;
+                    doubleClick = true;
                     timeMS = 0;
                 } else {
                     if (this.tapTimeMS !== 0) {
@@ -161,12 +161,13 @@ var InteractionHelper;
             event.target = e.target;
             event.origin = this.elem;
 
-            this.onPointerFunc(event);
-
-            if (DoubleClick) {
+            if (doubleClick) {
                 event.state = 4 /* DoubleClick */;
                 this.onPointerFunc(event);
+                event.state = 1 /* Start */;
             }
+
+            this.onPointerFunc(event);
 
             this.lastX = x;
             this.lastY = y;
@@ -263,12 +264,12 @@ var InteractionHelper;
             document.addEventListener("touchend", this.touchEndHandler);
 
             var pinch = this.getPinchInfo(e);
-            var DoubleClick = false;
+            var doubleClick = false;
             var timeMS = Date.now();
 
             if (timeMS - this.tapTimeMS < this.options.DoubleClickTimeMS) {
                 if (Math.abs(this.tapPosition.x - pinch.x) < this.options.TouchCancelTapDistance && Math.abs(this.tapPosition.y - pinch.y) < this.options.TouchCancelTapDistance) {
-                    DoubleClick = true;
+                    doubleClick = true;
                     timeMS = 0;
                 } else {
                     if (this.tapTimeMS !== 0)
@@ -289,14 +290,13 @@ var InteractionHelper;
             event.target = e.target;
             event.origin = this.elem;
 
-            this.onPointerFunc(event);
-
-            this.onPointerFunc(event);
-
-            if (DoubleClick) {
+            if (doubleClick) {
                 event.state = 4 /* DoubleClick */;
                 this.onPointerFunc(event);
+                event.state = 1 /* Start */;
             }
+
+            this.onPointerFunc(event);
 
             this.lastX = pinch.x;
             this.lastY = pinch.y;
@@ -357,6 +357,7 @@ var InteractionHelper;
     })();
     InteractionHelper.Watch = Watch;
 })(InteractionHelper || (InteractionHelper = {}));
+// Copyright 2014 Reece Elliott
 var Helper;
 (function (Helper) {
     var Callback = (function () {
@@ -502,6 +503,7 @@ var Helper;
     }
     Helper.enumList = enumList;
 })(Helper || (Helper = {}));
+// Copyright 2014 Reece Elliott
 var LayoutEditor;
 (function (LayoutEditor) {
     LayoutEditor.EPSILON = 0.001;
@@ -510,6 +512,7 @@ var LayoutEditor;
 
     LayoutEditor.g_draw = null;
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path='_dependencies.ts' />
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -564,7 +567,8 @@ var LayoutEditor;
                     rootElem.removeChild(rootElem.lastChild);
                 }
 
-                this.createBinding(obj, "", "object", null, this.rootElem);
+                if (obj !== null)
+                    this.createBinding(obj, "", "object", null, this.rootElem);
             }
 
             this.refresh();
@@ -770,7 +774,6 @@ var LayoutEditor;
             }
 
             var propertyList = LayoutEditor.g_propertyPanel.getPropertyList(object);
-            Helper.assert(propertyList !== null);
 
             for (var i = 0; i < propertyList.items.length; ++i) {
                 var propItem = propertyList.items[i];
@@ -911,6 +914,7 @@ var LayoutEditor;
 
     LayoutEditor.g_inputText = null;
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -1176,6 +1180,7 @@ var LayoutEditor;
             }]
     });
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -1259,6 +1264,7 @@ var LayoutEditor;
     LayoutEditor.g_panZoom = new PanZoom();
     LayoutEditor.g_noPanZoom = new PanZoom();
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -1370,6 +1376,7 @@ var LayoutEditor;
 
     LayoutEditor.g_screen = new Screen();
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 var __extends = this.__extends || function (d, b) {
     for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
     function __() { this.constructor = d; }
@@ -2440,6 +2447,7 @@ var LayoutEditor;
             }]
     });
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -2550,6 +2558,7 @@ var LayoutEditor;
 
     LayoutEditor.g_selectList = new SelectList();
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -2730,6 +2739,7 @@ var LayoutEditor;
     LayoutEditor.Grid = Grid;
     LayoutEditor.g_grid = new Grid();
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
@@ -2938,19 +2948,35 @@ var LayoutEditor;
 
     LayoutEditor.g_drawCtx = null;
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
-    
+    //------------------------------
+    var Tool = (function () {
+        function Tool() {
+            this.isUsing = false;
+        }
+        Tool.prototype.onPointer = function (e) {
+            return false;
+        };
+        Tool.prototype.onChangeFocus = function (focus) {
+        };
+        Tool.prototype.draw = function (ctx) {
+        };
+        return Tool;
+    })();
+    LayoutEditor.Tool = Tool;
 
-    var DrawTool = (function () {
+    var DrawTool = (function (_super) {
+        __extends(DrawTool, _super);
         function DrawTool() {
+            _super.call(this);
             this.shape = null;
             this.canUse = false;
-            this.isDrawing = false;
         }
         DrawTool.prototype.draw = function (ctx) {
-            if (this.shape && this.isDrawing) {
+            if (this.shape && this.isUsing) {
                 this.shape.calculateBounds();
                 this.shape.draw(ctx, LayoutEditor.g_panZoom);
             }
@@ -2963,7 +2989,7 @@ var LayoutEditor;
         DrawTool.prototype.onChangeFocus = function (focus) {
         };
         return DrawTool;
-    })();
+    })(Tool);
     LayoutEditor.DrawTool = DrawTool;
 
     var RectTool = (function (_super) {
@@ -2987,7 +3013,7 @@ var LayoutEditor;
                     var pos = LayoutEditor.g_grid.snapXY(e.x, e.y);
                     this.x1 = pos.x;
                     this.y1 = pos.y;
-                    this.isDrawing = true;
+                    this.isUsing = true;
                     break;
 
                 case 2 /* Move */:
@@ -3006,15 +3032,15 @@ var LayoutEditor;
                         LayoutEditor.g_draw(this);
                     }
 
-                    this.isDrawing = false;
+                    this.isUsing = false;
                     isHandled = true;
                     break;
             }
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         };
 
         RectTool.prototype.draw = function (ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             this.rectShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
@@ -3055,7 +3081,7 @@ var LayoutEditor;
                     var pos = LayoutEditor.g_grid.snapXY(e.x, e.y);
                     this.x1 = pos.x;
                     this.y1 = pos.y;
-                    this.isDrawing = true;
+                    this.isUsing = true;
                     break;
                 case 2 /* Move */:
                     var pos = LayoutEditor.g_grid.snapXY(e.x, e.y);
@@ -3065,22 +3091,23 @@ var LayoutEditor;
                     LayoutEditor.g_draw(this);
                     break;
                 case 3 /* End */:
-                    if (this.canUse) {
-                        var newCommand = new LayoutEditor.EllipseCommand(this.ellipseShape.transform.tx, this.ellipseShape.transform.ty, this.ellipseShape.rx, this.ellipseShape.ry);
-                        LayoutEditor.g_commandList.addCommand(newCommand);
-                        this.canUse = false;
-                        LayoutEditor.g_draw(this);
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var newCommand = new LayoutEditor.EllipseCommand(this.ellipseShape.transform.tx, this.ellipseShape.transform.ty, this.ellipseShape.rx, this.ellipseShape.ry);
+                            LayoutEditor.g_commandList.addCommand(newCommand);
+                            this.canUse = false;
+                        }
+                        this.isUsing = false;
+                        isHandled = true;
                     }
-                    this.isDrawing = false;
-                    isHandled = true;
                     break;
             }
 
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         };
 
         EllipseTool.prototype.draw = function (ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             this.ellipseShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
@@ -3103,10 +3130,11 @@ var LayoutEditor;
     })(DrawTool);
     LayoutEditor.EllipseTool = EllipseTool;
 
-    var SelectTool = (function () {
+    var SelectTool = (function (_super) {
+        __extends(SelectTool, _super);
         function SelectTool() {
+            _super.call(this);
             this.aabbShape = new LayoutEditor.AABBShape();
-            this.isDrawing = false;
             this.aabbShape.setStyle(LayoutEditor.g_selectStyle);
         }
         SelectTool.prototype.onPointer = function (e) {
@@ -3119,31 +3147,37 @@ var LayoutEditor;
                     this.aabbShape.x2 = e.x;
                     this.aabbShape.y2 = e.y;
                     this.aabbShape.calculateBounds();
-                    this.isDrawing = true;
+                    this.isUsing = true;
+                    LayoutEditor.g_draw(this);
                     break;
                 case 2 /* Move */:
-                    this.aabbShape.x2 = e.x;
-                    this.aabbShape.y2 = e.y;
-                    this.aabbShape.calculateBounds();
-                    LayoutEditor.g_draw(this);
+                    if (this.isUsing) {
+                        this.aabbShape.x2 = e.x;
+                        this.aabbShape.y2 = e.y;
+                        this.aabbShape.calculateBounds();
+                        LayoutEditor.g_draw(this);
+                    }
                     break;
                 case 3 /* End */:
-                    var shapes = LayoutEditor.g_shapeList.getShapesInBounds(this.aabbShape.aabb);
-                    LayoutEditor.g_selectList.setSelectedShapes(shapes);
-                    this.isDrawing = false;
-                    LayoutEditor.g_draw(this);
-                    isHandled = true;
+                    if (this.isUsing) {
+                        var shapes = LayoutEditor.g_shapeList.getShapesInBounds(this.aabbShape.aabb);
+                        LayoutEditor.g_selectList.setSelectedShapes(shapes);
+
+                        this.isUsing = false;
+
+                        isHandled = true;
+                    }
                     break;
             }
 
-            return this.isDrawing || isHandled;
+            return this.isUsing || isHandled;
         };
 
         SelectTool.prototype.onChangeFocus = function (focus) {
         };
 
         SelectTool.prototype.draw = function (ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             this.aabbShape.draw(ctx, LayoutEditor.g_panZoom);
@@ -3155,12 +3189,13 @@ var LayoutEditor;
             }
         };
         return SelectTool;
-    })();
+    })(Tool);
     LayoutEditor.SelectTool = SelectTool;
 
-    var ResizeTool = (function () {
+    var ResizeTool = (function (_super) {
+        __extends(ResizeTool, _super);
         function ResizeTool() {
-            this.isDrawing = false;
+            _super.call(this);
             this.handleSize = 20;
             this.handle = 0 /* None */;
             this.canUse = false;
@@ -3203,6 +3238,7 @@ var LayoutEditor;
                         var localPos = oldOABB.invXY(e.x, e.y);
                         var handleX = this.handleSize;
                         var handleY = this.handleSize;
+
                         this.oldInfo = selectGroup.transform.decompose();
 
                         if (localPos.x + oldOABB.hw < handleX)
@@ -3219,15 +3255,17 @@ var LayoutEditor;
                             this.handle = 16 /* Middle */;
 
                         this.startLocalPos = localPos;
-                        isHandled = true;
-                        this.isDrawing = true;
+                        this.isUsing = true;
                         this.deltaX = 0;
                         this.deltaY = 0;
+
+                        isHandled = true;
+                        LayoutEditor.g_draw(this);
                     }
                     break;
 
                 case 2 /* Move */:
-                    if (this.isDrawing) {
+                    if (this.isUsing) {
                         var transform = LayoutEditor.g_selectList.selectGroup.transform;
                         var oldOABB = this.oldOABB;
                         var oldInfo = this.oldInfo;
@@ -3277,35 +3315,39 @@ var LayoutEditor;
                         transform.rotate(this.oldInfo.rotate);
                         transform.translate(newX, newY);
 
-                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
                         this.canUse = this.handle !== 0 /* None */;
+
+                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
                         LayoutEditor.g_draw(this);
                         isHandled = true;
                     }
                     break;
 
                 case 3 /* End */:
-                    if (this.isDrawing && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                        LayoutEditor.g_commandList.addCommand(newCommand);
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
+                            LayoutEditor.g_commandList.addCommand(newCommand);
+                        }
                         LayoutEditor.g_selectList.showSelected();
                         LayoutEditor.g_draw(this);
                         isHandled = true;
+
+                        this.canUse = false;
+                        this.isUsing = false;
+                        this.oldShapeTransforms.length = 0;
                     }
-                    this.canUse = false;
-                    this.isDrawing = false;
-                    this.oldShapeTransforms.length = 0;
                     break;
             }
 
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         };
 
         ResizeTool.prototype.onChangeFocus = function (focus) {
         };
 
         ResizeTool.prototype.draw = function (ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
@@ -3313,7 +3355,7 @@ var LayoutEditor;
             }
         };
         return ResizeTool;
-    })();
+    })(Tool);
     LayoutEditor.ResizeTool = ResizeTool;
 
     (function (ResizeTool) {
@@ -3330,14 +3372,15 @@ var LayoutEditor;
     })(LayoutEditor.ResizeTool || (LayoutEditor.ResizeTool = {}));
     var ResizeTool = LayoutEditor.ResizeTool;
 
-    var RotateTool = (function () {
+    var RotateTool = (function (_super) {
+        __extends(RotateTool, _super);
         function RotateTool() {
+            _super.call(this);
             this.lastAngle = 0;
             this.pivotX = 0;
             this.pivotY = 0;
             this.oldTransform = new LayoutEditor.Transform();
             this.oldShapeTransforms = [];
-            this.isDrawing = false;
         }
         RotateTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -3365,13 +3408,16 @@ var LayoutEditor;
                         this.pivotX = selectGroup.transform.tx;
                         this.pivotY = selectGroup.transform.tx;
                         this.lastAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
-                        this.isDrawing = true;
+                        this.isUsing = true;
+
+                        LayoutEditor.g_draw(this);
+
                         isHandled = true;
                     }
                     break;
 
                 case 2 /* Move */:
-                    if (this.isDrawing) {
+                    if (this.isUsing) {
                         var newAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
                         LayoutEditor.g_selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
                         LayoutEditor.g_selectList.selectGroup.calculateBounds();
@@ -3383,26 +3429,26 @@ var LayoutEditor;
                     break;
 
                 case 3 /* End */:
-                    if (this.isDrawing) {
+                    if (this.isUsing) {
                         var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         LayoutEditor.g_commandList.addCommand(newCommand);
                         LayoutEditor.g_selectList.showSelected();
                         LayoutEditor.g_draw(this);
                         isHandled = true;
-                        this.isDrawing = false;
+                        this.isUsing = false;
                     }
 
                     break;
             }
 
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         };
 
         RotateTool.prototype.onChangeFocus = function (focus) {
         };
 
         RotateTool.prototype.draw = function (ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
@@ -3419,11 +3465,13 @@ var LayoutEditor;
             return Math.atan2(dy, dx);
         };
         return RotateTool;
-    })();
+    })(Tool);
     LayoutEditor.RotateTool = RotateTool;
 
-    var MoveTool = (function () {
+    var MoveTool = (function (_super) {
+        __extends(MoveTool, _super);
         function MoveTool() {
+            _super.call(this);
             this.shape = null;
             this.canUse = false;
             this.deltaX = 0;
@@ -3455,6 +3503,7 @@ var LayoutEditor;
                         this.oldAABB.copy(LayoutEditor.g_selectList.selectGroup.aabb);
                         this.deltaX = 0;
                         this.deltaY = 0;
+                        this.isUsing = true;
 
                         LayoutEditor.g_draw(this);
                         isHandled = true;
@@ -3483,16 +3532,20 @@ var LayoutEditor;
                     break;
 
                 case 3 /* End */:
-                    if (this.shape && this.canUse) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                        LayoutEditor.g_commandList.addCommand(newCommand);
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
+                            LayoutEditor.g_commandList.addCommand(newCommand);
+                        }
                         LayoutEditor.g_selectList.showSelected();
-                        LayoutEditor.g_draw(this);
                         LayoutEditor.g_grid.clearSnap();
+
+                        this.canUse = false;
+                        this.shape = null;
+                        this.isUsing = false;
+
                         isHandled = true;
                     }
-                    this.canUse = false;
-                    this.shape = null;
                     break;
             }
 
@@ -3503,7 +3556,7 @@ var LayoutEditor;
         };
 
         MoveTool.prototype.draw = function (ctx) {
-            if (!this.shape)
+            if (!this.isUsing)
                 return;
 
             for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
@@ -3562,19 +3615,20 @@ var LayoutEditor;
             return delta;
         };
         return MoveTool;
-    })();
+    })(Tool);
     LayoutEditor.MoveTool = MoveTool;
 
-    var PanZoomTool = (function () {
+    var PanZoomTool = (function (_super) {
+        __extends(PanZoomTool, _super);
         function PanZoomTool() {
-            this.isDrawing = false;
+            _super.call(this);
         }
         PanZoomTool.prototype.onPointer = function (e) {
             var isHandled = false;
 
             switch (e.state) {
                 case 1 /* Start */:
-                    this.isDrawing = true;
+                    this.isUsing = true;
                     break;
 
                 case 2 /* Move */:
@@ -3596,12 +3650,12 @@ var LayoutEditor;
                     break;
 
                 case 3 /* End */:
-                    this.isDrawing = false;
+                    this.isUsing = false;
 
                     break;
             }
 
-            return this.isDrawing || isHandled;
+            return this.isUsing || isHandled;
         };
 
         PanZoomTool.prototype.onChangeFocus = function (focus) {
@@ -3610,11 +3664,13 @@ var LayoutEditor;
         PanZoomTool.prototype.draw = function (ctx) {
         };
         return PanZoomTool;
-    })();
+    })(Tool);
     LayoutEditor.PanZoomTool = PanZoomTool;
 
-    var TextTool = (function () {
+    var TextTool = (function (_super) {
+        __extends(TextTool, _super);
         function TextTool() {
+            _super.call(this);
             this.shape = null;
             this.editShape = null;
             this.inputListener = null;
@@ -3638,19 +3694,25 @@ var LayoutEditor;
                         LayoutEditor.g_inputMultiLine.style.left = left;
                         LayoutEditor.g_inputMultiLine.style.top = top;
                         LayoutEditor.g_inputMultiLine.value = this.editShape.text;
+                        LayoutEditor.g_inputMultiLine.style.display = "block";
                         LayoutEditor.g_inputMultiLine.focus();
                         isHandled = true;
+
+                        this.isUsing = true;
                     }
                     break;
 
                 case 1 /* Start */:
                     if (this.shape && LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y) !== this.shape) {
                         this.stopTool();
-                        isHandled = true;
+                        this.isUsing = false;
+                        // don't mark this as handled to permit another tool to use this
+                        // Start event e.g. we stop writing text because we are making a selection lasso
+                        // isHandled = true;
                     }
             }
 
-            return isHandled || this.shape !== null;
+            return isHandled || this.isUsing;
         };
 
         TextTool.prototype.onChangeFocus = function (focus) {
@@ -3662,8 +3724,12 @@ var LayoutEditor;
             if (this.shape) {
                 var newCommand = new LayoutEditor.TextCommand(this.shape, this.editShape.text);
                 LayoutEditor.g_commandList.addCommand(newCommand);
+
                 this.shape = null;
+                this.isUsing = false;
+
                 LayoutEditor.g_inputMultiLine.value = "";
+                LayoutEditor.g_inputMultiLine.style.display = "none";
                 LayoutEditor.g_draw(this);
             }
         };
@@ -3677,13 +3743,13 @@ var LayoutEditor;
         };
 
         TextTool.prototype.draw = function (ctx) {
-            if (!this.shape)
+            if (!this.isUsing)
                 return;
 
             this.editShape.draw(ctx, LayoutEditor.g_panZoom);
         };
         return TextTool;
-    })();
+    })(Tool);
     LayoutEditor.TextTool = TextTool;
 
     LayoutEditor.g_inputMultiLine = null;
@@ -3850,6 +3916,7 @@ var LayoutEditor;
         prototype: LayoutEditor.XStyleButton
     });
 })(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
 /// <reference path="interactionhelper.ts" />
 /// <reference path="helper.ts" />
 /// <reference path="system.ts" />
@@ -3872,48 +3939,41 @@ var LayoutEditor;
     var g_tool = null;
     var g_propertyTool = null;
     var stylePanel = new LayoutEditor.StylePanel(LayoutEditor.g_styleList);
+    var toolList = [];
 
     function setTool(toolName) {
-        var oldTool = g_tool;
         switch (toolName) {
             case "selectTool":
-                g_tool = new LayoutEditor.SelectTool();
+                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.SelectTool()];
                 break;
 
             case "resizeTool":
-                g_tool = new LayoutEditor.ResizeTool();
+                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.SelectTool()];
                 break;
 
             case "moveTool":
-                g_tool = new LayoutEditor.MoveTool();
+                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.MoveTool(), new LayoutEditor.SelectTool()];
                 break;
 
             case "rectTool":
-                g_tool = new LayoutEditor.RectTool();
+                toolList = [new LayoutEditor.RectTool()];
                 break;
 
             case "ellipseTool":
-                g_tool = new LayoutEditor.EllipseTool();
+                toolList = [new LayoutEditor.EllipseTool()];
                 break;
 
             case "rotateTool":
-                g_tool = new LayoutEditor.RotateTool();
+                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.RotateTool(), new LayoutEditor.SelectTool()];
                 break;
 
             case "panZoomTool":
-                g_tool = new LayoutEditor.PanZoomTool();
+                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.PanZoomTool()];
                 break;
 
             case "textTool":
-                g_tool = new LayoutEditor.TextTool();
+                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.SelectTool()];
                 break;
-        }
-
-        if (g_tool !== oldTool) {
-            if (oldTool)
-                oldTool.onChangeFocus(toolName);
-
-            console.log("Changed tool to: " + toolName);
         }
     }
 
@@ -3962,16 +4022,6 @@ var LayoutEditor;
         LayoutEditor.g_draw(stylePanel);
     }
 
-    var focus = "";
-
-    function setFocus(name) {
-        if (focus === name)
-            return;
-
-        focus = name;
-        g_tool.onChangeFocus(name); // TODO make more general
-    }
-
     var requestFrame = false;
     var drawList = [];
 
@@ -3996,10 +4046,14 @@ var LayoutEditor;
             LayoutEditor.g_shapeList.draw(LayoutEditor.g_drawCtx);
         }
 
-        if (drawList.indexOf(LayoutEditor.g_selectList) !== -1 || drawList.indexOf(LayoutEditor.g_panZoom) !== -1 || drawList.indexOf(g_tool) !== -1) {
-            clear(LayoutEditor.g_toolCtx);
-            LayoutEditor.g_selectList.draw(LayoutEditor.g_toolCtx);
-            g_tool.draw(LayoutEditor.g_toolCtx);
+        clear(LayoutEditor.g_toolCtx);
+        LayoutEditor.g_selectList.draw(LayoutEditor.g_toolCtx);
+
+        for (var i = 0; i < drawList.length; ++i) {
+            var tool = drawList[i];
+            if (tool instanceof LayoutEditor.Tool) {
+                tool.draw(LayoutEditor.g_toolCtx);
+            }
         }
 
         if (drawList.indexOf(stylePanel)) {
@@ -4099,7 +4153,17 @@ var LayoutEditor;
             e.deltaY = LayoutEditor.g_panZoom.toH(e.deltaY);
             e.pinchDistance *= LayoutEditor.g_panZoom.zoom;
 
-            g_tool.onPointer(e);
+            if (g_tool && g_tool.isUsing) {
+                if (!g_tool.onPointer(e))
+                    g_tool = null; // this input can be used by other tools
+            } else {
+                g_tool = null;
+            }
+
+            for (var i = 0; g_tool === null && i < toolList.length; ++i) {
+                if (toolList[i].onPointer(e))
+                    g_tool = toolList[i];
+            }
         });
     });
 })(LayoutEditor || (LayoutEditor = {}));

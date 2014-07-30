@@ -7,48 +7,41 @@ module LayoutEditor {
     var g_tool: Tool = null;
     var g_propertyTool: Tool = null;
     var stylePanel: StylePanel = new StylePanel(g_styleList);
+    var toolList: Tool[] = [];
 
     function setTool(toolName: string) {
-        var oldTool = g_tool;
         switch (toolName) {
             case "selectTool":
-                g_tool = new SelectTool();
+                toolList = [new TextTool(), new ResizeTool(), new SelectTool()];
                 break;
 
             case "resizeTool":
-                g_tool = new ResizeTool();
+                toolList = [new TextTool(), new ResizeTool(), new SelectTool()];
                 break;
 
             case "moveTool":
-                g_tool = new MoveTool();
+                toolList = [new TextTool(), new MoveTool(), new SelectTool()];
                 break;
 
             case "rectTool":
-                g_tool = new RectTool();
+                toolList = [new RectTool()];
                 break;
 
             case "ellipseTool":
-                g_tool = new EllipseTool();
+                toolList = [new EllipseTool()];
                 break;
 
             case "rotateTool":
-                g_tool = new RotateTool();
+                toolList = [new TextTool(), new RotateTool(), new SelectTool()];
                 break;
 
             case "panZoomTool":
-                g_tool = new PanZoomTool();
+                toolList = [new TextTool(), new ResizeTool(), new PanZoomTool()];
                 break;
 
             case "textTool":
-                g_tool = new TextTool();
+                toolList = [new TextTool(), new ResizeTool(), new SelectTool()];
                 break;
-        }
-
-        if (g_tool !== oldTool) {
-            if (oldTool)
-                oldTool.onChangeFocus(toolName);
-
-            console.log("Changed tool to: " + toolName);
         }
     }
 
@@ -97,16 +90,6 @@ module LayoutEditor {
         g_draw(stylePanel);
     }
 
-    var focus = "";
-
-    function setFocus(name: string) {
-        if (focus === name)
-            return;
-
-        focus = name;
-        g_tool.onChangeFocus(name); // TODO make more general
-    }
-
     var requestFrame: boolean = false;
     var drawList: any[] = [];
 
@@ -131,10 +114,14 @@ module LayoutEditor {
             g_shapeList.draw(g_drawCtx);
         }
 
-        if (drawList.indexOf(g_selectList) !== -1 || drawList.indexOf(g_panZoom) !== -1 || drawList.indexOf(g_tool) !== -1) {
-            clear(g_toolCtx);
-            g_selectList.draw(g_toolCtx);
-            g_tool.draw(g_toolCtx);
+        clear(g_toolCtx);
+        g_selectList.draw(g_toolCtx);
+
+        for (var i: number = 0; i < drawList.length; ++i) {
+            var tool = drawList[i];
+            if (tool instanceof Tool) {
+                tool.draw(g_toolCtx);
+            }
         }
 
         if (drawList.indexOf(stylePanel)) {
@@ -239,7 +226,17 @@ module LayoutEditor {
             e.deltaY = g_panZoom.toH(e.deltaY);
             e.pinchDistance *= g_panZoom.zoom;
 
-            g_tool.onPointer(e);
+            if (g_tool && g_tool.isUsing) {
+                if (!g_tool.onPointer(e))
+                    g_tool = null; // this input can be used by other tools
+            } else {
+                g_tool = null;
+            }
+
+            for (var i: number = 0; g_tool === null && i < toolList.length; ++i) {
+                if (toolList[i].onPointer(e))
+                    g_tool = toolList[i];
+            }
         });
     });
 }

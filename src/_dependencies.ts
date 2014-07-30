@@ -1,3 +1,5 @@
+// Copyright 2014 Reece Elliott
+
 /// <reference path="interactionhelper.ts" />
 /// <reference path="helper.ts" />
 /// <reference path="system.ts" />

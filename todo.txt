@@ -1,13 +1,15 @@
-- multi-select properties
-- clear multi-select field after
+- clear textarea field after use
 - remove g_ globals, linkage should occur in layouteditor.ts
 - bundle panels into web components
 - property editor supports multiple objects (e.g. from a selection)
-- can rename styles (validate that we don't duplicate)
 - make a small seperate presentation framework for the files
+
+28-Jul-14
+- use multiple tools at once e.g. resize and draw, resize and select
 
 27-Jul-14
 - named all internal shapes, so they don't consume makeUnique() values
+- can rename styles (validate that we don't duplicate)
 
 27-Jul-14
 - save to file (encodeURIComponent(x) with x = canvas.toDataURL for images or x = JSON.stringify for objects)

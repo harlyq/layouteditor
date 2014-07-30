@@ -133,13 +133,13 @@ module InteractionHelper {
             var x: number = e.pageX - this.elem.offsetLeft;
             var y: number = e.pageY - this.elem.offsetTop;
 
-            var DoubleClick: boolean = false;
+            var doubleClick: boolean = false;
             var timeMS: number = Date.now();
 
             if (timeMS - this.tapTimeMS < this.options.DoubleClickTimeMS) {
                 if (Math.abs(this.tapPosition.x - x) < this.options.MouseCancelTapDistance &&
                     Math.abs(this.tapPosition.y - y) < this.options.MouseCancelTapDistance) {
-                    DoubleClick = true;
+                    doubleClick = true;
                     timeMS = 0;
                 } else {
                     if (this.tapTimeMS !== 0) {
@@ -160,12 +160,14 @@ module InteractionHelper {
             event.target = e.target;
             event.origin = this.elem;
 
-            this.onPointerFunc(event);
-
-            if (DoubleClick) {
+            if (doubleClick) {
                 event.state = State.DoubleClick;
                 this.onPointerFunc(event);
+                event.state = State.Start;
             }
+
+            this.onPointerFunc(event);
+
 
             this.lastX = x;
             this.lastY = y;
@@ -264,13 +266,13 @@ module InteractionHelper {
             document.addEventListener("touchend", this.touchEndHandler);
 
             var pinch: PinchInfo = this.getPinchInfo(e);
-            var DoubleClick: boolean = false;
+            var doubleClick: boolean = false;
             var timeMS: number = Date.now();
 
             if (timeMS - this.tapTimeMS < this.options.DoubleClickTimeMS) {
                 if (Math.abs(this.tapPosition.x - pinch.x) < this.options.TouchCancelTapDistance &&
                     Math.abs(this.tapPosition.y - pinch.y) < this.options.TouchCancelTapDistance) {
-                    DoubleClick = true;
+                    doubleClick = true;
                     timeMS = 0;
                 } else {
                     if (this.tapTimeMS !== 0)
@@ -291,14 +293,13 @@ module InteractionHelper {
             event.target = e.target;
             event.origin = this.elem;
 
-            this.onPointerFunc(event);
-
-            this.onPointerFunc(event);
-
-            if (DoubleClick) {
+            if (doubleClick) {
                 event.state = State.DoubleClick;
                 this.onPointerFunc(event);
+                event.state = State.Start;
             }
+
+            this.onPointerFunc(event);
 
             this.lastX = pinch.x;
             this.lastY = pinch.y;

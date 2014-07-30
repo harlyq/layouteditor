@@ -1,3 +1,5 @@
+// Copyright 2014 Reece Elliott
+
 /// <reference path="_dependencies.ts" />
 module LayoutEditor {
     export interface ScreenType {

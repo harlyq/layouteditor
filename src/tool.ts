@@ -1,21 +1,30 @@
+// Copyright 2014 Reece Elliott
+
 /// <reference path="_dependencies.ts" />
 module LayoutEditor {
     //------------------------------
-    export interface Tool {
-        onPointer(e: InteractionHelper.Event): boolean;
-        onChangeFocus(focus: string);
-        draw(ctx);
-    }
-
-    export class DrawTool implements Tool {
-        public shape: Shape = null;
-        public canUse: boolean = false;
-        public isDrawing: boolean = false;
+    export class Tool {
+        isUsing: boolean = false;
 
         constructor() {}
 
+        onPointer(e: InteractionHelper.Event): boolean {
+            return false;
+        }
+        onChangeFocus(focus: string) {}
+        draw(ctx) {}
+    }
+
+    export class DrawTool extends Tool {
+        public shape: Shape = null;
+        public canUse: boolean = false;
+
+        constructor() {
+            super();
+        }
+
         public draw(ctx) {
-            if (this.shape && this.isDrawing) {
+            if (this.shape && this.isUsing) {
                 this.shape.calculateBounds();
                 this.shape.draw(ctx, g_panZoom);
             }
@@ -50,7 +59,7 @@ module LayoutEditor {
                     var pos: XY = g_grid.snapXY(e.x, e.y);
                     this.x1 = pos.x;
                     this.y1 = pos.y;
-                    this.isDrawing = true;
+                    this.isUsing = true;
                     break;
 
                 case InteractionHelper.State.Move:
@@ -73,15 +82,15 @@ module LayoutEditor {
                         g_draw(this);
                     }
 
-                    this.isDrawing = false;
+                    this.isUsing = false;
                     isHandled = true;
                     break;
             }
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         }
 
         public draw(ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             this.rectShape.fromRect(
@@ -129,7 +138,7 @@ module LayoutEditor {
                     var pos: XY = g_grid.snapXY(e.x, e.y);
                     this.x1 = pos.x;
                     this.y1 = pos.y;
-                    this.isDrawing = true;
+                    this.isUsing = true;
                     break;
                 case InteractionHelper.State.Move:
                     var pos: XY = g_grid.snapXY(e.x, e.y);
@@ -139,26 +148,27 @@ module LayoutEditor {
                     g_draw(this);
                     break;
                 case InteractionHelper.State.End:
-                    if (this.canUse) {
-                        var newCommand = new EllipseCommand(
-                            this.ellipseShape.transform.tx,
-                            this.ellipseShape.transform.ty,
-                            this.ellipseShape.rx,
-                            this.ellipseShape.ry);
-                        g_commandList.addCommand(newCommand);
-                        this.canUse = false;
-                        g_draw(this);
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var newCommand = new EllipseCommand(
+                                this.ellipseShape.transform.tx,
+                                this.ellipseShape.transform.ty,
+                                this.ellipseShape.rx,
+                                this.ellipseShape.ry);
+                            g_commandList.addCommand(newCommand);
+                            this.canUse = false;
+                        }
+                        this.isUsing = false;
+                        isHandled = true;
                     }
-                    this.isDrawing = false;
-                    isHandled = true;
                     break;
             }
 
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         }
 
         public draw(ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             this.ellipseShape.fromRect(
@@ -183,14 +193,14 @@ module LayoutEditor {
         }
     }
 
-    export class SelectTool implements Tool {
+    export class SelectTool extends Tool {
         private aabbShape: AABBShape = new AABBShape();
         private y1: number;
         private x2: number;
         private y2: number;
-        private isDrawing: boolean = false;
 
         constructor() {
+            super();
             this.aabbShape.setStyle(g_selectStyle);
         }
 
@@ -204,30 +214,36 @@ module LayoutEditor {
                     this.aabbShape.x2 = e.x;
                     this.aabbShape.y2 = e.y;
                     this.aabbShape.calculateBounds();
-                    this.isDrawing = true;
+                    this.isUsing = true;
+                    g_draw(this);
                     break;
                 case InteractionHelper.State.Move:
-                    this.aabbShape.x2 = e.x;
-                    this.aabbShape.y2 = e.y;
-                    this.aabbShape.calculateBounds();
-                    g_draw(this);
+                    if (this.isUsing) {
+                        this.aabbShape.x2 = e.x;
+                        this.aabbShape.y2 = e.y;
+                        this.aabbShape.calculateBounds();
+                        g_draw(this);
+                    }
                     break;
                 case InteractionHelper.State.End:
-                    var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
-                    g_selectList.setSelectedShapes(shapes);
-                    this.isDrawing = false;
-                    g_draw(this);
-                    isHandled = true;
+                    if (this.isUsing) {
+                        var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
+                        g_selectList.setSelectedShapes(shapes);
+
+                        this.isUsing = false;
+
+                        isHandled = true;
+                    }
                     break;
             }
 
-            return this.isDrawing || isHandled;
+            return this.isUsing || isHandled;
         }
 
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             this.aabbShape.draw(ctx, g_panZoom);
@@ -240,8 +256,7 @@ module LayoutEditor {
         }
     }
 
-    export class ResizeTool implements Tool {
-        isDrawing: boolean = false;
+    export class ResizeTool extends Tool {
         handleSize: number = 20;
 
         private handle: ResizeTool.HandleFlag = ResizeTool.HandleFlag.None;
@@ -254,7 +269,9 @@ module LayoutEditor {
         private oldOABB: Bounds = new Bounds();
         private oldShapeTransforms: Transform[] = [];
 
-        constructor() {}
+        constructor() {
+            super()
+        }
 
         onPointer(e: InteractionHelper.Event): boolean {
             var isHandled: boolean = false;
@@ -287,6 +304,7 @@ module LayoutEditor {
                         var localPos: XY = oldOABB.invXY(e.x, e.y);
                         var handleX = this.handleSize;
                         var handleY = this.handleSize;
+
                         this.oldInfo = selectGroup.transform.decompose();
 
                         if (localPos.x + oldOABB.hw < handleX)
@@ -303,15 +321,17 @@ module LayoutEditor {
                             this.handle = ResizeTool.HandleFlag.Middle;
 
                         this.startLocalPos = localPos;
-                        isHandled = true;
-                        this.isDrawing = true;
+                        this.isUsing = true;
                         this.deltaX = 0;
                         this.deltaY = 0;
+
+                        isHandled = true;
+                        g_draw(this);
                     }
                     break;
 
                 case InteractionHelper.State.Move:
-                    if (this.isDrawing) {
+                    if (this.isUsing) {
                         var transform = g_selectList.selectGroup.transform;
                         var oldOABB = this.oldOABB;
                         var oldInfo = this.oldInfo;
@@ -361,34 +381,38 @@ module LayoutEditor {
                         transform.rotate(this.oldInfo.rotate);
                         transform.translate(newX, newY)
 
-                        g_selectList.selectGroup.calculateBounds();
                         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
+
+                        g_selectList.selectGroup.calculateBounds();
                         g_draw(this);
                         isHandled = true;
                     }
                     break;
 
                 case InteractionHelper.State.End:
-                    if (this.isDrawing && this.canUse) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                        g_commandList.addCommand(newCommand);
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
+                            g_commandList.addCommand(newCommand);
+                        }
                         g_selectList.showSelected();
                         g_draw(this);
                         isHandled = true;
+
+                        this.canUse = false;
+                        this.isUsing = false;
+                        this.oldShapeTransforms.length = 0;
                     }
-                    this.canUse = false;
-                    this.isDrawing = false;
-                    this.oldShapeTransforms.length = 0;
                     break;
             }
 
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         }
 
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
@@ -403,17 +427,15 @@ module LayoutEditor {
         };
     }
 
-    export class RotateTool implements Tool {
+    export class RotateTool extends Tool {
         private lastAngle: number = 0;
         private pivotX: number = 0;
         private pivotY: number = 0;
         private oldTransform: Transform = new Transform();
         private oldShapeTransforms: Transform[] = [];
 
-        isDrawing: boolean = false;
-
         constructor() {
-
+            super();
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -442,13 +464,16 @@ module LayoutEditor {
                         this.pivotX = selectGroup.transform.tx;
                         this.pivotY = selectGroup.transform.tx;
                         this.lastAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
-                        this.isDrawing = true;
+                        this.isUsing = true;
+
+                        g_draw(this);
+
                         isHandled = true;
                     }
                     break;
 
                 case InteractionHelper.State.Move:
-                    if (this.isDrawing) {
+                    if (this.isUsing) {
                         var newAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
                         g_selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
                         g_selectList.selectGroup.calculateBounds();
@@ -460,25 +485,25 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.End:
-                    if (this.isDrawing) {
+                    if (this.isUsing) {
                         var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
                         g_commandList.addCommand(newCommand);
                         g_selectList.showSelected();
                         g_draw(this);
                         isHandled = true;
-                        this.isDrawing = false;
+                        this.isUsing = false;
                     }
 
                     break;
             }
 
-            return isHandled || this.isDrawing;
+            return isHandled || this.isUsing;
         }
 
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.isDrawing)
+            if (!this.isUsing)
                 return;
 
             for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
@@ -496,7 +521,7 @@ module LayoutEditor {
         }
     }
 
-    export class MoveTool implements Tool {
+    export class MoveTool extends Tool {
         private shape: Shape = null;
         private canUse: boolean = false;
         private deltaX: number = 0;
@@ -505,7 +530,9 @@ module LayoutEditor {
         private oldAABB: Bounds = new Bounds();
         private oldShapeTransforms: Transform[] = [];
 
-        constructor() {}
+        constructor() {
+            super();
+        }
 
         onPointer(e: InteractionHelper.Event): boolean {
             var isHandled: boolean = false;
@@ -530,6 +557,7 @@ module LayoutEditor {
                         this.oldAABB.copy(g_selectList.selectGroup.aabb);
                         this.deltaX = 0;
                         this.deltaY = 0;
+                        this.isUsing = true;
 
                         g_draw(this);
                         isHandled = true;
@@ -558,16 +586,20 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.End:
-                    if (this.shape && this.canUse) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                        g_commandList.addCommand(newCommand);
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
+                            g_commandList.addCommand(newCommand);
+                        }
                         g_selectList.showSelected();
-                        g_draw(this);
                         g_grid.clearSnap();
+
+                        this.canUse = false;
+                        this.shape = null;
+                        this.isUsing = false;
+
                         isHandled = true;
                     }
-                    this.canUse = false;
-                    this.shape = null;
                     break;
             }
 
@@ -577,7 +609,7 @@ module LayoutEditor {
         onChangeFocus(focus: string) {}
 
         public draw(ctx) {
-            if (!this.shape)
+            if (!this.isUsing)
                 return;
 
             for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
@@ -637,11 +669,9 @@ module LayoutEditor {
         }
     }
 
-    export class PanZoomTool implements Tool {
-        isDrawing: boolean = false;
-
+    export class PanZoomTool extends Tool {
         constructor() {
-
+            super();
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -649,7 +679,7 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.isDrawing = true;
+                    this.isUsing = true;
                     break;
 
                 case InteractionHelper.State.Move:
@@ -671,12 +701,12 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.End:
-                    this.isDrawing = false;
+                    this.isUsing = false;
                     //g_draw(g_panZoom); not needed as we're not clearing anything
                     break;
             }
 
-            return this.isDrawing || isHandled;
+            return this.isUsing || isHandled;
         }
 
         onChangeFocus(focus: string) {}
@@ -684,12 +714,13 @@ module LayoutEditor {
         draw(ctx) {}
     }
 
-    export class TextTool implements Tool {
+    export class TextTool extends Tool {
         shape: Shape = null;
         editShape: Shape = null;
         inputListener: any = null;
 
         constructor() {
+            super();
             var self = this;
             g_inputMultiLine.addEventListener('input', function(e) {
                 self.onInput(e);
@@ -711,19 +742,26 @@ module LayoutEditor {
                         g_inputMultiLine.style.left = left;
                         g_inputMultiLine.style.top = top;
                         g_inputMultiLine.value = this.editShape.text;
+                        g_inputMultiLine.style.display = "block";
                         g_inputMultiLine.focus();
                         isHandled = true;
+
+                        this.isUsing = true;
                     }
                     break;
 
                 case InteractionHelper.State.Start:
                     if (this.shape && g_shapeList.getShapeInXY(e.x, e.y) !== this.shape) {
                         this.stopTool();
-                        isHandled = true;
+                        this.isUsing = false;
+
+                        // don't mark this as handled to permit another tool to use this
+                        // Start event e.g. we stop writing text because we are making a selection lasso
+                        // isHandled = true;
                     }
             }
 
-            return isHandled || this.shape !== null;
+            return isHandled || this.isUsing;
         }
 
         onChangeFocus(focus: string) {
@@ -735,8 +773,12 @@ module LayoutEditor {
             if (this.shape) {
                 var newCommand = new TextCommand(this.shape, this.editShape.text);
                 g_commandList.addCommand(newCommand);
+
                 this.shape = null;
+                this.isUsing = false;
+
                 g_inputMultiLine.value = "";
+                g_inputMultiLine.style.display = "none";
                 g_draw(this);
             }
         }
@@ -750,7 +792,7 @@ module LayoutEditor {
         }
 
         public draw(ctx) {
-            if (!this.shape)
+            if (!this.isUsing)
                 return;
 
             this.editShape.draw(ctx, g_panZoom);

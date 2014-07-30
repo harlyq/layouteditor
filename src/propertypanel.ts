@@ -1,3 +1,5 @@
+// Copyright 2014 Reece Elliott
+
 /// <reference path='_dependencies.ts' />
 module LayoutEditor {
 
@@ -63,7 +65,8 @@ module LayoutEditor {
                     rootElem.removeChild(rootElem.lastChild);
                 }
 
-                this.createBinding(obj, "", "object", null, this.rootElem);
+                if (obj !== null)
+                    this.createBinding(obj, "", "object", null, this.rootElem);
             }
 
             this.refresh();
@@ -284,7 +287,6 @@ module LayoutEditor {
             }
 
             var propertyList: PropertyList = g_propertyPanel.getPropertyList(object);
-            Helper.assert(propertyList !== null);
 
             for (var i: number = 0; i < propertyList.items.length; ++i) {
                 var propItem: PropertyItem = propertyList.items[i];

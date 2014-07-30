@@ -4,7 +4,9 @@ module LayoutEditor {
     export interface PropertyItem {
         prop: string;
         type ? : string;
+        match ? : string;
         getList ? : () => LayoutEditor.ReferenceItem[];
+        isValid ? : (value) => boolean;
     }
 
     export interface PropertyList {
@@ -50,6 +52,8 @@ module LayoutEditor {
 
         setObject(obj: any, onChangeCallback: () => void) {
             if (this.object !== obj) {
+                this.commitEditing();
+
                 this.object = obj;
                 this.onChangeCallback = onChangeCallback;
                 this.bindings.length = 0;
@@ -172,16 +176,15 @@ module LayoutEditor {
 
     export class TextPropertyEditor implements PropertyEditor {
         inputText: HTMLInputElement;
+        regExp: RegExp = null;
 
         constructor() {}
 
         public setInputElem(elem: HTMLInputElement) {
             elem.classList.add('inputText');
 
-            var self = this;
-            elem.addEventListener("change", function(e) {
-                self.onChange(e);
-            })
+            elem.addEventListener("change", this.onChange.bind(this));
+            elem.addEventListener("input", this.onInput.bind(this));
 
             this.inputText = elem;
         }
@@ -223,19 +226,37 @@ module LayoutEditor {
 
             this.inputText.setSelectionRange(0, g_inputText.value.length);
             this.inputText.focus();
+
+            if (typeof binding.item.match !== 'undefined')
+                this.regExp = new RegExp(binding.item.match);
         }
 
         public commitEdit(binding: PropertyBinding) {
-            binding.object[binding.prop] = g_inputText.value;
+            var isValid = binding.item.isValid;
+            if (typeof isValid === "undefined" || isValid(g_inputText.value)) {
+                binding.object[binding.prop] = g_inputText.value;
+            }
 
             this.inputText.blur();
             this.inputText.type = 'hidden';
+            this.regExp = null;
 
             this.refresh(binding);
         }
 
         private onChange(e) {
             g_propertyPanel.commitEditing();
+        }
+
+        private onInput(e) {
+            if (this.regExp === null)
+                return;
+
+            if (!this.regExp.test(g_inputText.value)) {
+                this.inputText.style.color = 'red';
+            } else {
+                this.inputText.style.color = 'black';
+            }
         }
     }
 
@@ -374,7 +395,12 @@ module LayoutEditor {
         commitEdit(binding: PropertyBinding) {
             var inputSelect: any = binding.elem.lastChild;
             var list: ReferenceItem[] = binding.item.getList();
-            binding.object[binding.prop] = list[inputSelect.selectedIndex].value;
+            var isValid = binding.item.isValid;
+            var value = list[inputSelect.selectedIndex].value;
+
+            if (typeof isValid === "undefined" || isValid(value)) {
+                binding.object[binding.prop] = value;
+            }
 
             binding.elem.removeChild(inputSelect);
 

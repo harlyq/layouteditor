@@ -267,10 +267,10 @@ module LayoutEditor {
         name: string = "";
         text: string = "";
 
-        static uniqueID: number = 0;
+        static uniqueID: number = 1;
 
         constructor(name ? : string) {
-            if (typeof name === "undefined")
+            if (typeof name === "undefined" || name.length === 0)
                 this.makeUnique();
             else
                 this.name = name;
@@ -470,8 +470,8 @@ module LayoutEditor {
     }
 
     export class RectShape extends Shape {
-        constructor(public w: number, public h: number) {
-            super();
+        constructor(name: string, public w: number, public h: number) {
+            super(name);
         }
 
         buildPath(ctx, panZoom: PanZoom) {
@@ -487,7 +487,7 @@ module LayoutEditor {
 
         copy(base ? : RectShape): RectShape {
             if (!base)
-                base = new RectShape(this.w, this.h);
+                base = new RectShape(this.name, this.w, this.h);
             super.copy(base);
             Helper.extend(base, this);
             return base;
@@ -545,8 +545,8 @@ module LayoutEditor {
     }
 
     export class EllipseShape extends Shape {
-        constructor(public rx: number, public ry: number) {
-            super();
+        constructor(name: string, public rx: number, public ry: number) {
+            super(name);
         }
 
         buildPath(ctx, panZoom: PanZoom) {
@@ -575,7 +575,7 @@ module LayoutEditor {
 
         copy(base ? : EllipseShape): EllipseShape {
             if (!base)
-                base = new EllipseShape(this.rx, this.ry);
+                base = new EllipseShape(this.name, this.rx, this.ry);
             super.copy(base);
             Helper.extend(base, this);
             return base;
@@ -997,12 +997,20 @@ module LayoutEditor {
         create(type: string): Shape {
             switch (type) {
                 case "RectShape":
-                    return new RectShape(0, 0);
+                    return new RectShape("", 0, 0);
                 case "EllipseShape":
-                    return new EllipseShape(0, 0);
+                    return new EllipseShape("", 0, 0);
                 case "AABBShape":
                     return new AABBShape();
             }
+        }
+
+        isValidName(shapeName: string): boolean {
+            for (var i: number = 0; i < this.shapes.length; ++i) {
+                if (this.shapes[i].name === shapeName)
+                    return false;
+            }
+            return true;
         }
 
         saveData(): any {
@@ -1036,11 +1044,17 @@ module LayoutEditor {
             return obj instanceof Shape;
         },
         items: [{
-            prop: "name"
+            prop: 'name',
+            match: '^[a-zA-Z]\\w*$',
+            isValid: (value) => {
+                return g_shapeList.isValidName(value);
+            }
         }, {
-            prop: "style",
-            type: "list",
-            getList: g_styleList.getList.bind(g_styleList)
+            prop: 'style',
+            type: 'list',
+            getList: (): ReferenceItem[] => {
+                return g_styleList.getList();
+            }
         }]
     });
 

@@ -79,11 +79,11 @@ module LayoutEditor {
         }
     }
     export
-    var g_drawStyle: Style = new Style("draw");
+    var g_drawStyle: Style = new Style("_draw");
     export
-    var g_selectStyle: Style = new Style("select");
+    var g_selectStyle: Style = new Style("_select");
     export
-    var g_snapStyle: Style = new Style("snap");
+    var g_snapStyle: Style = new Style("_snap");
 
     g_drawStyle.strokeColor = "red";
     g_drawStyle.lineDash = [2, 2];
@@ -150,6 +150,14 @@ module LayoutEditor {
             return index !== -1;
         }
 
+        isValidName(styleName: string): boolean {
+            for (var i: number = 0; i < this.styles.length; ++i) {
+                if (this.styles[i].name === styleName)
+                    return false;
+            }
+            return true;
+        }
+
         saveData(): any {
             var obj = {
                 styles: []
@@ -196,11 +204,20 @@ module LayoutEditor {
             return obj instanceof Style;
         },
         items: [{
-            prop: "strokeColor"
+            prop: 'name',
+            match: '^[a-zA-Z]\\w*$',
+            isValid: (value) => {
+                return g_styleList.isValidName(value);
+            }
         }, {
-            prop: "fillColor"
+            prop: "strokeColor",
+            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
         }, {
-            prop: "lineWidth"
+            prop: "fillColor",
+            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+        }, {
+            prop: "lineWidth",
+            match: '^\\d+$'
         }, {
             prop: "textAlign",
             type: 'list',
@@ -214,9 +231,11 @@ module LayoutEditor {
                 return Helper.enumList(StyleTextBaseline);
             }
         }, {
-            prop: "fontSize"
+            prop: "fontSize",
+            match: '^\\d+$'
         }, {
-            prop: "fontFamily"
+            prop: "fontFamily",
+            match: '^[a-zA-Z]*$'
         }, {
             prop: "fontWeight",
             type: 'list',
@@ -230,9 +249,10 @@ module LayoutEditor {
                 return Helper.enumList(StyleFontStyle);
             }
         }, {
-            prop: "fontColor"
+            prop: "fontColor",
+            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
         }, {
-            prop: "fontSpacing"
+            prop: 'fontSpacing'
         }]
     });
 

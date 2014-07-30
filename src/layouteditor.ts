@@ -68,7 +68,6 @@ module LayoutEditor {
 
         var downloadElem = document.getElementById("download");
         downloadElem.setAttribute("href", "data:text/plain," + encodeURIComponent(objString));
-        downloadElem.setAttribute("target", "_blank");
     }
 
     function loadData() {

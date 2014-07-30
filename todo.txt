@@ -7,4 +7,8 @@
 - make a small seperate presentation framework for the files
 
 27-Jul-14
+- named all internal shapes, so they don't consume makeUnique() values
+
+27-Jul-14
 - save to file (encodeURIComponent(x) with x = canvas.toDataURL for images or x = JSON.stringify for objects)
+- can add new styles

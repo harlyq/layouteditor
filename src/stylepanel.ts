@@ -9,16 +9,13 @@ module LayoutEditor {
         private ctx = null;
         private rootElem: HTMLElement = null;
         private addButton: HTMLElement = null;
-        private styleShape: RectShape = new RectShape(80, 60);
         private selected: HTMLElement = null;
         private elems: {
             [key: string]: HTMLElement
         } = {};
         selectChanged = new Helper.Callback();
 
-        constructor(private styleList: StyleList) {
-            this.styleShape.text = "Text"
-        }
+        constructor(private styleList: StyleList) {}
 
         setRootElem(elem: HTMLElement) {
             this.rootElem = elem;
@@ -102,7 +99,7 @@ module LayoutEditor {
         private ctx = null;
         private width: number = 80;
         private height: number = 60;
-        private rectShape = new RectShape(this.width - 20, this.height - 20);
+        private rectShape = new RectShape("_Thumb", this.width - 20, this.height - 20);
         private labelElem: HTMLElement = null;
 
         constructor(private elem) {

@@ -553,6 +553,8 @@ var LayoutEditor;
 
         PropertyPanel.prototype.setObject = function (obj, onChangeCallback) {
             if (this.object !== obj) {
+                this.commitEditing();
+
                 this.object = obj;
                 this.onChangeCallback = onChangeCallback;
                 this.bindings.length = 0;
@@ -658,14 +660,13 @@ var LayoutEditor;
 
     var TextPropertyEditor = (function () {
         function TextPropertyEditor() {
+            this.regExp = null;
         }
         TextPropertyEditor.prototype.setInputElem = function (elem) {
             elem.classList.add('inputText');
 
-            var self = this;
-            elem.addEventListener("change", function (e) {
-                self.onChange(e);
-            });
+            elem.addEventListener("change", this.onChange.bind(this));
+            elem.addEventListener("input", this.onInput.bind(this));
 
             this.inputText = elem;
         };
@@ -707,19 +708,37 @@ var LayoutEditor;
 
             this.inputText.setSelectionRange(0, LayoutEditor.g_inputText.value.length);
             this.inputText.focus();
+
+            if (typeof binding.item.match !== 'undefined')
+                this.regExp = new RegExp(binding.item.match);
         };
 
         TextPropertyEditor.prototype.commitEdit = function (binding) {
-            binding.object[binding.prop] = LayoutEditor.g_inputText.value;
+            var isValid = binding.item.isValid;
+            if (typeof isValid === "undefined" || isValid(LayoutEditor.g_inputText.value)) {
+                binding.object[binding.prop] = LayoutEditor.g_inputText.value;
+            }
 
             this.inputText.blur();
             this.inputText.type = 'hidden';
+            this.regExp = null;
 
             this.refresh(binding);
         };
 
         TextPropertyEditor.prototype.onChange = function (e) {
             LayoutEditor.g_propertyPanel.commitEditing();
+        };
+
+        TextPropertyEditor.prototype.onInput = function (e) {
+            if (this.regExp === null)
+                return;
+
+            if (!this.regExp.test(LayoutEditor.g_inputText.value)) {
+                this.inputText.style.color = 'red';
+            } else {
+                this.inputText.style.color = 'black';
+            }
         };
         return TextPropertyEditor;
     })();
@@ -867,7 +886,12 @@ var LayoutEditor;
         ListPropertyEditor.prototype.commitEdit = function (binding) {
             var inputSelect = binding.elem.lastChild;
             var list = binding.item.getList();
-            binding.object[binding.prop] = list[inputSelect.selectedIndex].value;
+            var isValid = binding.item.isValid;
+            var value = list[inputSelect.selectedIndex].value;
+
+            if (typeof isValid === "undefined" || isValid(value)) {
+                binding.object[binding.prop] = value;
+            }
 
             binding.elem.removeChild(inputSelect);
 
@@ -978,9 +1002,9 @@ var LayoutEditor;
         return Style;
     })();
     LayoutEditor.Style = Style;
-    LayoutEditor.g_drawStyle = new Style("draw");
-    LayoutEditor.g_selectStyle = new Style("select");
-    LayoutEditor.g_snapStyle = new Style("snap");
+    LayoutEditor.g_drawStyle = new Style("_draw");
+    LayoutEditor.g_selectStyle = new Style("_select");
+    LayoutEditor.g_snapStyle = new Style("_snap");
 
     LayoutEditor.g_drawStyle.strokeColor = "red";
     LayoutEditor.g_drawStyle.lineDash = [2, 2];
@@ -1044,6 +1068,14 @@ var LayoutEditor;
             return index !== -1;
         };
 
+        StyleList.prototype.isValidName = function (styleName) {
+            for (var i = 0; i < this.styles.length; ++i) {
+                if (this.styles[i].name === styleName)
+                    return false;
+            }
+            return true;
+        };
+
         StyleList.prototype.saveData = function () {
             var obj = {
                 styles: []
@@ -1092,11 +1124,20 @@ var LayoutEditor;
         },
         items: [
             {
-                prop: "strokeColor"
+                prop: 'name',
+                match: '^[a-zA-Z]\\w*$',
+                isValid: function (value) {
+                    return LayoutEditor.g_styleList.isValidName(value);
+                }
             }, {
-                prop: "fillColor"
+                prop: "strokeColor",
+                match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
             }, {
-                prop: "lineWidth"
+                prop: "fillColor",
+                match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+            }, {
+                prop: "lineWidth",
+                match: '^\\d+$'
             }, {
                 prop: "textAlign",
                 type: 'list',
@@ -1110,9 +1151,11 @@ var LayoutEditor;
                     return Helper.enumList(StyleTextBaseline);
                 }
             }, {
-                prop: "fontSize"
+                prop: "fontSize",
+                match: '^\\d+$'
             }, {
-                prop: "fontFamily"
+                prop: "fontFamily",
+                match: '^[a-zA-Z]*$'
             }, {
                 prop: "fontWeight",
                 type: 'list',
@@ -1126,9 +1169,10 @@ var LayoutEditor;
                     return Helper.enumList(StyleFontStyle);
                 }
             }, {
-                prop: "fontColor"
+                prop: "fontColor",
+                match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
             }, {
-                prop: "fontSpacing"
+                prop: 'fontSpacing'
             }]
     });
 })(LayoutEditor || (LayoutEditor = {}));
@@ -1604,7 +1648,7 @@ var LayoutEditor;
             this.transform = new Transform();
             this.name = "";
             this.text = "";
-            if (typeof name === "undefined")
+            if (typeof name === "undefined" || name.length === 0)
                 this.makeUnique();
             else
                 this.name = name;
@@ -1801,15 +1845,15 @@ var LayoutEditor;
             this.style = LayoutEditor.g_styleList.getStyle(obj.style);
             Helper.extend(this.transform, obj.transform);
         };
-        Shape.uniqueID = 0;
+        Shape.uniqueID = 1;
         return Shape;
     })();
     LayoutEditor.Shape = Shape;
 
     var RectShape = (function (_super) {
         __extends(RectShape, _super);
-        function RectShape(w, h) {
-            _super.call(this);
+        function RectShape(name, w, h) {
+            _super.call(this, name);
             this.w = w;
             this.h = h;
         }
@@ -1826,7 +1870,7 @@ var LayoutEditor;
 
         RectShape.prototype.copy = function (base) {
             if (!base)
-                base = new RectShape(this.w, this.h);
+                base = new RectShape(this.name, this.w, this.h);
             _super.prototype.copy.call(this, base);
             Helper.extend(base, this);
             return base;
@@ -1887,8 +1931,8 @@ var LayoutEditor;
 
     var EllipseShape = (function (_super) {
         __extends(EllipseShape, _super);
-        function EllipseShape(rx, ry) {
-            _super.call(this);
+        function EllipseShape(name, rx, ry) {
+            _super.call(this, name);
             this.rx = rx;
             this.ry = ry;
         }
@@ -1916,7 +1960,7 @@ var LayoutEditor;
 
         EllipseShape.prototype.copy = function (base) {
             if (!base)
-                base = new EllipseShape(this.rx, this.ry);
+                base = new EllipseShape(this.name, this.rx, this.ry);
             _super.prototype.copy.call(this, base);
             Helper.extend(base, this);
             return base;
@@ -2333,12 +2377,20 @@ var LayoutEditor;
         ShapeList.prototype.create = function (type) {
             switch (type) {
                 case "RectShape":
-                    return new RectShape(0, 0);
+                    return new RectShape("", 0, 0);
                 case "EllipseShape":
-                    return new EllipseShape(0, 0);
+                    return new EllipseShape("", 0, 0);
                 case "AABBShape":
                     return new AABBShape();
             }
+        };
+
+        ShapeList.prototype.isValidName = function (shapeName) {
+            for (var i = 0; i < this.shapes.length; ++i) {
+                if (this.shapes[i].name === shapeName)
+                    return false;
+            }
+            return true;
         };
 
         ShapeList.prototype.saveData = function () {
@@ -2374,11 +2426,17 @@ var LayoutEditor;
         },
         items: [
             {
-                prop: "name"
+                prop: 'name',
+                match: '^[a-zA-Z]\\w*$',
+                isValid: function (value) {
+                    return LayoutEditor.g_shapeList.isValidName(value);
+                }
             }, {
-                prop: "style",
-                type: "list",
-                getList: LayoutEditor.g_styleList.getList.bind(LayoutEditor.g_styleList)
+                prop: 'style',
+                type: 'list',
+                getList: function () {
+                    return LayoutEditor.g_styleList.getList();
+                }
             }]
     });
 })(LayoutEditor || (LayoutEditor = {}));
@@ -2741,7 +2799,7 @@ var LayoutEditor;
         function RectCommand(cx, cy, w, h) {
             _super.call(this);
 
-            this.shape = new LayoutEditor.RectShape(w, h);
+            this.shape = new LayoutEditor.RectShape("", w, h);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
             this.shape.setStyle(LayoutEditor.g_style);
@@ -2756,7 +2814,7 @@ var LayoutEditor;
         function EllipseCommand(cx, cy, rx, ry) {
             _super.call(this);
 
-            this.shape = new LayoutEditor.EllipseShape(rx, ry);
+            this.shape = new LayoutEditor.EllipseShape("", rx, ry);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
             this.shape.setStyle(LayoutEditor.g_style);
@@ -2912,7 +2970,7 @@ var LayoutEditor;
         __extends(RectTool, _super);
         function RectTool() {
             _super.call(this);
-            this.rectShape = new LayoutEditor.RectShape(0, 0);
+            this.rectShape = new LayoutEditor.RectShape("_RectTool", 0, 0);
             this.x1 = -1;
             this.y1 = -1;
             this.x2 = -1;
@@ -2984,7 +3042,7 @@ var LayoutEditor;
         __extends(EllipseTool, _super);
         function EllipseTool() {
             _super.call(this);
-            this.ellipseShape = new LayoutEditor.EllipseShape(0, 0);
+            this.ellipseShape = new LayoutEditor.EllipseShape("_EllipseTool", 0, 0);
             this.shape = this.ellipseShape;
             this.ellipseShape.setStyle(LayoutEditor.g_drawStyle);
         }
@@ -3645,11 +3703,9 @@ var LayoutEditor;
             this.ctx = null;
             this.rootElem = null;
             this.addButton = null;
-            this.styleShape = new LayoutEditor.RectShape(80, 60);
             this.selected = null;
             this.elems = {};
             this.selectChanged = new Helper.Callback();
-            this.styleShape.text = "Text";
         }
         StylePanel.prototype.setRootElem = function (elem) {
             this.rootElem = elem;
@@ -3737,7 +3793,7 @@ var LayoutEditor;
             this.ctx = null;
             this.width = 80;
             this.height = 60;
-            this.rectShape = new LayoutEditor.RectShape(this.width - 20, this.height - 20);
+            this.rectShape = new LayoutEditor.RectShape("_Thumb", this.width - 20, this.height - 20);
             this.labelElem = null;
             var shadow = elem.createShadowRoot();
 
@@ -3877,7 +3933,6 @@ var LayoutEditor;
 
         var downloadElem = document.getElementById("download");
         downloadElem.setAttribute("href", "data:text/plain," + encodeURIComponent(objString));
-        downloadElem.setAttribute("target", "_blank");
     }
 
     function loadData() {

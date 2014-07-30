@@ -69,7 +69,7 @@ module LayoutEditor {
         constructor(cx: number, cy: number, w: number, h: number) {
             super();
 
-            this.shape = new RectShape(w, h);
+            this.shape = new RectShape("", w, h);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
             this.shape.setStyle(g_style);
@@ -82,7 +82,7 @@ module LayoutEditor {
         constructor(cx: number, cy: number, rx: number, ry: number) {
             super();
 
-            this.shape = new EllipseShape(rx, ry);
+            this.shape = new EllipseShape("", rx, ry);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
             this.shape.setStyle(g_style);

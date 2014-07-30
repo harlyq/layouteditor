@@ -29,7 +29,7 @@ module LayoutEditor {
     }
 
     export class RectTool extends DrawTool {
-        private rectShape: RectShape = new RectShape(0, 0);
+        private rectShape: RectShape = new RectShape("_RectTool", 0, 0);
         private x1: number = -1;
         private y1: number = -1;
         private x2: number = -1;
@@ -108,7 +108,7 @@ module LayoutEditor {
     }
 
     export class EllipseTool extends DrawTool {
-        private ellipseShape: EllipseShape = new EllipseShape(0, 0);
+        private ellipseShape: EllipseShape = new EllipseShape("_EllipseTool", 0, 0);
         private x1: number;
         private x2: number;
         private y1: number;

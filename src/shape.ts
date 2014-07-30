@@ -445,11 +445,21 @@ module LayoutEditor {
             return true;
         }
 
-        copy(base ? : Shape): Shape {
-            if (!base)
-                base = new Shape();
-            Helper.extend(base, this);
-            return base;
+        copy(other: Shape) {
+            this.style = other.style;
+            this.isDeleted = other.isDeleted;
+            this.isHidden = other.isHidden;
+            this.oabb.copy(other.oabb);
+            this.aabb.copy(other.aabb);
+            this.transform.copy(other.transform);
+            this.name = other.name;
+            this.text = other.text;
+        }
+
+        clone(): Shape {
+            var shape = new Shape();
+            shape.copy(this);
+            return shape;
         }
 
         // overloaded by specific shape
@@ -487,13 +497,18 @@ module LayoutEditor {
             ctx.restore();
         }
 
-        copy(base ? : RectShape): RectShape {
-            if (!base)
-                base = new RectShape(this.name, this.w, this.h);
-            super.copy(base);
-            Helper.extend(base, this);
-            return base;
+        copy(other: RectShape) {
+            super.copy(other);
+            this.w = other.w;
+            this.h = other.h;
         }
+
+        clone(): RectShape {
+            var shape = new RectShape(this.name, this.w, this.h);
+            shape.copy(this);
+            return shape;
+        }
+
 
         fromRect(x: number, y: number, w: number, h: number) {
             this.transform.tx = x + w * 0.5;
@@ -575,12 +590,16 @@ module LayoutEditor {
             ctx.restore();
         }
 
-        copy(base ? : EllipseShape): EllipseShape {
-            if (!base)
-                base = new EllipseShape(this.name, this.rx, this.ry);
-            super.copy(base);
-            Helper.extend(base, this);
-            return base;
+        copy(other: EllipseShape) {
+            super.copy(other);
+            this.rx = other.rx;
+            this.ry = other.ry;
+        }
+
+        clone(): EllipseShape {
+            var shape = new EllipseShape(this.name, this.rx, this.ry);
+            shape.copy(this);
+            return shape;
         }
 
         fromRect(x: number, y: number, w: number, h: number) {
@@ -648,12 +667,18 @@ module LayoutEditor {
             super();
         }
 
-        copy(base ? : AABBShape): AABBShape {
-            if (!base)
-                base = new AABBShape();
-            super.copy(base);
-            Helper.extend(base, this);
-            return base;
+        copy(other: AABBShape) {
+            super.copy(other);
+            this.x1 = other.x1;
+            this.y1 = other.y1;
+            this.x2 = other.x2;
+            this.y2 = other.y2;
+        }
+
+        clone(): AABBShape {
+            var shape = new AABBShape();
+            shape.copy(this);
+            return shape;
         }
 
         reset() {
@@ -743,18 +768,21 @@ module LayoutEditor {
         }
 
 
-        copy(base ? : GroupShape): GroupShape {
-            if (!base)
-                base = new GroupShape();
-            super.copy(base);
-            Helper.extend(base.lastTransform, this.lastTransform);
+        copy(other: GroupShape) {
+            super.copy(other);
+            this.lastTransform.copy(other.lastTransform);
 
             for (var i: number = 0; i < this.shapes.length; ++i) {
-                base.oldTransforms[i] = new Transform();
-                Helper.extend(base.oldTransforms[i], this.oldTransforms[i]);
-                base.shapes[i] = this.shapes[i].copy();
+                this.oldTransforms[i] = new Transform();
+                this.oldTransforms[i].copy(other.oldTransforms[i]);
+                this.shapes[i] = other.shapes[i].clone();
             }
-            return base;
+        }
+
+        clone(): GroupShape {
+            var shape = new GroupShape();
+            shape.copy(this);
+            return shape;
         }
 
         // shapes in this group will be drawn independently
@@ -898,6 +926,10 @@ module LayoutEditor {
             this.deletedShapes.length = 0;
         }
 
+        refresh() {
+            g_draw(this);
+        }
+
         addShapes(shapes: Shape[]) {
             for (var i: number = 0; i < shapes.length; ++i)
                 this.addShape(shapes[i]);
@@ -953,7 +985,7 @@ module LayoutEditor {
         }
 
         duplicateShape(shape: Shape): Shape {
-            var newShape: Shape = shape.copy();
+            var newShape: Shape = shape.clone();
             newShape.makeUnique();
 
             this.addShape(newShape);
@@ -1048,7 +1080,8 @@ module LayoutEditor {
         items: [{
             prop: 'name',
             match: '^[a-zA-Z]\\w*$',
-            isValid: (value) => {
+            allowMultiple: false,
+            isValid: function(value) {
                 return g_shapeList.isValidName(value);
             }
         }, {

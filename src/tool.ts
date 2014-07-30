@@ -734,7 +734,7 @@ module LayoutEditor {
                 case InteractionHelper.State.DoubleClick:
                     this.shape = g_shapeList.getShapeInXY(e.x, e.y);
                     if (this.shape) {
-                        this.editShape = this.shape.copy();
+                        this.editShape = this.shape.clone();
 
                         // TODO remove dependency on g_toolCtx
                         var left: string = this.shape.oabb.cx + g_toolCtx.canvas.offsetLeft + "px";

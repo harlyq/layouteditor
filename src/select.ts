@@ -98,9 +98,9 @@ module LayoutEditor {
             g_draw(this);
 
             if (this.selectedShapes.length > 0)
-                g_propertyPanel.setObject(this.selectedShapes[0], this.onPropertyChanged.bind(this));
+                g_propertyPanel.setObjects(this.selectedShapes, this.onPropertyChanged.bind(this));
             else
-                g_propertyPanel.setObject(null, null);
+                g_propertyPanel.setObjects([], null);
         }
 
         onPropertyChanged() {

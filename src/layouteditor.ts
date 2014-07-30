@@ -203,8 +203,9 @@ module LayoutEditor {
 
         stylePanel.setRootElem(document.getElementById("layoutStyles"));
         stylePanel.selectChanged.add(function(styleName) {
-            g_propertyPanel.setObject(g_styleList.getStyle(styleName), function() {
+            g_propertyPanel.setObjects([g_styleList.getStyle(styleName)], function() {
                 stylePanel.refresh();
+                g_shapeList.refresh();
             });
         });
 

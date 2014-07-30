@@ -135,7 +135,11 @@ module LayoutEditor {
 
         duplicateStyle(style: Style): Style {
             var newStyle: Style = new Style();
+            var styleName: string = newStyle.name;
+
             Helper.extend(newStyle, style);
+            newStyle.name = styleName;
+
             this.styles.push(newStyle);
 
             return newStyle;
@@ -208,7 +212,8 @@ module LayoutEditor {
         items: [{
             prop: 'name',
             match: '^[a-zA-Z]\\w*$',
-            isValid: (value) => {
+            allowMultiple: false,
+            isValid: function(value) {
                 return g_styleList.isValidName(value);
             }
         }, {

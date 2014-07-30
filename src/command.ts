@@ -52,7 +52,7 @@ module LayoutEditor {
         redo() {
             g_shapeList.addShape(this.shape);
             g_selectList.setSelectedShapes([this.shape]);
-            g_propertyPanel.setObject(this.shape, this.onPropertyChanged.bind(this));
+            g_propertyPanel.setObjects([this.shape], this.onPropertyChanged.bind(this));
         }
 
         undo() {

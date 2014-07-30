@@ -513,25 +513,50 @@ var LayoutEditor;
     LayoutEditor.g_draw = null;
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
-/// <reference path='_dependencies.ts' />
+/// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
     var PropertyBinding = (function () {
-        function PropertyBinding(object, prop) {
-            this.object = object;
+        function PropertyBinding(objects, prop) {
+            this.objects = objects;
             this.prop = prop;
             this.elem = null;
             this.state = "";
             this.editor = null;
             this.item = null;
         }
+        PropertyBinding.prototype.isValueSame = function () {
+            var objects = this.objects;
+            if (objects.length === 0)
+                return false;
+
+            var value = objects[0][this.prop];
+            for (var i = 1; i < objects.length; ++i) {
+                if (objects[i][this.prop] !== value)
+                    return false;
+            }
+
+            return true;
+        };
+
+        PropertyBinding.prototype.getValue = function () {
+            if (this.objects.length > 0)
+                return this.objects[0][this.prop];
+
+            return undefined;
+        };
+
+        PropertyBinding.prototype.setValue = function (value) {
+            for (var i = 0; i < this.objects.length; ++i)
+                this.objects[i][this.prop] = value;
+        };
         return PropertyBinding;
     })();
     LayoutEditor.PropertyBinding = PropertyBinding;
 
     var PropertyPanel = (function () {
         function PropertyPanel() {
-            this.object = null;
+            this.objects = [];
             this.propertyLists = [];
             this.width = 0;
             this.rootElem = null;
@@ -545,20 +570,32 @@ var LayoutEditor;
                 self.onClick(e);
             };
         }
+        PropertyPanel.prototype.isArraySame = function (a, b) {
+            if (a.length !== b.length)
+                return false;
+
+            for (var i = 0; i < a.length; ++i) {
+                if (a[i] !== b[i])
+                    return false;
+            }
+
+            return true;
+        };
+
         PropertyPanel.prototype.setRootElem = function (rootElem) {
             if (this.rootElem) {
-                this.rootElem.removeEventListener('click', this.clickHandler);
+                this.rootElem.removeEventListener("click", this.clickHandler);
             }
 
             this.rootElem = rootElem;
-            this.rootElem.addEventListener('click', this.clickHandler);
+            this.rootElem.addEventListener("click", this.clickHandler);
         };
 
-        PropertyPanel.prototype.setObject = function (obj, onChangeCallback) {
-            if (this.object !== obj) {
+        PropertyPanel.prototype.setObjects = function (objects, onChangeCallback) {
+            if (!this.isArraySame(this.objects, objects)) {
                 this.commitEditing();
 
-                this.object = obj;
+                this.objects = objects;
                 this.onChangeCallback = onChangeCallback;
                 this.bindings.length = 0;
 
@@ -567,8 +604,8 @@ var LayoutEditor;
                     rootElem.removeChild(rootElem.lastChild);
                 }
 
-                if (obj !== null)
-                    this.createBinding(obj, "", "object", null, this.rootElem);
+                if (objects.length > 0)
+                    this.createBinding(objects, "", "object", null, this.rootElem);
             }
 
             this.refresh();
@@ -578,11 +615,21 @@ var LayoutEditor;
             this.propertyLists.push(propertyList);
         };
 
-        PropertyPanel.prototype.getPropertyList = function (obj) {
+        PropertyPanel.prototype.getPropertyList = function (objects) {
+            if (objects.length === 0)
+                return null;
+
             for (var i = this.propertyLists.length - 1; i >= 0; --i) {
-                if (this.propertyLists[i].canHandle(obj))
-                    return this.propertyLists[i];
+                var thisList = this.propertyLists[i];
+                var canHandleAll = true;
+
+                for (var j = 0; canHandleAll && j < objects.length; ++j)
+                    canHandleAll = thisList.canHandle(objects[j]);
+
+                if (canHandleAll)
+                    return thisList;
             }
+            return null;
         };
 
         PropertyPanel.prototype.refresh = function () {
@@ -595,13 +642,13 @@ var LayoutEditor;
         PropertyPanel.prototype.onClick = function (e) {
             var elem = e.target;
             var idString = "";
-            while (elem && !elem.hasAttribute('data-id'))
+            while (elem && !elem.hasAttribute("data-id"))
                 elem = elem.parentNode;
 
             if (!elem)
                 return;
 
-            var id = parseInt(elem.getAttribute('data-id'));
+            var id = parseInt(elem.getAttribute("data-id"));
             var binding = this.bindings[id];
             if (binding) {
                 this.startEditing(binding);
@@ -635,8 +682,8 @@ var LayoutEditor;
             this.editors.push(editor);
         };
 
-        PropertyPanel.prototype.createBinding = function (object, prop, editorType, propItem, parentElem) {
-            var binding = new PropertyBinding(object, prop);
+        PropertyPanel.prototype.createBinding = function (objects, prop, editorType, propItem, parentElem) {
+            var binding = new PropertyBinding(objects, prop);
             this.bindings.push(binding);
 
             var id = this.bindings.length - 1;
@@ -651,7 +698,7 @@ var LayoutEditor;
                     binding.elem = elem;
 
                     if (elem)
-                        elem.setAttribute('data-id', id.toString());
+                        elem.setAttribute("data-id", id.toString());
                     break;
                 }
             }
@@ -667,7 +714,7 @@ var LayoutEditor;
             this.regExp = null;
         }
         TextPropertyEditor.prototype.setInputElem = function (elem) {
-            elem.classList.add('inputText');
+            elem.classList.add("inputText");
 
             elem.addEventListener("change", this.onChange.bind(this));
             elem.addEventListener("input", this.onInput.bind(this));
@@ -680,10 +727,10 @@ var LayoutEditor;
         };
 
         TextPropertyEditor.prototype.createElement = function (parentElem, binding) {
-            var textDiv = document.createElement('div');
-            textDiv.classList.add('propertyText');
-            var nameSpan = document.createElement('span');
-            var valueSpan = document.createElement('span');
+            var textDiv = document.createElement("div");
+            textDiv.classList.add("propertyText");
+            var nameSpan = document.createElement("span");
+            var valueSpan = document.createElement("span");
 
             nameSpan.innerHTML = binding.prop + ": ";
 
@@ -699,32 +746,40 @@ var LayoutEditor;
         };
 
         TextPropertyEditor.prototype.refresh = function (binding) {
-            binding.elem.lastChild.innerHTML = binding.object[binding.prop];
+            var valueSpan = binding.elem.lastChild;
+            var value = binding.getValue();
+            if (!binding.isValueSame())
+                value = "----";
+
+            valueSpan.innerHTML = value;
         };
 
         TextPropertyEditor.prototype.startEdit = function (binding) {
             var rectObject = binding.elem.lastChild.getBoundingClientRect();
 
-            this.inputText.style.top = rectObject.top + 'px';
-            this.inputText.style.left = rectObject.left + 'px';
-            this.inputText.value = binding.object[binding.prop].toString();
-            this.inputText.type = 'input';
+            var value = binding.getValue();
+            if (!binding.isValueSame())
+                value = "----";
+
+            this.inputText.style.top = rectObject.top + "px";
+            this.inputText.style.left = rectObject.left + "px";
+            this.inputText.value = value.toString();
+            this.inputText.type = "input";
 
             this.inputText.setSelectionRange(0, LayoutEditor.g_inputText.value.length);
             this.inputText.focus();
 
-            if (typeof binding.item.match !== 'undefined')
+            if (typeof binding.item.match !== "undefined")
                 this.regExp = new RegExp(binding.item.match);
         };
 
         TextPropertyEditor.prototype.commitEdit = function (binding) {
-            var isValid = binding.item.isValid;
-            if (typeof isValid === "undefined" || isValid(LayoutEditor.g_inputText.value)) {
-                binding.object[binding.prop] = LayoutEditor.g_inputText.value;
+            if (typeof binding.item.isValid === "undefined" || binding.item.isValid(LayoutEditor.g_inputText.value)) {
+                binding.setValue(LayoutEditor.g_inputText.value);
             }
 
             this.inputText.blur();
-            this.inputText.type = 'hidden';
+            this.inputText.type = "hidden";
             this.regExp = null;
 
             this.refresh(binding);
@@ -739,9 +794,9 @@ var LayoutEditor;
                 return;
 
             if (!this.regExp.test(LayoutEditor.g_inputText.value)) {
-                this.inputText.style.color = 'red';
+                this.inputText.style.color = "red";
             } else {
-                this.inputText.style.color = 'black';
+                this.inputText.style.color = "black";
             }
         };
         return TextPropertyEditor;
@@ -755,32 +810,44 @@ var LayoutEditor;
             return type === "object";
         };
 
+        ObjectPropertyEditor.prototype.getType = function (item, objects) {
+            if (objects.length === 0)
+                return undefined;
+
+            return item.type || typeof objects[0][item.prop];
+        };
+
         ObjectPropertyEditor.prototype.createElement = function (parentElem, binding) {
             var objectElem = null;
-            var object = binding.object;
+            var objects = binding.objects;
 
             if (binding.prop.length !== 0) {
                 // this is a sub-element
-                binding.state = 'closed';
-                objectElem = document.createElement('div');
+                binding.state = "closed";
+                objectElem = document.createElement("div");
                 objectElem.innerHTML = binding.prop;
-                objectElem.classList.add('propertyObject');
-                objectElem.setAttribute('data-state', binding.state);
+                objectElem.classList.add("propertyObject");
+                objectElem.setAttribute("data-state", binding.state);
 
                 parentElem.appendChild(objectElem);
                 parentElem = objectElem; // make this the new parent
 
-                object = object[binding.prop]; // inspect the object in this property
+                for (var i = 0; i < objects.length; ++i) {
+                    objects[i] = objects[i][binding.prop];
+                }
             }
 
-            var propertyList = LayoutEditor.g_propertyPanel.getPropertyList(object);
+            var propertyList = LayoutEditor.g_propertyPanel.getPropertyList(objects);
 
             for (var i = 0; i < propertyList.items.length; ++i) {
                 var propItem = propertyList.items[i];
                 var prop = propItem.prop;
-                var type = propItem.type || typeof object[prop];
+                var type = this.getType(propItem, objects);
 
-                LayoutEditor.g_propertyPanel.createBinding(object, prop, type, propItem, parentElem);
+                if (propItem.allowMultiple === false && objects.length !== 1)
+                    continue;
+
+                LayoutEditor.g_propertyPanel.createBinding(objects, prop, type, propItem, parentElem);
             }
 
             return objectElem;
@@ -791,9 +858,9 @@ var LayoutEditor;
         };
 
         ObjectPropertyEditor.prototype.startEdit = function (binding) {
-            var wasOpen = (binding.elem.getAttribute('data-state') === 'open');
-            binding.state = wasOpen ? 'closed' : 'open';
-            binding.elem.setAttribute('data-state', binding.state);
+            var wasOpen = (binding.elem.getAttribute("data-state") === "open");
+            binding.state = wasOpen ? "closed" : "open";
+            binding.elem.setAttribute("data-state", binding.state);
         };
 
         ObjectPropertyEditor.prototype.commitEdit = function (binding) {
@@ -808,15 +875,15 @@ var LayoutEditor;
         }
         // returns true if we can edit this type of property
         ListPropertyEditor.prototype.canEdit = function (type) {
-            return type === 'list';
+            return type === "list";
         };
 
         // creates an element for this binding
         ListPropertyEditor.prototype.createElement = function (parentElem, binding) {
-            var textDiv = document.createElement('div');
-            textDiv.classList.add('propertyText');
-            var nameSpan = document.createElement('span');
-            var valueSpan = document.createElement('span');
+            var textDiv = document.createElement("div");
+            textDiv.classList.add("propertyText");
+            var nameSpan = document.createElement("span");
+            var valueSpan = document.createElement("span");
 
             nameSpan.innerHTML = binding.prop + ": ";
 
@@ -833,13 +900,21 @@ var LayoutEditor;
 
         // refreshes the element in binding
         ListPropertyEditor.prototype.refresh = function (binding) {
-            var list = binding.item.getList();
-            var value = binding.object[binding.prop];
+            var valueSpan = binding.elem.lastChild;
 
-            for (var i = 0; i < list.length; ++i) {
-                if (list[i].value === value) {
-                    binding.elem.lastChild.innerHTML = list[i].name;
-                    break;
+            if (!binding.isValueSame()) {
+                valueSpan.innerHTML = "----";
+            } else {
+                value = binding.getValue();
+
+                var list = binding.item.getList();
+                var value = binding.getValue();
+
+                for (var i = 0; i < list.length; ++i) {
+                    if (list[i].value === value) {
+                        valueSpan.innerHTML = list[i].name;
+                        break;
+                    }
                 }
             }
         };
@@ -849,35 +924,33 @@ var LayoutEditor;
             var rectObject = binding.elem.lastChild.getBoundingClientRect();
 
             var list = binding.item.getList();
-            var selected = binding.object[binding.prop];
+            var value = binding.getValue();
+            if (!binding.isValueSame())
+                value = "----";
 
-            var inputSelect = document.createElement('select');
-            inputSelect.classList.add('inputSelect');
+            var inputSelect = document.createElement("select");
+            inputSelect.classList.add("inputSelect");
 
             for (var i = 0; i < list.length; ++i) {
                 var item = list[i];
-                var option = document.createElement('option');
+                var option = document.createElement("option");
 
-                option.setAttribute('value', item.name);
+                option.setAttribute("value", item.name);
                 option.innerHTML = item.name;
-                if (selected == item.value)
-                    option.setAttribute('selected', 'selected');
+                if (value == item.value)
+                    option.setAttribute("selected", "selected");
 
                 inputSelect.appendChild(option);
             }
             binding.elem.appendChild(inputSelect);
 
-            inputSelect.style.top = rectObject.top + 'px';
-            inputSelect.style.left = rectObject.left + 'px';
-
-            // inputSelect.style.height = '20px';
-            // inputSelect.style.width = '100px';
             var sizeStr = Math.min(10, list.length).toString();
-            inputSelect.setAttribute('size', sizeStr);
-            inputSelect.setAttribute('expandto', sizeStr);
 
-            inputSelect.addEventListener('change', this.onChange.bind(this));
-
+            inputSelect.style.top = rectObject.top + "px";
+            inputSelect.style.left = rectObject.left + "px";
+            inputSelect.setAttribute("size", sizeStr);
+            inputSelect.setAttribute("expandto", sizeStr);
+            inputSelect.addEventListener("change", this.onChange.bind(this));
             inputSelect.focus();
         };
 
@@ -889,11 +962,10 @@ var LayoutEditor;
         ListPropertyEditor.prototype.commitEdit = function (binding) {
             var inputSelect = binding.elem.lastChild;
             var list = binding.item.getList();
-            var isValid = binding.item.isValid;
             var value = list[inputSelect.selectedIndex].value;
 
-            if (typeof isValid === "undefined" || isValid(value)) {
-                binding.object[binding.prop] = value;
+            if (typeof binding.item.isValid === "undefined" || binding.item.isValid(value)) {
+                binding.setValue(value);
             }
 
             binding.elem.removeChild(inputSelect);
@@ -1055,7 +1127,11 @@ var LayoutEditor;
 
         StyleList.prototype.duplicateStyle = function (style) {
             var newStyle = new Style();
+            var styleName = newStyle.name;
+
             Helper.extend(newStyle, style);
+            newStyle.name = styleName;
+
             this.styles.push(newStyle);
 
             return newStyle;
@@ -1130,6 +1206,7 @@ var LayoutEditor;
             {
                 prop: 'name',
                 match: '^[a-zA-Z]\\w*$',
+                allowMultiple: false,
                 isValid: function (value) {
                     return LayoutEditor.g_styleList.isValidName(value);
                 }
@@ -1828,11 +1905,21 @@ var LayoutEditor;
             return true;
         };
 
-        Shape.prototype.copy = function (base) {
-            if (!base)
-                base = new Shape();
-            Helper.extend(base, this);
-            return base;
+        Shape.prototype.copy = function (other) {
+            this.style = other.style;
+            this.isDeleted = other.isDeleted;
+            this.isHidden = other.isHidden;
+            this.oabb.copy(other.oabb);
+            this.aabb.copy(other.aabb);
+            this.transform.copy(other.transform);
+            this.name = other.name;
+            this.text = other.text;
+        };
+
+        Shape.prototype.clone = function () {
+            var shape = new Shape();
+            shape.copy(this);
+            return shape;
         };
 
         // overloaded by specific shape
@@ -1875,12 +1962,16 @@ var LayoutEditor;
             ctx.restore();
         };
 
-        RectShape.prototype.copy = function (base) {
-            if (!base)
-                base = new RectShape(this.name, this.w, this.h);
-            _super.prototype.copy.call(this, base);
-            Helper.extend(base, this);
-            return base;
+        RectShape.prototype.copy = function (other) {
+            _super.prototype.copy.call(this, other);
+            this.w = other.w;
+            this.h = other.h;
+        };
+
+        RectShape.prototype.clone = function () {
+            var shape = new RectShape(this.name, this.w, this.h);
+            shape.copy(this);
+            return shape;
         };
 
         RectShape.prototype.fromRect = function (x, y, w, h) {
@@ -1965,12 +2056,16 @@ var LayoutEditor;
             ctx.restore();
         };
 
-        EllipseShape.prototype.copy = function (base) {
-            if (!base)
-                base = new EllipseShape(this.name, this.rx, this.ry);
-            _super.prototype.copy.call(this, base);
-            Helper.extend(base, this);
-            return base;
+        EllipseShape.prototype.copy = function (other) {
+            _super.prototype.copy.call(this, other);
+            this.rx = other.rx;
+            this.ry = other.ry;
+        };
+
+        EllipseShape.prototype.clone = function () {
+            var shape = new EllipseShape(this.name, this.rx, this.ry);
+            shape.copy(this);
+            return shape;
         };
 
         EllipseShape.prototype.fromRect = function (x, y, w, h) {
@@ -2035,12 +2130,18 @@ var LayoutEditor;
         function AABBShape() {
             _super.call(this);
         }
-        AABBShape.prototype.copy = function (base) {
-            if (!base)
-                base = new AABBShape();
-            _super.prototype.copy.call(this, base);
-            Helper.extend(base, this);
-            return base;
+        AABBShape.prototype.copy = function (other) {
+            _super.prototype.copy.call(this, other);
+            this.x1 = other.x1;
+            this.y1 = other.y1;
+            this.x2 = other.x2;
+            this.y2 = other.y2;
+        };
+
+        AABBShape.prototype.clone = function () {
+            var shape = new AABBShape();
+            shape.copy(this);
+            return shape;
         };
 
         AABBShape.prototype.reset = function () {
@@ -2130,18 +2231,21 @@ var LayoutEditor;
             }
         };
 
-        GroupShape.prototype.copy = function (base) {
-            if (!base)
-                base = new GroupShape();
-            _super.prototype.copy.call(this, base);
-            Helper.extend(base.lastTransform, this.lastTransform);
+        GroupShape.prototype.copy = function (other) {
+            _super.prototype.copy.call(this, other);
+            this.lastTransform.copy(other.lastTransform);
 
             for (var i = 0; i < this.shapes.length; ++i) {
-                base.oldTransforms[i] = new Transform();
-                Helper.extend(base.oldTransforms[i], this.oldTransforms[i]);
-                base.shapes[i] = this.shapes[i].copy();
+                this.oldTransforms[i] = new Transform();
+                this.oldTransforms[i].copy(other.oldTransforms[i]);
+                this.shapes[i] = other.shapes[i].clone();
             }
-            return base;
+        };
+
+        GroupShape.prototype.clone = function () {
+            var shape = new GroupShape();
+            shape.copy(this);
+            return shape;
         };
 
         // shapes in this group will be drawn independently
@@ -2285,6 +2389,10 @@ var LayoutEditor;
             this.deletedShapes.length = 0;
         };
 
+        ShapeList.prototype.refresh = function () {
+            LayoutEditor.g_draw(this);
+        };
+
         ShapeList.prototype.addShapes = function (shapes) {
             for (var i = 0; i < shapes.length; ++i)
                 this.addShape(shapes[i]);
@@ -2340,7 +2448,7 @@ var LayoutEditor;
         };
 
         ShapeList.prototype.duplicateShape = function (shape) {
-            var newShape = shape.copy();
+            var newShape = shape.clone();
             newShape.makeUnique();
 
             this.addShape(newShape);
@@ -2435,6 +2543,7 @@ var LayoutEditor;
             {
                 prop: 'name',
                 match: '^[a-zA-Z]\\w*$',
+                allowMultiple: false,
                 isValid: function (value) {
                     return LayoutEditor.g_shapeList.isValidName(value);
                 }
@@ -2544,9 +2653,9 @@ var LayoutEditor;
             LayoutEditor.g_draw(this);
 
             if (this.selectedShapes.length > 0)
-                LayoutEditor.g_propertyPanel.setObject(this.selectedShapes[0], this.onPropertyChanged.bind(this));
+                LayoutEditor.g_propertyPanel.setObjects(this.selectedShapes, this.onPropertyChanged.bind(this));
             else
-                LayoutEditor.g_propertyPanel.setObject(null, null);
+                LayoutEditor.g_propertyPanel.setObjects([], null);
         };
 
         SelectList.prototype.onPropertyChanged = function () {
@@ -2789,7 +2898,7 @@ var LayoutEditor;
         ShapeCommand.prototype.redo = function () {
             LayoutEditor.g_shapeList.addShape(this.shape);
             LayoutEditor.g_selectList.setSelectedShapes([this.shape]);
-            LayoutEditor.g_propertyPanel.setObject(this.shape, this.onPropertyChanged.bind(this));
+            LayoutEditor.g_propertyPanel.setObjects([this.shape], this.onPropertyChanged.bind(this));
         };
 
         ShapeCommand.prototype.undo = function () {
@@ -3686,7 +3795,7 @@ var LayoutEditor;
                 case 4 /* DoubleClick */:
                     this.shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
                     if (this.shape) {
-                        this.editShape = this.shape.copy();
+                        this.editShape = this.shape.clone();
 
                         // TODO remove dependency on g_toolCtx
                         var left = this.shape.oabb.cx + LayoutEditor.g_toolCtx.canvas.offsetLeft + "px";
@@ -4130,8 +4239,9 @@ var LayoutEditor;
 
         stylePanel.setRootElem(document.getElementById("layoutStyles"));
         stylePanel.selectChanged.add(function (styleName) {
-            LayoutEditor.g_propertyPanel.setObject(LayoutEditor.g_styleList.getStyle(styleName), function () {
+            LayoutEditor.g_propertyPanel.setObjects([LayoutEditor.g_styleList.getStyle(styleName)], function () {
                 stylePanel.refresh();
+                LayoutEditor.g_shapeList.refresh();
             });
         });
 

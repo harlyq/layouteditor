@@ -64,10 +64,14 @@ module LayoutEditor {
         private onChangeCallback: () => void = null;
 
         constructor() {
-            var self = this;
-            this.clickHandler = function(e) {
-                self.onClick(e);
-            }
+            this.clickHandler = this.onClick.bind(this);
+        }
+
+        reset() {
+            this.objects.length = 0;
+            this.editing = null;
+            this.bindings.length = 0;
+            this.onChangeCallback = null;
         }
 
         private isArraySame(a: any[], b: any[]): boolean {

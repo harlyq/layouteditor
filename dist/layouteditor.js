@@ -565,11 +565,15 @@ var LayoutEditor;
             this.bindings = [];
             this.editors = [];
             this.onChangeCallback = null;
-            var self = this;
-            this.clickHandler = function (e) {
-                self.onClick(e);
-            };
+            this.clickHandler = this.onClick.bind(this);
         }
+        PropertyPanel.prototype.reset = function () {
+            this.objects.length = 0;
+            this.editing = null;
+            this.bindings.length = 0;
+            this.onChangeCallback = null;
+        };
+
         PropertyPanel.prototype.isArraySame = function (a, b) {
             if (a.length !== b.length)
                 return false;
@@ -1148,7 +1152,7 @@ var LayoutEditor;
             return index !== -1;
         };
 
-        StyleList.prototype.isValidName = function (styleName) {
+        StyleList.prototype.isValidStyleName = function (styleName) {
             for (var i = 0; i < this.styles.length; ++i) {
                 if (this.styles[i].name === styleName)
                     return false;
@@ -1158,6 +1162,7 @@ var LayoutEditor;
 
         StyleList.prototype.saveData = function () {
             var obj = {
+                type: "StyleList",
                 styles: []
             };
 
@@ -1169,6 +1174,8 @@ var LayoutEditor;
         };
 
         StyleList.prototype.loadData = function (obj) {
+            Helper.assert(obj.type === "StyleList");
+
             this.reset();
             this.styles.length = 0; // we will load the default style
 
@@ -1208,7 +1215,7 @@ var LayoutEditor;
                 match: '^[a-zA-Z]\\w*$',
                 allowMultiple: false,
                 isValid: function (value) {
-                    return LayoutEditor.g_styleList.isValidName(value);
+                    return LayoutEditor.g_styleList.isValidStyleName(value);
                 }
             }, {
                 prop: "strokeColor",
@@ -1335,11 +1342,10 @@ var LayoutEditor;
             this.reset();
             Helper.extend(this, obj);
         };
+        PanZoom.none = new PanZoom();
         return PanZoom;
     })();
     LayoutEditor.PanZoom = PanZoom;
-    LayoutEditor.g_panZoom = new PanZoom();
-    LayoutEditor.g_noPanZoom = new PanZoom();
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -1390,6 +1396,7 @@ var LayoutEditor;
                     height: 385
                 }];
             this.screenType = null;
+            this.screenChanged = new Helper.Callback();
             this.screenType = this.getScreenType(1 /* iPhone_Portrait */);
         }
         Screen.prototype.getScreenType = function (platform) {
@@ -1406,7 +1413,7 @@ var LayoutEditor;
             var screenType = this.getScreenType(platform);
             if (screenType !== null) {
                 this.screenType = screenType;
-                LayoutEditor.g_draw(this);
+                this.screenChanged.fire(screenType);
             }
         };
 
@@ -1414,15 +1421,16 @@ var LayoutEditor;
             return this.screenType.platform;
         };
 
-        Screen.prototype.draw = function (ctx) {
+        Screen.prototype.draw = function (ctx, panZoom) {
             if (!this.screenType)
                 return;
 
             ctx.strokeStyle = "black";
             ctx.lineWidth = 1;
+            ctx.setLineDash([]);
 
             ctx.save();
-            LayoutEditor.g_panZoom.transform(ctx);
+            panZoom.transform(ctx);
 
             ctx.beginPath();
             ctx.rect(0, 0, this.screenType.width, this.screenType.height);
@@ -1450,8 +1458,6 @@ var LayoutEditor;
         var Platform = Screen.Platform;
     })(LayoutEditor.Screen || (LayoutEditor.Screen = {}));
     var Screen = LayoutEditor.Screen;
-
-    LayoutEditor.g_screen = new Screen();
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 var __extends = this.__extends || function (d, b) {
@@ -1725,13 +1731,13 @@ var LayoutEditor;
     var Shape = (function () {
         function Shape(name) {
             this.style = LayoutEditor.g_style;
-            this.isDeleted = false;
-            this.isHidden = false;
             this.oabb = new Bounds();
             this.aabb = new Bounds();
             this.transform = new Transform();
             this.name = "";
             this.text = "";
+            this.layer = null;
+            this.onChanged = new Helper.Callback();
             if (typeof name === "undefined" || name.length === 0)
                 this.makeUnique();
             else
@@ -1741,12 +1747,8 @@ var LayoutEditor;
             this.name = "Shape" + Shape.uniqueID++;
         };
 
-        Shape.prototype.setStyle = function (style) {
-            this.style = style;
-        };
-
-        Shape.prototype.getStyle = function () {
-            return this.style;
+        Shape.prototype.refresh = function () {
+            this.calculateBounds();
         };
 
         Shape.prototype.draw = function (ctx, panZoom) {
@@ -1766,20 +1768,20 @@ var LayoutEditor;
         Shape.prototype.buildPath = function (ctx, panZoom) {
         };
 
-        Shape.prototype.drawSelect = function (ctx) {
+        Shape.prototype.drawSelect = function (ctx, panZoom) {
             var oabb = this.oabb;
             ctx.save();
-            LayoutEditor.g_panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
+            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
             ctx.beginPath();
             ctx.rect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
             ctx.restore();
             ctx.stroke();
         };
 
-        Shape.prototype.drawAABB = function (ctx) {
+        Shape.prototype.drawAABB = function (ctx, panZoom) {
             var aabb = this.aabb;
             ctx.save();
-            LayoutEditor.g_panZoom.transform(ctx);
+            panZoom.transform(ctx);
             ctx.beginPath();
             ctx.rect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
             ctx.restore();
@@ -1846,7 +1848,7 @@ var LayoutEditor;
         };
 
         Shape.prototype.isInsideXY = function (ctx, x, y) {
-            this.buildPath(ctx, LayoutEditor.g_noPanZoom);
+            this.buildPath(ctx, LayoutEditor.PanZoom.none);
             return ctx.isPointInPath(x, y);
         };
 
@@ -1907,13 +1909,12 @@ var LayoutEditor;
 
         Shape.prototype.copy = function (other) {
             this.style = other.style;
-            this.isDeleted = other.isDeleted;
-            this.isHidden = other.isHidden;
             this.oabb.copy(other.oabb);
             this.aabb.copy(other.aabb);
             this.transform.copy(other.transform);
             this.name = other.name;
             this.text = other.text;
+            this.layer = other.layer;
         };
 
         Shape.prototype.clone = function () {
@@ -2223,14 +2224,6 @@ var LayoutEditor;
             this.encloseShapes();
         };
 
-        GroupShape.prototype.setStyle = function (style) {
-            _super.prototype.setStyle.call(this, style);
-
-            for (var i = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].setStyle(style);
-            }
-        };
-
         GroupShape.prototype.copy = function (other) {
             _super.prototype.copy.call(this, other);
             this.lastTransform.copy(other.lastTransform);
@@ -2249,17 +2242,17 @@ var LayoutEditor;
         };
 
         // shapes in this group will be drawn independently
-        GroupShape.prototype.draw = function (ctx) {
+        GroupShape.prototype.draw = function (ctx, panZoom) {
         };
 
         // use a standard draw for the subelements, when selected
-        GroupShape.prototype.drawSelect = function (ctx) {
+        GroupShape.prototype.drawSelect = function (ctx, panZoom) {
             if (this.shapes.length === 0)
                 return;
 
             // draw the bounds
             LayoutEditor.g_selectStyle.drawShape(ctx);
-            _super.prototype.drawSelect.call(this, ctx);
+            _super.prototype.drawSelect.call(this, ctx, panZoom);
         };
 
         // check each sub-shape individually
@@ -2377,164 +2370,6 @@ var LayoutEditor;
     })(Shape);
     LayoutEditor.GroupShape = GroupShape;
 
-    //------------------------------
-    var ShapeList = (function () {
-        function ShapeList() {
-            this.shapes = [];
-            this.deletedShapes = [];
-            this.hitCtx = document.createElement("canvas").getContext("2d");
-        }
-        ShapeList.prototype.reset = function () {
-            this.shapes.length = 0;
-            this.deletedShapes.length = 0;
-        };
-
-        ShapeList.prototype.refresh = function () {
-            LayoutEditor.g_draw(this);
-        };
-
-        ShapeList.prototype.addShapes = function (shapes) {
-            for (var i = 0; i < shapes.length; ++i)
-                this.addShape(shapes[i]);
-        };
-
-        ShapeList.prototype.removeShapes = function (shapes) {
-            for (var i = 0; i < shapes.length; ++i)
-                this.removeShape(shapes[i]);
-        };
-
-        ShapeList.prototype.addShape = function (shape) {
-            shape.isDeleted = false;
-
-            // add the shape if not already present
-            var shapeIndex = this.shapes.indexOf(shape);
-            if (shapeIndex === -1)
-                this.shapes.push(shape);
-
-            // undelete the shape if necessary
-            var deletedIndex = this.deletedShapes.indexOf(shape);
-            if (deletedIndex !== -1)
-                this.deletedShapes.splice(deletedIndex, 1);
-
-            LayoutEditor.g_draw(this);
-        };
-
-        ShapeList.prototype.removeShape = function (shape) {
-            shape.isDeleted = true;
-
-            var shapeIndex = this.shapes.indexOf(shape);
-            if (shapeIndex !== -1)
-                this.shapes.splice(shapeIndex, 1);
-
-            var deletedIndex = this.deletedShapes.indexOf(shape);
-            if (deletedIndex === -1)
-                this.deletedShapes.push(shape);
-
-            LayoutEditor.g_draw(this);
-        };
-
-        ShapeList.prototype.hideShapes = function (shapes) {
-            for (var i = 0; i < shapes.length; ++i) {
-                shapes[i].isHidden = true;
-            }
-            LayoutEditor.g_draw(this);
-        };
-
-        ShapeList.prototype.showShapes = function (shapes) {
-            for (var i = 0; i < shapes.length; ++i) {
-                shapes[i].isHidden = false;
-            }
-            LayoutEditor.g_draw(this);
-        };
-
-        ShapeList.prototype.duplicateShape = function (shape) {
-            var newShape = shape.clone();
-            newShape.makeUnique();
-
-            this.addShape(newShape);
-            return newShape;
-        };
-
-        ShapeList.prototype.draw = function (ctx) {
-            // normal shapes
-            var numShapes = this.shapes.length;
-            for (var i = 0; i < numShapes; ++i) {
-                var shape = this.shapes[i];
-                if (!shape.isHidden)
-                    shape.draw(ctx, LayoutEditor.g_panZoom);
-            }
-        };
-
-        ShapeList.prototype.getShapeInXY = function (x, y) {
-            for (var i = this.shapes.length - 1; i >= 0; --i) {
-                var shape = this.shapes[i];
-                if (!shape.isHidden && shape.isInsideXY(this.hitCtx, x, y))
-                    return shape;
-            }
-
-            return null;
-        };
-
-        ShapeList.prototype.getShapesInBounds = function (bounds) {
-            var shapes = [];
-
-            for (var i = 0; i < this.shapes.length; ++i) {
-                var shape = this.shapes[i];
-                if (!shape.isHidden && shape.isOverlapBounds(bounds)) {
-                    shape.isOverlapBounds(bounds);
-                    shapes.push(shape);
-                }
-            }
-
-            return shapes;
-        };
-
-        ShapeList.prototype.create = function (type) {
-            switch (type) {
-                case "RectShape":
-                    return new RectShape("", 0, 0);
-                case "EllipseShape":
-                    return new EllipseShape("", 0, 0);
-                case "AABBShape":
-                    return new AABBShape();
-            }
-        };
-
-        ShapeList.prototype.isValidName = function (shapeName) {
-            for (var i = 0; i < this.shapes.length; ++i) {
-                if (this.shapes[i].name === shapeName)
-                    return false;
-            }
-            return true;
-        };
-
-        ShapeList.prototype.saveData = function () {
-            var obj = {
-                shapes: []
-            };
-            for (var i = 0; i < this.shapes.length; ++i) {
-                var shape = this.shapes[i];
-                obj.shapes.push(shape.saveData());
-            }
-            return obj;
-        };
-
-        ShapeList.prototype.loadData = function (obj) {
-            this.reset();
-            for (var i = 0; i < obj.shapes.length; ++i) {
-                var shapeSave = obj.shapes[i];
-                var newShape = this.create(shapeSave.type);
-                newShape.loadData(shapeSave);
-                newShape.calculateBounds();
-                LayoutEditor.g_shapeList.addShape(newShape);
-            }
-        };
-        return ShapeList;
-    })();
-    LayoutEditor.ShapeList = ShapeList;
-
-    LayoutEditor.g_shapeList = new ShapeList();
-
     LayoutEditor.g_propertyPanel.addPropertyList({
         canHandle: function (obj) {
             return obj instanceof Shape;
@@ -2543,10 +2378,7 @@ var LayoutEditor;
             {
                 prop: 'name',
                 match: '^[a-zA-Z]\\w*$',
-                allowMultiple: false,
-                isValid: function (value) {
-                    return LayoutEditor.g_shapeList.isValidName(value);
-                }
+                allowMultiple: false
             }, {
                 prop: 'style',
                 type: 'list',
@@ -2561,11 +2393,284 @@ var LayoutEditor;
 var LayoutEditor;
 (function (LayoutEditor) {
     //------------------------------
+    var Layer = (function () {
+        function Layer(name) {
+            if (typeof name === "undefined") { name = ""; }
+            this.name = name;
+            this.shapes = [];
+            this.id = 0;
+            this.ctx = null;
+            this.canvas = null;
+            this.id = Layer.uniqueID++;
+        }
+        Layer.prototype.reset = function () {
+            this.shapes.length = 0;
+        };
+
+        Layer.prototype.createCanvas = function (parentElem, width, height) {
+            this.canvas = document.createElement("canvas");
+            this.canvas.classList.add("layout");
+            this.canvas.setAttribute("data-id", this.id);
+            this.canvas.width = width;
+            this.canvas.height = height;
+            this.ctx = this.canvas.getContext("2d");
+            if (parentElem !== null)
+                parentElem.appendChild(this.canvas);
+        };
+
+        Layer.prototype.destroyCanvas = function (parentElem) {
+            if (parentElem) {
+                var oldElem = parentElem.querySelector('canvas[data-id="' + this.id + '"]');
+                if (oldElem !== null)
+                    parentElem.removeChild(oldElem);
+            }
+        };
+
+        Layer.prototype.draw = function (panZoom) {
+            this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+            for (var i = 0; i < this.shapes.length; ++i)
+                this.shapes[i].draw(this.ctx, panZoom);
+        };
+
+        Layer.prototype.addShapes = function (shapes) {
+            for (var i = 0; i < shapes.length; ++i)
+                this.addShape(shapes[i]);
+        };
+
+        Layer.prototype.removeShapes = function (shapes) {
+            for (var i = 0; i < shapes.length; ++i)
+                this.removeShape(shapes[i]);
+        };
+
+        Layer.prototype.addShape = function (shape) {
+            var shapeIndex = this.shapes.indexOf(shape);
+            if (shapeIndex !== -1)
+                return;
+
+            if (shape.layer !== null)
+                shape.layer.removeShape(shape);
+
+            this.shapes.push(shape);
+            shape.layer = this;
+        };
+
+        Layer.prototype.removeShape = function (shape) {
+            shape.layer = null;
+
+            var shapeIndex = this.shapes.indexOf(shape);
+            if (shapeIndex !== -1)
+                this.shapes.splice(shapeIndex, 1);
+        };
+
+        Layer.prototype.duplicateShape = function (shape) {
+            var newShape = shape.clone();
+            newShape.makeUnique();
+
+            this.addShape(newShape);
+            return newShape;
+        };
+
+        Layer.prototype.getShapeInXY = function (x, y) {
+            for (var i = this.shapes.length - 1; i >= 0; --i) {
+                var shape = this.shapes[i];
+                if (shape.isInsideXY(this.ctx, x, y))
+                    return shape;
+            }
+
+            return null;
+        };
+
+        Layer.prototype.getShapesInBounds = function (bounds) {
+            var shapes = [];
+
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                if (shape.isOverlapBounds(bounds)) {
+                    shape.isOverlapBounds(bounds);
+                    shapes.push(shape);
+                }
+            }
+
+            return shapes;
+        };
+
+        Layer.prototype.createShape = function (type) {
+            switch (type) {
+                case "RectShape":
+                    return new LayoutEditor.RectShape("", 0, 0);
+                case "EllipseShape":
+                    return new LayoutEditor.EllipseShape("", 0, 0);
+                case "AABBShape":
+                    return new LayoutEditor.AABBShape();
+            }
+        };
+
+        Layer.prototype.saveData = function () {
+            var obj = {
+                type: "layer",
+                name: this.name,
+                shapes: []
+            };
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                obj.shapes.push(shape.saveData());
+            }
+            return obj;
+        };
+
+        Layer.prototype.loadData = function (obj) {
+            Helper.assert(obj.type === "layer");
+
+            this.reset();
+            this.name = obj.name;
+
+            for (var i = 0; i < obj.shapes.length; ++i) {
+                var shapeSave = obj.shapes[i];
+                var newShape = this.createShape(shapeSave.type);
+
+                newShape.loadData(shapeSave);
+                newShape.refresh();
+
+                this.addShape(newShape);
+            }
+        };
+        Layer.uniqueID = 1;
+        return Layer;
+    })();
+    LayoutEditor.Layer = Layer;
+})(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
+/// <reference path="_dependencies.ts" />
+var LayoutEditor;
+(function (LayoutEditor) {
+    //------------------------------
+    var Page = (function () {
+        function Page() {
+            this.layers = [];
+            this.width = 0;
+            this.height = 0;
+            this.parentElem = null;
+            this.panZoom = new LayoutEditor.PanZoom();
+            this.requestDrawList = [];
+        }
+        Page.prototype.setRootElem = function (parentElem, width, height) {
+            this.parentElem = parentElem;
+            this.width = width;
+            this.height = height;
+
+            for (var i = 0; i < this.layers.length; ++i)
+                this.layers[i].createCanvas(parentElem, this.width, this.height);
+        };
+
+        Page.prototype.reset = function () {
+            for (var i = 0; i < this.layers.length; ++i)
+                this.layers[i].destroyCanvas(this.parentElem);
+
+            this.layers.length = 0;
+            this.panZoom.reset();
+        };
+
+        Page.prototype.refresh = function () {
+            // do nothing
+        };
+
+        Page.prototype.requestDraw = function (layer) {
+            var index = this.requestDrawList.indexOf(layer);
+            if (index !== -1)
+                return;
+
+            this.requestDrawList.push(layer);
+            if (this.requestDrawList.length !== 1)
+                return;
+
+            var self = this;
+            requestAnimationFrame(function () {
+                for (var i = 0; i < self.requestDrawList.length; ++i) {
+                    self.draw(self.requestDrawList[i]);
+                }
+                self.requestDrawList.length = 0;
+            });
+        };
+
+        Page.prototype.draw = function (layer) {
+            if (typeof layer === "undefined") {
+                for (var i = 0; i < this.layers.length; ++i)
+                    this.layers[i].draw(this.panZoom);
+            } else {
+                layer.draw(this.panZoom);
+            }
+        };
+
+        Page.prototype.addLayer = function (layer) {
+            this.layers.push(layer);
+            layer.createCanvas(this.parentElem, this.width, this.height);
+        };
+
+        Page.prototype.removeLayer = function (layer) {
+            var index = this.layers.indexOf(layer);
+            if (index !== -1) {
+                this.layers[index].destroyCanvas(this.parentElem);
+                this.layers.splice(index, 1);
+            }
+        };
+
+        Page.prototype.isValidShapeName = function (shapeName) {
+            for (var j = 0; j < this.layers.length; ++j) {
+                var layer = this.layers[j];
+
+                for (var i = 0; i < layer.shapes.length; ++i) {
+                    if (layer.shapes[i].name === shapeName)
+                        return false;
+                }
+            }
+            return true;
+        };
+
+        Page.prototype.saveData = function () {
+            var obj = {
+                type: "page",
+                panZoom: this.panZoom.saveData(),
+                layers: []
+            };
+            for (var i = 0; i < this.layers.length; ++i) {
+                obj.layers.push(this.layers[i].saveData());
+            }
+            return obj;
+        };
+
+        Page.prototype.loadData = function (obj) {
+            Helper.assert(obj.type === "page");
+
+            this.reset();
+            this.panZoom.loadData(obj.panZoom);
+
+            for (var i = 0; i < obj.layers.length; ++i) {
+                var layerSave = obj.layers[i];
+                var newLayer = new LayoutEditor.Layer();
+                newLayer.loadData(layerSave);
+                this.addLayer(newLayer);
+            }
+        };
+        return Page;
+    })();
+    LayoutEditor.Page = Page;
+})(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
+/// <reference path="_dependencies.ts" />
+var LayoutEditor;
+(function (LayoutEditor) {
+    //------------------------------
     var SelectList = (function () {
         function SelectList() {
             this.selectedShapes = [];
             this.selectGroup = new LayoutEditor.GroupShape("Select");
+            this.layer = null;
+            this.selectChanged = new Helper.Callback();
         }
+        SelectList.prototype.setLayer = function (layer) {
+            this.layer = layer;
+        };
+
         SelectList.prototype.reset = function () {
             this.selectedShapes.length = 0;
         };
@@ -2612,27 +2717,21 @@ var LayoutEditor;
 
         // deletes all of the selected shapes
         SelectList.prototype.deleteSelected = function () {
-            for (var i = this.selectedShapes.length - 1; i >= 0; --i) {
-                LayoutEditor.g_shapeList.removeShape(this.selectedShapes[i]);
+            for (var i = 0; i < this.selectedShapes.length; ++i) {
+                var shape = this.selectedShapes[i];
+                shape.layer.removeShape(shape);
             }
             this.selectedShapes.length = 0;
 
             this.rebuildSelectGroup();
         };
 
-        SelectList.prototype.showSelected = function () {
-            LayoutEditor.g_shapeList.showShapes(this.selectedShapes);
-        };
-
-        SelectList.prototype.hideSelected = function () {
-            LayoutEditor.g_shapeList.hideShapes(this.selectedShapes);
-        };
-
         // duplicates all of the selected shapes
         SelectList.prototype.duplicateSelected = function () {
             var copyShapes = [];
             for (var i = 0; i < this.selectedShapes.length; ++i) {
-                var copyShape = LayoutEditor.g_shapeList.duplicateShape(this.selectedShapes[i]);
+                var shape = this.selectedShapes[i];
+                var copyShape = shape.layer.duplicateShape(shape);
                 copyShape.transform.tx += 20;
                 copyShape.calculateBounds();
                 copyShapes.push(copyShape);
@@ -2642,30 +2741,18 @@ var LayoutEditor;
             return copyShapes;
         };
 
-        SelectList.prototype.draw = function (ctx) {
-            this.selectGroup.drawSelect(ctx);
+        SelectList.prototype.draw = function (ctx, panZoom) {
+            this.selectGroup.drawSelect(ctx, panZoom);
         };
 
         SelectList.prototype.rebuildSelectGroup = function () {
             this.selectGroup.reset();
             this.selectGroup.setShapes(this.selectedShapes);
-
-            LayoutEditor.g_draw(this);
-
-            if (this.selectedShapes.length > 0)
-                LayoutEditor.g_propertyPanel.setObjects(this.selectedShapes, this.onPropertyChanged.bind(this));
-            else
-                LayoutEditor.g_propertyPanel.setObjects([], null);
-        };
-
-        SelectList.prototype.onPropertyChanged = function () {
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
+            this.selectChanged.fire(this.selectedShapes);
         };
         return SelectList;
     })();
     LayoutEditor.SelectList = SelectList;
-
-    LayoutEditor.g_selectList = new SelectList();
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -2778,7 +2865,7 @@ var LayoutEditor;
             };
         };
 
-        Grid.prototype.rebuildTabs = function (excludeShapes) {
+        Grid.prototype.rebuildTabs = function (layers, excludeShapes) {
             if (typeof excludeShapes === "undefined") { excludeShapes = []; }
             if (!this.snapToShape)
                 return;
@@ -2786,34 +2873,38 @@ var LayoutEditor;
             this.xTabs.length = 0;
             this.yTabs.length = 0;
 
-            for (var i = 0; i < LayoutEditor.g_shapeList.shapes.length; ++i) {
-                var shape = LayoutEditor.g_shapeList.shapes[i];
-                if (shape.isHidden || excludeShapes.indexOf(shape) !== -1)
-                    continue;
+            for (var j = 0; j < layers.length; ++j) {
+                var layer = layers[j];
 
-                var polygon = shape.aabb.toPolygon();
-                var x1 = Helper.arrayMin(polygon, 0, 2);
-                var x2 = Helper.arrayMax(polygon, 0, 2);
-                var y1 = Helper.arrayMin(polygon, 1, 2);
-                var y2 = Helper.arrayMax(polygon, 1, 2);
-                var cx = (x1 + x2) * 0.5;
-                var cy = (y1 + y2) * 0.5;
+                for (var i = 0; i < layer.shapes.length; ++i) {
+                    var shape = layer.shapes[i];
+                    if (excludeShapes.indexOf(shape) !== -1)
+                        continue;
 
-                insertSortedUnique(this.xTabs, x1);
-                insertSortedUnique(this.xTabs, x2);
-                insertSortedUnique(this.xTabs, cx);
-                insertSortedUnique(this.yTabs, y1);
-                insertSortedUnique(this.yTabs, y2);
-                insertSortedUnique(this.yTabs, cy);
+                    var polygon = shape.aabb.toPolygon();
+                    var x1 = Helper.arrayMin(polygon, 0, 2);
+                    var x2 = Helper.arrayMax(polygon, 0, 2);
+                    var y1 = Helper.arrayMin(polygon, 1, 2);
+                    var y2 = Helper.arrayMax(polygon, 1, 2);
+                    var cx = (x1 + x2) * 0.5;
+                    var cy = (y1 + y2) * 0.5;
+
+                    insertSortedUnique(this.xTabs, x1);
+                    insertSortedUnique(this.xTabs, x2);
+                    insertSortedUnique(this.xTabs, cx);
+                    insertSortedUnique(this.yTabs, y1);
+                    insertSortedUnique(this.yTabs, y2);
+                    insertSortedUnique(this.yTabs, cy);
+                }
             }
         };
 
-        Grid.prototype.draw = function (ctx) {
+        Grid.prototype.draw = function (ctx, panZoom) {
             if (this.snappedX !== undefined || this.snappedY !== undefined) {
                 LayoutEditor.g_snapStyle.drawShape(ctx);
 
                 ctx.save();
-                LayoutEditor.g_panZoom.transform(ctx);
+                panZoom.transform(ctx);
 
                 ctx.beginPath();
 
@@ -2852,12 +2943,107 @@ var LayoutEditor;
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
+    //------------------------------
+    var ToolLayer = (function (_super) {
+        __extends(ToolLayer, _super);
+        function ToolLayer() {
+            _super.call(this);
+            this.screen = new LayoutEditor.Screen();
+            this.selectList = new LayoutEditor.SelectList();
+            this.grid = new LayoutEditor.Grid();
+            this.commandList = new LayoutEditor.CommandList();
+            this.style = null;
+            this.page = null;
+            this.hasRequestDraw = false;
+            this._layer = null;
+
+            var self = this;
+            this.screen.screenChanged.add(function (screenType) {
+                self.draw();
+            });
+        }
+        Object.defineProperty(ToolLayer.prototype, "layer", {
+            get: function () {
+                return this._layer;
+            },
+            set: function (val) {
+                this._layer = val;
+                this.selectList.layer = val;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        ToolLayer.prototype.reset = function () {
+            //this.screen.reset();
+            this.selectList.reset();
+
+            //this.grid.reset();
+            this.commandList.reset();
+
+            //this.style.reset();
+            this.style = LayoutEditor.g_styleList.styles[0]; // HACK
+        };
+
+        ToolLayer.prototype.draw = function () {
+            var panZoom = this.page.panZoom;
+            _super.prototype.draw.call(this, panZoom); // must be first, clears the ctx
+
+            var ctx = this.ctx;
+            this.screen.draw(ctx, panZoom);
+            this.grid.draw(ctx, panZoom);
+            this.selectList.draw(ctx, panZoom);
+            this.hasRequestDraw = false;
+        };
+
+        ToolLayer.prototype.undo = function () {
+            this.commandList.undo();
+        };
+
+        ToolLayer.prototype.redo = function () {
+            this.commandList.redo();
+        };
+
+        ToolLayer.prototype.requestDraw = function () {
+            if (this.hasRequestDraw)
+                return;
+            this.hasRequestDraw = true;
+
+            requestAnimationFrame(this.draw.bind(this));
+        };
+
+        ToolLayer.prototype.moveSelectToToolLayer = function () {
+            this.addShapes(this.selectList.selectedShapes);
+            this.page.requestDraw(this._layer);
+        };
+
+        ToolLayer.prototype.moveSelectToLayer = function () {
+            this._layer.addShapes(this.selectList.selectedShapes);
+            this.page.requestDraw(this._layer);
+        };
+
+        ToolLayer.prototype.createCanvas = function (parentElem, width, height) {
+            _super.prototype.createCanvas.call(this, parentElem, width, height);
+            this.canvas.style.zIndex = "1000"; // tool layer always on top
+        };
+        return ToolLayer;
+    })(LayoutEditor.Layer);
+    LayoutEditor.ToolLayer = ToolLayer;
+})(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
+/// <reference path="_dependencies.ts" />
+var LayoutEditor;
+(function (LayoutEditor) {
     
 
     var CommandList = (function () {
         function CommandList() {
             this.commands = [];
             this.currentIndex = 0;
+            // globals
+            this.layer = null;
+            this.propertyPanel = null;
+            this.style = null;
         }
         CommandList.prototype.addCommand = function (command) {
             this.commands.length = this.currentIndex; // clip to the current undo level
@@ -2889,25 +3075,24 @@ var LayoutEditor;
         return CommandList;
     })();
     LayoutEditor.CommandList = CommandList;
-    LayoutEditor.g_commandList = new CommandList();
 
     var ShapeCommand = (function () {
-        function ShapeCommand() {
+        function ShapeCommand(page, layer) {
+            this.page = page;
+            this.layer = layer;
             this.shape = null;
         }
         ShapeCommand.prototype.redo = function () {
-            LayoutEditor.g_shapeList.addShape(this.shape);
-            LayoutEditor.g_selectList.setSelectedShapes([this.shape]);
-            LayoutEditor.g_propertyPanel.setObjects([this.shape], this.onPropertyChanged.bind(this));
+            this.layer.addShape(this.shape);
+            this.page.requestDraw(this.layer);
+            // this.commandList.selectList.setSelectedShapes([this.shape]);
+            // this.commandList.propertyPanel.setObjects([this.shape], this.onPropertyChanged.bind(this));
         };
 
         ShapeCommand.prototype.undo = function () {
-            LayoutEditor.g_shapeList.removeShape(this.shape);
+            this.layer.removeShape(this.shape);
+            this.page.requestDraw(this.layer);
             // what do we set the property panel to display?
-        };
-
-        ShapeCommand.prototype.onPropertyChanged = function () {
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
         };
         return ShapeCommand;
     })();
@@ -2915,13 +3100,13 @@ var LayoutEditor;
 
     var RectCommand = (function (_super) {
         __extends(RectCommand, _super);
-        function RectCommand(cx, cy, w, h) {
-            _super.call(this);
+        function RectCommand(page, layer, cx, cy, w, h, style) {
+            _super.call(this, page, layer);
 
             this.shape = new LayoutEditor.RectShape("", w, h);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
-            this.shape.setStyle(LayoutEditor.g_style);
+            this.shape.style = style;
             this.shape.calculateBounds();
         }
         return RectCommand;
@@ -2930,13 +3115,13 @@ var LayoutEditor;
 
     var EllipseCommand = (function (_super) {
         __extends(EllipseCommand, _super);
-        function EllipseCommand(cx, cy, rx, ry) {
-            _super.call(this);
+        function EllipseCommand(page, layer, cx, cy, rx, ry, style) {
+            _super.call(this, page, layer);
 
             this.shape = new LayoutEditor.EllipseShape("", rx, ry);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
-            this.shape.setStyle(LayoutEditor.g_style);
+            this.shape.style = style;
             this.shape.calculateBounds();
         }
         return EllipseCommand;
@@ -2945,7 +3130,10 @@ var LayoutEditor;
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     var TransformCommand = (function () {
-        function TransformCommand(shapes, oldTransforms) {
+        function TransformCommand(page, layer, shapes, oldTransforms) {
+            this.page = page;
+            this.layer = layer;
+            this.layers = null;
             this.shapes = [];
             this.oldTransforms = [];
             this.transforms = [];
@@ -2958,36 +3146,40 @@ var LayoutEditor;
         TransformCommand.prototype.redo = function () {
             for (var i = 0; i < this.shapes.length; ++i) {
                 this.shapes[i].transform.copy(this.transforms[i]);
+                this.shapes[i].refresh();
             }
-
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
+            this.page.requestDraw(this.layer);
         };
 
         TransformCommand.prototype.undo = function () {
             for (var i = 0; i < this.shapes.length; ++i) {
                 this.shapes[i].transform.copy(this.oldTransforms[i]);
+                this.shapes[i].refresh();
             }
-
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
+            this.page.requestDraw(this.layer);
         };
         return TransformCommand;
     })();
     LayoutEditor.TransformCommand = TransformCommand;
 
     var TextCommand = (function () {
-        function TextCommand(shape, text) {
+        function TextCommand(page, layer, shape, text) {
+            this.page = page;
+            this.layer = layer;
             this.shape = shape;
             this.text = text;
             this.oldText = this.shape.text;
         }
         TextCommand.prototype.redo = function () {
             this.shape.text = this.text;
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
+            this.shape.refresh();
+            this.page.requestDraw(this.layer);
         };
 
         TextCommand.prototype.undo = function () {
             this.shape.text = this.oldText;
-            LayoutEditor.g_draw(LayoutEditor.g_shapeList);
+            this.shape.refresh();
+            this.page.requestDraw(this.layer);
         };
         return TextCommand;
     })();
@@ -3018,44 +3210,56 @@ var LayoutEditor;
     //     }
     // }
     var DuplicateSelectedCommand = (function () {
-        function DuplicateSelectedCommand() {
-            this.oldSelected = LayoutEditor.g_selectList.getSelectedShapes().slice();
+        function DuplicateSelectedCommand(page, layer, selectList) {
+            this.page = page;
+            this.layer = layer;
+            this.selectList = selectList;
+            this.oldSelected = this.selectList.getSelectedShapes().slice(); // copy
         }
         DuplicateSelectedCommand.prototype.redo = function () {
             if (!this.duplicatedShapes) {
-                this.duplicatedShapes = LayoutEditor.g_selectList.duplicateSelected();
+                this.duplicatedShapes = this.selectList.duplicateSelected();
             } else {
                 // re-add the shapes from the previous undo - don't re-duplicate them
-                LayoutEditor.g_shapeList.addShapes(this.duplicatedShapes);
+                this.selectList.layer.addShapes(this.duplicatedShapes);
             }
-            LayoutEditor.g_selectList.setSelectedShapes(this.duplicatedShapes);
+            this.selectList.setSelectedShapes(this.duplicatedShapes);
+            this.page.requestDraw(this.layer);
         };
 
         DuplicateSelectedCommand.prototype.undo = function () {
-            LayoutEditor.g_selectList.deleteSelected();
-            LayoutEditor.g_selectList.setSelectedShapes(this.oldSelected);
+            this.selectList.deleteSelected();
+            this.selectList.setSelectedShapes(this.oldSelected);
+            this.page.requestDraw(this.layer);
         };
         return DuplicateSelectedCommand;
     })();
     LayoutEditor.DuplicateSelectedCommand = DuplicateSelectedCommand;
 
     var DeleteSelectedCommand = (function () {
-        function DeleteSelectedCommand() {
-            this.oldSelected = LayoutEditor.g_selectList.getSelectedShapes().slice();
+        function DeleteSelectedCommand(page, layer, selectList) {
+            this.page = page;
+            this.layer = layer;
+            this.selectList = selectList;
+            this.oldSelected = this.selectList.getSelectedShapes().slice();
+            this.oldLayer = this.selectList.layer;
         }
         DeleteSelectedCommand.prototype.redo = function () {
-            LayoutEditor.g_selectList.deleteSelected();
+            this.selectList.deleteSelected();
+            this.page.requestDraw(this.layer);
         };
 
         DeleteSelectedCommand.prototype.undo = function () {
-            LayoutEditor.g_shapeList.addShapes(this.oldSelected);
-            LayoutEditor.g_selectList.setSelectedShapes(this.oldSelected);
+            this.oldLayer.addShapes(this.oldSelected);
+            this.selectList.setSelectedShapes(this.oldSelected);
+            this.page.requestDraw(this.layer);
         };
         return DeleteSelectedCommand;
     })();
     LayoutEditor.DeleteSelectedCommand = DeleteSelectedCommand;
 
     LayoutEditor.g_drawCtx = null;
+    LayoutEditor.g_Layer = null;
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -3063,15 +3267,17 @@ var LayoutEditor;
 (function (LayoutEditor) {
     //------------------------------
     var Tool = (function () {
-        function Tool() {
+        function Tool(toolLayer) {
+            this.toolLayer = toolLayer;
             this.isUsing = false;
         }
         Tool.prototype.onPointer = function (e) {
             return false;
         };
-        Tool.prototype.onChangeFocus = function (focus) {
-        };
         Tool.prototype.draw = function (ctx) {
+        };
+
+        Tool.prototype.refresh = function () {
         };
         return Tool;
     })();
@@ -3079,23 +3285,19 @@ var LayoutEditor;
 
     var DrawTool = (function (_super) {
         __extends(DrawTool, _super);
-        function DrawTool() {
-            _super.call(this);
+        function DrawTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.shape = null;
             this.canUse = false;
         }
         DrawTool.prototype.draw = function (ctx) {
             if (this.shape && this.isUsing) {
-                this.shape.calculateBounds();
-                this.shape.draw(ctx, LayoutEditor.g_panZoom);
+                this.shape.draw(ctx, this.toolLayer.page.panZoom);
             }
         };
 
         DrawTool.prototype.onPointer = function (e) {
             return false;
-        };
-
-        DrawTool.prototype.onChangeFocus = function (focus) {
         };
         return DrawTool;
     })(Tool);
@@ -3103,42 +3305,42 @@ var LayoutEditor;
 
     var RectTool = (function (_super) {
         __extends(RectTool, _super);
-        function RectTool() {
-            _super.call(this);
+        function RectTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.rectShape = new LayoutEditor.RectShape("_RectTool", 0, 0);
             this.x1 = -1;
             this.y1 = -1;
             this.x2 = -1;
             this.y2 = -1;
             this.shape = this.rectShape;
-            this.rectShape.setStyle(LayoutEditor.g_drawStyle);
+            this.rectShape.style = this.toolLayer.style;
         }
         RectTool.prototype.onPointer = function (e) {
             var isHandled = false;
+            var grid = this.toolLayer.grid;
 
             switch (e.state) {
                 case 1 /* Start */:
-                    LayoutEditor.g_grid.rebuildTabs();
-                    var pos = LayoutEditor.g_grid.snapXY(e.x, e.y);
-                    this.x1 = pos.x;
-                    this.y1 = pos.y;
+                    grid.rebuildTabs([this.toolLayer.layer]);
+                    var pos = grid.snapXY(e.x, e.y);
+                    this.x1 = this.x2 = pos.x;
+                    this.y1 = this.y2 = pos.y;
                     this.isUsing = true;
                     break;
 
                 case 2 /* Move */:
-                    var pos = LayoutEditor.g_grid.snapXY(e.x, e.y);
+                    var pos = grid.snapXY(e.x, e.y);
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    LayoutEditor.g_draw(this);
                     break;
 
                 case 3 /* End */:
                     if (this.canUse) {
-                        var newCommand = new LayoutEditor.RectCommand(this.rectShape.transform.tx, this.rectShape.transform.ty, this.rectShape.w, this.rectShape.h);
-                        LayoutEditor.g_commandList.addCommand(newCommand);
+                        var toolLayer = this.toolLayer;
+                        var newCommand = new LayoutEditor.RectCommand(toolLayer.page, toolLayer.layer, this.rectShape.transform.tx, this.rectShape.transform.ty, this.rectShape.w, this.rectShape.h, toolLayer.style);
+                        toolLayer.commandList.addCommand(newCommand);
                         this.canUse = false;
-                        LayoutEditor.g_draw(this);
                     }
 
                     this.isUsing = false;
@@ -3155,19 +3357,6 @@ var LayoutEditor;
             this.rectShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
 
             _super.prototype.draw.call(this, ctx);
-
-            if (LayoutEditor.g_grid.snappedX > -1 || LayoutEditor.g_grid.snappedY > -1) {
-                ctx.save();
-                LayoutEditor.g_panZoom.transform(ctx);
-                ctx.beginPath();
-                LayoutEditor.g_snapStyle.drawShape(ctx);
-                ctx.moveTo(LayoutEditor.g_grid.snappedX, 0);
-                ctx.lineTo(LayoutEditor.g_grid.snappedX, 1000);
-                ctx.moveTo(0, LayoutEditor.g_grid.snappedY);
-                ctx.lineTo(1000, LayoutEditor.g_grid.snappedY);
-                ctx.stroke();
-                ctx.restore();
-            }
         };
         return RectTool;
     })(DrawTool);
@@ -3175,35 +3364,38 @@ var LayoutEditor;
 
     var EllipseTool = (function (_super) {
         __extends(EllipseTool, _super);
-        function EllipseTool() {
-            _super.call(this);
+        function EllipseTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.ellipseShape = new LayoutEditor.EllipseShape("_EllipseTool", 0, 0);
             this.shape = this.ellipseShape;
-            this.ellipseShape.setStyle(LayoutEditor.g_drawStyle);
+            this.ellipseShape.style = this.toolLayer.style;
         }
         EllipseTool.prototype.onPointer = function (e) {
             var isHandled = false;
+            var grid = this.toolLayer.grid;
 
             switch (e.state) {
                 case 1 /* Start */:
-                    LayoutEditor.g_grid.rebuildTabs();
-                    var pos = LayoutEditor.g_grid.snapXY(e.x, e.y);
-                    this.x1 = pos.x;
-                    this.y1 = pos.y;
+                    grid.rebuildTabs([this.toolLayer.layer]);
+                    var pos = grid.snapXY(e.x, e.y);
+                    this.x1 = this.x2 = pos.x;
+                    this.y1 = this.y2 = pos.y;
                     this.isUsing = true;
                     break;
+
                 case 2 /* Move */:
-                    var pos = LayoutEditor.g_grid.snapXY(e.x, e.y);
+                    var pos = grid.snapXY(e.x, e.y);
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    LayoutEditor.g_draw(this);
                     break;
+
                 case 3 /* End */:
                     if (this.isUsing) {
                         if (this.canUse) {
-                            var newCommand = new LayoutEditor.EllipseCommand(this.ellipseShape.transform.tx, this.ellipseShape.transform.ty, this.ellipseShape.rx, this.ellipseShape.ry);
-                            LayoutEditor.g_commandList.addCommand(newCommand);
+                            var toolLayer = this.toolLayer;
+                            var newCommand = new LayoutEditor.EllipseCommand(toolLayer.page, toolLayer.layer, this.ellipseShape.transform.tx, this.ellipseShape.transform.ty, this.ellipseShape.rx, this.ellipseShape.ry, toolLayer.style);
+                            toolLayer.commandList.addCommand(newCommand);
                             this.canUse = false;
                         }
                         this.isUsing = false;
@@ -3220,20 +3412,8 @@ var LayoutEditor;
                 return;
 
             this.ellipseShape.fromRect(Math.min(this.x1, this.x2), Math.min(this.y1, this.y2), Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1));
-            _super.prototype.draw.call(this, ctx);
 
-            if (LayoutEditor.g_grid.snappedX > -1 || LayoutEditor.g_grid.snappedY > -1) {
-                ctx.save();
-                LayoutEditor.g_panZoom.transform(ctx);
-                ctx.beginPath();
-                LayoutEditor.g_snapStyle.drawShape(ctx);
-                ctx.moveTo(LayoutEditor.g_grid.snappedX, 0);
-                ctx.lineTo(LayoutEditor.g_grid.snappedX, 1000);
-                ctx.moveTo(0, LayoutEditor.g_grid.snappedY);
-                ctx.lineTo(1000, LayoutEditor.g_grid.snappedY);
-                ctx.stroke();
-                ctx.restore();
-            }
+            _super.prototype.draw.call(this, ctx);
         };
         return EllipseTool;
     })(DrawTool);
@@ -3241,10 +3421,10 @@ var LayoutEditor;
 
     var SelectTool = (function (_super) {
         __extends(SelectTool, _super);
-        function SelectTool() {
-            _super.call(this);
+        function SelectTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.aabbShape = new LayoutEditor.AABBShape();
-            this.aabbShape.setStyle(LayoutEditor.g_selectStyle);
+            this.aabbShape.style = LayoutEditor.g_selectStyle;
         }
         SelectTool.prototype.onPointer = function (e) {
             var isHandled = false;
@@ -3255,22 +3435,22 @@ var LayoutEditor;
                     this.aabbShape.y1 = e.y;
                     this.aabbShape.x2 = e.x;
                     this.aabbShape.y2 = e.y;
-                    this.aabbShape.calculateBounds();
+                    this.aabbShape.refresh();
                     this.isUsing = true;
-                    LayoutEditor.g_draw(this);
                     break;
+
                 case 2 /* Move */:
                     if (this.isUsing) {
                         this.aabbShape.x2 = e.x;
                         this.aabbShape.y2 = e.y;
-                        this.aabbShape.calculateBounds();
-                        LayoutEditor.g_draw(this);
+                        this.aabbShape.refresh();
                     }
                     break;
+
                 case 3 /* End */:
                     if (this.isUsing) {
-                        var shapes = LayoutEditor.g_shapeList.getShapesInBounds(this.aabbShape.aabb);
-                        LayoutEditor.g_selectList.setSelectedShapes(shapes);
+                        var shapes = this.toolLayer.layer.getShapesInBounds(this.aabbShape.aabb);
+                        this.toolLayer.selectList.setSelectedShapes(shapes);
 
                         this.isUsing = false;
 
@@ -3282,19 +3462,16 @@ var LayoutEditor;
             return this.isUsing || isHandled;
         };
 
-        SelectTool.prototype.onChangeFocus = function (focus) {
-        };
-
         SelectTool.prototype.draw = function (ctx) {
             if (!this.isUsing)
                 return;
 
-            this.aabbShape.draw(ctx, LayoutEditor.g_panZoom);
+            this.aabbShape.draw(ctx, this.toolLayer.page.panZoom);
 
             LayoutEditor.g_selectStyle.drawShape(ctx);
-            var shapes = LayoutEditor.g_shapeList.getShapesInBounds(this.aabbShape.aabb);
+            var shapes = this.toolLayer.layer.getShapesInBounds(this.aabbShape.aabb);
             for (var i = 0; i < shapes.length; ++i) {
-                shapes[i].drawSelect(ctx);
+                shapes[i].drawSelect(ctx, this.toolLayer.page.panZoom);
             }
         };
         return SelectTool;
@@ -3303,8 +3480,8 @@ var LayoutEditor;
 
     var ResizeTool = (function (_super) {
         __extends(ResizeTool, _super);
-        function ResizeTool() {
-            _super.call(this);
+        function ResizeTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.handleSize = 20;
             this.handle = 0 /* None */;
             this.canUse = false;
@@ -3321,24 +3498,24 @@ var LayoutEditor;
 
             switch (e.state) {
                 case 1 /* Start */:
-                    var shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
+                    var shape = this.toolLayer.layer.getShapeInXY(e.x, e.y);
                     this.handle = 0 /* None */;
 
                     if (shape) {
-                        if (!LayoutEditor.g_selectList.isSelected(shape)) {
-                            LayoutEditor.g_selectList.setSelectedShapes([shape]);
+                        if (!this.toolLayer.selectList.isSelected(shape)) {
+                            this.toolLayer.selectList.setSelectedShapes([shape]);
                         }
                     }
 
-                    var selectGroup = LayoutEditor.g_selectList.selectGroup;
+                    var selectGroup = this.toolLayer.selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
-                        LayoutEditor.g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
-                        LayoutEditor.g_grid.rebuildTabs();
+                        this.toolLayer.moveSelectToToolLayer();
+                        this.toolLayer.grid.rebuildTabs([this.toolLayer.layer]);
 
                         this.oldOABB.copy(selectGroup.oabb);
                         this.oldTransform.copy(selectGroup.transform);
 
-                        var shapes = LayoutEditor.g_selectList.selectGroup.shapes;
+                        var shapes = this.toolLayer.selectList.selectGroup.shapes;
                         for (var i = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
@@ -3369,13 +3546,12 @@ var LayoutEditor;
                         this.deltaY = 0;
 
                         isHandled = true;
-                        LayoutEditor.g_draw(this);
                     }
                     break;
 
                 case 2 /* Move */:
                     if (this.isUsing) {
-                        var transform = LayoutEditor.g_selectList.selectGroup.transform;
+                        var transform = this.toolLayer.selectList.selectGroup.transform;
                         var oldOABB = this.oldOABB;
                         var oldInfo = this.oldInfo;
 
@@ -3426,20 +3602,20 @@ var LayoutEditor;
 
                         this.canUse = this.handle !== 0 /* None */;
 
-                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
-                        LayoutEditor.g_draw(this);
+                        this.toolLayer.selectList.selectGroup.refresh();
                         isHandled = true;
                     }
                     break;
 
                 case 3 /* End */:
                     if (this.isUsing) {
+                        var toolLayer = this.toolLayer;
+
                         if (this.canUse) {
-                            var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                            LayoutEditor.g_commandList.addCommand(newCommand);
+                            var newCommand = new LayoutEditor.TransformCommand(toolLayer.page, toolLayer.layer, toolLayer.selectList.selectGroup.shapes, this.oldShapeTransforms);
+                            toolLayer.commandList.addCommand(newCommand);
                         }
-                        LayoutEditor.g_selectList.showSelected();
-                        LayoutEditor.g_draw(this);
+                        toolLayer.moveSelectToLayer();
                         isHandled = true;
 
                         this.canUse = false;
@@ -3452,15 +3628,12 @@ var LayoutEditor;
             return isHandled || this.isUsing;
         };
 
-        ResizeTool.prototype.onChangeFocus = function (focus) {
-        };
-
         ResizeTool.prototype.draw = function (ctx) {
             if (!this.isUsing)
                 return;
 
-            for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
-                LayoutEditor.g_selectList.selectedShapes[i].draw(ctx, LayoutEditor.g_panZoom); // draw the shape in the tool context
+            for (var i = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+                this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
         };
         return ResizeTool;
@@ -3483,8 +3656,8 @@ var LayoutEditor;
 
     var RotateTool = (function (_super) {
         __extends(RotateTool, _super);
-        function RotateTool() {
-            _super.call(this);
+        function RotateTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.lastAngle = 0;
             this.pivotX = 0;
             this.pivotY = 0;
@@ -3496,20 +3669,20 @@ var LayoutEditor;
 
             switch (e.state) {
                 case 1 /* Start */:
-                    var shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
+                    var shape = this.toolLayer.layer.getShapeInXY(e.x, e.y);
                     if (shape) {
-                        if (!LayoutEditor.g_selectList.isSelected(shape)) {
-                            LayoutEditor.g_selectList.setSelectedShapes([shape]);
+                        if (!this.toolLayer.selectList.isSelected(shape)) {
+                            this.toolLayer.selectList.setSelectedShapes([shape]);
                         }
                     }
 
-                    var selectGroup = LayoutEditor.g_selectList.selectGroup;
+                    var selectGroup = this.toolLayer.selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
-                        LayoutEditor.g_selectList.hideSelected();
+                        this.toolLayer.moveSelectToToolLayer();
 
                         this.oldTransform.copy(selectGroup.transform);
 
-                        var shapes = LayoutEditor.g_selectList.selectGroup.shapes;
+                        var shapes = this.toolLayer.selectList.selectGroup.shapes;
                         for (var i = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
@@ -3519,8 +3692,6 @@ var LayoutEditor;
                         this.lastAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
                         this.isUsing = true;
 
-                        LayoutEditor.g_draw(this);
-
                         isHandled = true;
                     }
                     break;
@@ -3528,9 +3699,8 @@ var LayoutEditor;
                 case 2 /* Move */:
                     if (this.isUsing) {
                         var newAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
-                        LayoutEditor.g_selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
-                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
-                        LayoutEditor.g_draw(this);
+                        this.toolLayer.selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
+                        this.toolLayer.selectList.selectGroup.refresh();
 
                         isHandled = true;
                         this.lastAngle = newAngle;
@@ -3539,10 +3709,10 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.isUsing) {
-                        var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                        LayoutEditor.g_commandList.addCommand(newCommand);
-                        LayoutEditor.g_selectList.showSelected();
-                        LayoutEditor.g_draw(this);
+                        var toolLayer = this.toolLayer;
+                        var newCommand = new LayoutEditor.TransformCommand(toolLayer.page, toolLayer.layer, toolLayer.selectList.selectGroup.shapes, this.oldShapeTransforms);
+                        toolLayer.commandList.addCommand(newCommand);
+                        toolLayer.moveSelectToLayer();
                         isHandled = true;
                         this.isUsing = false;
                     }
@@ -3553,15 +3723,12 @@ var LayoutEditor;
             return isHandled || this.isUsing;
         };
 
-        RotateTool.prototype.onChangeFocus = function (focus) {
-        };
-
         RotateTool.prototype.draw = function (ctx) {
             if (!this.isUsing)
                 return;
 
-            for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
-                LayoutEditor.g_selectList.selectedShapes[i].draw(ctx, LayoutEditor.g_panZoom); // draw the shape in the tool context
+            for (var i = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+                this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
         };
 
@@ -3579,8 +3746,8 @@ var LayoutEditor;
 
     var MoveTool = (function (_super) {
         __extends(MoveTool, _super);
-        function MoveTool() {
-            _super.call(this);
+        function MoveTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.shape = null;
             this.canUse = false;
             this.deltaX = 0;
@@ -3594,27 +3761,26 @@ var LayoutEditor;
 
             switch (e.state) {
                 case 1 /* Start */:
-                    this.shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
+                    this.shape = this.toolLayer.layer.getShapeInXY(e.x, e.y);
 
                     if (this.shape) {
-                        if (!LayoutEditor.g_selectList.isSelected(this.shape)) {
-                            LayoutEditor.g_selectList.setSelectedShapes([this.shape]);
+                        if (!this.toolLayer.selectList.isSelected(this.shape)) {
+                            this.toolLayer.selectList.setSelectedShapes([this.shape]);
                         }
 
-                        var shapes = LayoutEditor.g_selectList.selectGroup.shapes;
+                        var shapes = this.toolLayer.selectList.selectGroup.shapes;
                         for (var i = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
 
-                        LayoutEditor.g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
-                        LayoutEditor.g_grid.rebuildTabs();
-                        this.oldTransform.copy(LayoutEditor.g_selectList.selectGroup.transform);
-                        this.oldAABB.copy(LayoutEditor.g_selectList.selectGroup.aabb);
+                        this.toolLayer.moveSelectToToolLayer(); // hide before rebuilding tabs, so we don't include them
+                        this.toolLayer.grid.rebuildTabs([this.toolLayer.layer]);
+                        this.oldTransform.copy(this.toolLayer.selectList.selectGroup.transform);
+                        this.oldAABB.copy(this.toolLayer.selectList.selectGroup.aabb);
                         this.deltaX = 0;
                         this.deltaY = 0;
                         this.isUsing = true;
 
-                        LayoutEditor.g_draw(this);
                         isHandled = true;
                     }
                     break;
@@ -3626,28 +3792,28 @@ var LayoutEditor;
 
                         var delta = this.snapAABBToGrid(this.deltaX, this.deltaY);
 
-                        var moveTransform = LayoutEditor.g_selectList.selectGroup.transform;
+                        var moveTransform = this.toolLayer.selectList.selectGroup.transform;
 
                         moveTransform.tx = this.oldTransform.tx + delta.x;
                         moveTransform.ty = this.oldTransform.ty + delta.y;
 
-                        LayoutEditor.g_selectList.selectGroup.calculateBounds();
+                        this.toolLayer.selectList.selectGroup.refresh();
 
                         this.canUse = true;
 
-                        LayoutEditor.g_draw(this);
                         isHandled = true;
                     }
                     break;
 
                 case 3 /* End */:
                     if (this.isUsing) {
+                        var toolLayer = this.toolLayer;
                         if (this.canUse) {
-                            var newCommand = new LayoutEditor.TransformCommand(LayoutEditor.g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                            LayoutEditor.g_commandList.addCommand(newCommand);
+                            var newCommand = new LayoutEditor.TransformCommand(toolLayer.page, toolLayer.layer, toolLayer.selectList.selectGroup.shapes, this.oldShapeTransforms);
+                            toolLayer.commandList.addCommand(newCommand);
                         }
-                        LayoutEditor.g_selectList.showSelected();
-                        LayoutEditor.g_grid.clearSnap();
+                        toolLayer.moveSelectToLayer();
+                        toolLayer.grid.clearSnap();
 
                         this.canUse = false;
                         this.shape = null;
@@ -3661,23 +3827,19 @@ var LayoutEditor;
             return isHandled || this.shape !== null;
         };
 
-        MoveTool.prototype.onChangeFocus = function (focus) {
-        };
-
         MoveTool.prototype.draw = function (ctx) {
             if (!this.isUsing)
                 return;
 
-            for (var i = 0; i < LayoutEditor.g_selectList.selectedShapes.length; ++i) {
-                LayoutEditor.g_selectList.selectedShapes[i].draw(ctx, LayoutEditor.g_panZoom); // draw the shape in the tool context
+            for (var i = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+                this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
-
-            LayoutEditor.g_grid.draw(ctx);
         };
 
         MoveTool.prototype.snapAABBToGrid = function (dx, dy) {
             // the delta is wrt to the original aabb
             var aabb = this.oldAABB;
+            var grid = this.toolLayer.grid;
 
             var centerX = aabb.cx + dx;
             var centerY = aabb.cy + dy;
@@ -3691,30 +3853,30 @@ var LayoutEditor;
                 y: dy
             };
 
-            var newLeft = LayoutEditor.g_grid.snapX(left);
+            var newLeft = grid.snapX(left);
             if (left !== newLeft) {
                 delta.x += newLeft - left;
             } else {
-                var newRight = LayoutEditor.g_grid.snapX(right);
+                var newRight = grid.snapX(right);
                 if (right !== newRight) {
                     delta.x += newRight - right;
                 } else {
-                    var newCenterX = LayoutEditor.g_grid.snapX(centerX);
+                    var newCenterX = grid.snapX(centerX);
                     if (newCenterX !== centerX) {
                         delta.x += newCenterX - centerX;
                     }
                 }
             }
 
-            var newTop = LayoutEditor.g_grid.snapY(top);
+            var newTop = grid.snapY(top);
             if (top !== newTop) {
                 delta.y += newTop - top;
             } else {
-                var newBottom = LayoutEditor.g_grid.snapY(bottom);
+                var newBottom = grid.snapY(bottom);
                 if (bottom !== newBottom) {
                     delta.y += newBottom - bottom;
                 } else {
-                    var newCenterY = LayoutEditor.g_grid.snapY(centerY);
+                    var newCenterY = grid.snapY(centerY);
                     if (newCenterY !== centerY) {
                         delta.y += newCenterY - centerY;
                     }
@@ -3729,11 +3891,12 @@ var LayoutEditor;
 
     var PanZoomTool = (function (_super) {
         __extends(PanZoomTool, _super);
-        function PanZoomTool() {
-            _super.call(this);
+        function PanZoomTool(toolLayer) {
+            _super.call(this, toolLayer);
         }
         PanZoomTool.prototype.onPointer = function (e) {
             var isHandled = false;
+            var panZoom = this.toolLayer.page.panZoom;
 
             switch (e.state) {
                 case 1 /* Start */:
@@ -3741,33 +3904,31 @@ var LayoutEditor;
                     break;
 
                 case 2 /* Move */:
-                    LayoutEditor.g_panZoom.panX += LayoutEditor.g_panZoom.deltaX;
-                    LayoutEditor.g_panZoom.panY += LayoutEditor.g_panZoom.deltaY;
-                    LayoutEditor.g_draw(LayoutEditor.g_panZoom);
+                    panZoom.panX += panZoom.deltaX;
+                    panZoom.panY += panZoom.deltaY;
+
                     isHandled = true;
                     break;
 
                 case 6 /* MouseWheel */:
-                    var scale = (LayoutEditor.g_panZoom.deltaY > 0 ? 1 / 1.15 : 1.15);
-                    LayoutEditor.g_panZoom.panX += e.x * LayoutEditor.g_panZoom.zoom * (1 - scale);
-                    LayoutEditor.g_panZoom.panY += e.y * LayoutEditor.g_panZoom.zoom * (1 - scale);
-                    LayoutEditor.g_panZoom.zoom *= scale;
+                    var scale = (panZoom.deltaY > 0 ? 1 / 1.15 : 1.15);
+                    panZoom.panX += e.x * panZoom.zoom * (1 - scale);
+                    panZoom.panY += e.y * panZoom.zoom * (1 - scale);
+                    panZoom.zoom *= scale;
 
-                    LayoutEditor.g_draw(LayoutEditor.g_panZoom);
                     isHandled = true;
-
                     break;
 
                 case 3 /* End */:
                     this.isUsing = false;
-
                     break;
             }
 
-            return this.isUsing || isHandled;
-        };
+            if (this.isUsing || isHandled) {
+                this.toolLayer.page.requestDraw();
+            }
 
-        PanZoomTool.prototype.onChangeFocus = function (focus) {
+            return this.isUsing || isHandled;
         };
 
         PanZoomTool.prototype.draw = function (ctx) {
@@ -3778,28 +3939,26 @@ var LayoutEditor;
 
     var TextTool = (function (_super) {
         __extends(TextTool, _super);
-        function TextTool() {
-            _super.call(this);
+        function TextTool(toolLayer) {
+            _super.call(this, toolLayer);
             this.shape = null;
             this.editShape = null;
             this.inputListener = null;
-            var self = this;
-            LayoutEditor.g_inputMultiLine.addEventListener('input', function (e) {
-                self.onInput(e);
-            });
+
+            LayoutEditor.g_inputMultiLine.addEventListener('input', this.onInput.bind(this));
         }
         TextTool.prototype.onPointer = function (e) {
             var isHandled = false;
 
             switch (e.state) {
                 case 4 /* DoubleClick */:
-                    this.shape = LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y);
+                    var toolLayer = this.toolLayer;
+                    this.shape = toolLayer.layer.getShapeInXY(e.x, e.y);
                     if (this.shape) {
                         this.editShape = this.shape.clone();
 
-                        // TODO remove dependency on g_toolCtx
-                        var left = this.shape.oabb.cx + LayoutEditor.g_toolCtx.canvas.offsetLeft + "px";
-                        var top = this.shape.oabb.cy + LayoutEditor.g_toolCtx.canvas.offsetTop + "px";
+                        var left = this.shape.oabb.cx + toolLayer.canvas.offsetLeft + "px";
+                        var top = this.shape.oabb.cy + toolLayer.canvas.offsetTop + "px";
                         LayoutEditor.g_inputMultiLine.style.left = left;
                         LayoutEditor.g_inputMultiLine.style.top = top;
                         LayoutEditor.g_inputMultiLine.value = this.editShape.text;
@@ -3812,7 +3971,7 @@ var LayoutEditor;
                     break;
 
                 case 1 /* Start */:
-                    if (this.shape && LayoutEditor.g_shapeList.getShapeInXY(e.x, e.y) !== this.shape) {
+                    if (this.shape && this.toolLayer.layer.getShapeInXY(e.x, e.y) !== this.shape) {
                         this.stopTool();
                         this.isUsing = false;
                         // don't mark this as handled to permit another tool to use this
@@ -3824,22 +3983,17 @@ var LayoutEditor;
             return isHandled || this.isUsing;
         };
 
-        TextTool.prototype.onChangeFocus = function (focus) {
-            if (this.shape)
-                this.stopTool();
-        };
-
         TextTool.prototype.stopTool = function () {
             if (this.shape) {
-                var newCommand = new LayoutEditor.TextCommand(this.shape, this.editShape.text);
-                LayoutEditor.g_commandList.addCommand(newCommand);
+                var toolLayer = this.toolLayer;
+                var newCommand = new LayoutEditor.TextCommand(toolLayer.page, toolLayer.layer, this.shape, this.editShape.text);
+                toolLayer.commandList.addCommand(newCommand);
 
                 this.shape = null;
                 this.isUsing = false;
 
                 LayoutEditor.g_inputMultiLine.value = "";
                 LayoutEditor.g_inputMultiLine.style.display = "none";
-                LayoutEditor.g_draw(this);
             }
         };
 
@@ -3848,22 +4002,188 @@ var LayoutEditor;
                 return;
 
             this.editShape.text = LayoutEditor.g_inputMultiLine.value;
-            LayoutEditor.g_draw(this);
+            this.toolLayer.draw();
+            this.draw(this.toolLayer.ctx);
         };
 
         TextTool.prototype.draw = function (ctx) {
             if (!this.isUsing)
                 return;
 
-            this.editShape.draw(ctx, LayoutEditor.g_panZoom);
+            this.editShape.draw(ctx, this.toolLayer.page.panZoom);
         };
         return TextTool;
     })(Tool);
     LayoutEditor.TextTool = TextTool;
 
     LayoutEditor.g_inputMultiLine = null;
+})(LayoutEditor || (LayoutEditor = {}));
+// Copyright 2014 Reece Elliott
+/// <reference path="_dependencies.ts" />
+var LayoutEditor;
+(function (LayoutEditor) {
+    //------------------------------
+    var Editor = (function () {
+        function Editor(parentElem, width, height) {
+            this.parentElem = parentElem;
+            this.width = width;
+            this.height = height;
+            this.hasRequestToolDraw = false;
+            this.toolLayer = new LayoutEditor.ToolLayer();
+            this.tool = null;
+            this.toolGroup = [];
+            this.page = new LayoutEditor.Page();
+            this.reset();
+        }
+        Object.defineProperty(Editor.prototype, "selectChanged", {
+            get: function () {
+                return this.toolLayer.selectList.selectChanged;
+            },
+            enumerable: true,
+            configurable: true
+        });
 
-    LayoutEditor.g_toolCtx = null;
+        Editor.prototype.reset = function () {
+            while (this.parentElem.lastChild)
+                this.parentElem.removeChild(this.parentElem.lastChild);
+
+            this.page.reset();
+            this.page.setRootElem(this.parentElem, this.width, this.height);
+
+            var layer = new LayoutEditor.Layer();
+            this.page.addLayer(layer);
+
+            this.toolLayer.destroyCanvas(this.parentElem);
+            this.toolLayer.reset();
+            this.toolLayer.page = this.page;
+            this.toolLayer.layer = layer;
+            this.toolLayer.createCanvas(this.parentElem, this.width, this.height);
+
+            this.toolGroup.length = 0;
+            this.tool = null;
+
+            this.requestToolDraw();
+        };
+
+        Editor.prototype.refresh = function () {
+        };
+
+        Editor.prototype.setTool = function (toolName) {
+            var toolLayer = this.toolLayer;
+            switch (toolName) {
+                case "selectTool":
+                    this.toolGroup = [new LayoutEditor.TextTool(toolLayer), new LayoutEditor.ResizeTool(toolLayer), new LayoutEditor.SelectTool(toolLayer)];
+                    break;
+
+                case "resizeTool":
+                    this.toolGroup = [new LayoutEditor.TextTool(toolLayer), new LayoutEditor.ResizeTool(toolLayer), new LayoutEditor.SelectTool(toolLayer)];
+                    break;
+
+                case "moveTool":
+                    this.toolGroup = [new LayoutEditor.TextTool(toolLayer), new LayoutEditor.MoveTool(toolLayer), new LayoutEditor.SelectTool(toolLayer)];
+                    break;
+
+                case "rectTool":
+                    this.toolGroup = [new LayoutEditor.RectTool(toolLayer)];
+                    break;
+
+                case "ellipseTool":
+                    this.toolGroup = [new LayoutEditor.EllipseTool(toolLayer)];
+                    break;
+
+                case "rotateTool":
+                    this.toolGroup = [new LayoutEditor.TextTool(toolLayer), new LayoutEditor.RotateTool(toolLayer), new LayoutEditor.SelectTool(toolLayer)];
+                    break;
+
+                case "panZoomTool":
+                    this.toolGroup = [new LayoutEditor.TextTool(toolLayer), new LayoutEditor.ResizeTool(toolLayer), new LayoutEditor.PanZoomTool(toolLayer)];
+                    break;
+
+                case "textTool":
+                    this.toolGroup = [new LayoutEditor.TextTool(toolLayer), new LayoutEditor.ResizeTool(toolLayer), new LayoutEditor.SelectTool(toolLayer)];
+                    break;
+            }
+        };
+
+        Editor.prototype.onPointer = function (e) {
+            var panZoom = this.page.panZoom;
+
+            panZoom.x = e.x;
+            panZoom.y = e.y;
+            panZoom.deltaX = e.deltaX;
+            panZoom.deltaY = e.deltaY;
+            panZoom.pinchDistance = e.pinchDistance;
+
+            e.x = panZoom.toX(e.x);
+            e.y = panZoom.toY(e.y);
+            e.deltaX = panZoom.toW(e.deltaX);
+            e.deltaY = panZoom.toH(e.deltaY);
+            e.pinchDistance *= panZoom.zoom;
+
+            var tool = this.tool;
+            if (tool && tool.isUsing) {
+                var isUsing = tool.onPointer(e);
+                this.requestToolDraw();
+                if (!isUsing)
+                    tool = null; // this input can be used by other tools
+            } else {
+                tool = null;
+            }
+
+            for (var i = 0; tool === null && i < this.toolGroup.length; ++i) {
+                if (this.toolGroup[i].onPointer(e)) {
+                    tool = this.toolGroup[i];
+                    this.requestToolDraw();
+                }
+            }
+
+            this.tool = tool;
+        };
+
+        Editor.prototype.draw = function () {
+            this.page.draw();
+        };
+
+        Editor.prototype.requestToolDraw = function () {
+            if (this.hasRequestToolDraw)
+                return;
+            this.hasRequestToolDraw = true;
+
+            var self = this;
+            requestAnimationFrame(function () {
+                self.toolLayer.draw();
+                if (self.tool !== null)
+                    self.tool.draw(self.toolLayer.ctx);
+
+                self.hasRequestToolDraw = false;
+            });
+        };
+
+        Editor.prototype.undo = function () {
+            this.toolLayer.undo();
+        };
+
+        Editor.prototype.redo = function () {
+            this.toolLayer.redo();
+        };
+
+        Editor.prototype.saveData = function () {
+            var obj = {
+                type: "editor",
+                page: this.page.saveData()
+            };
+            return obj;
+        };
+
+        Editor.prototype.loadData = function (obj) {
+            Helper.assert(obj.type === "editor");
+            this.reset();
+
+            this.page.loadData(obj.page);
+        };
+        return Editor;
+    })();
+    LayoutEditor.Editor = Editor;
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -3913,7 +4233,7 @@ var LayoutEditor;
                 this.selectStyle(this.styleList.styles[0].name);
         };
 
-        StylePanel.prototype.refresh = function () {
+        StylePanel.prototype.draw = function () {
             this.selected.refresh();
         };
 
@@ -3996,10 +4316,10 @@ var LayoutEditor;
             var ctx = this.ctx;
 
             if (style !== null)
-                this.rectShape.setStyle(style);
+                this.rectShape.style = style;
 
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            this.rectShape.draw(ctx, LayoutEditor.g_noPanZoom);
+            this.rectShape.draw(ctx, LayoutEditor.PanZoom.none);
 
             this.labelElem.innerHTML = styleName;
         };
@@ -4034,10 +4354,14 @@ var LayoutEditor;
 /// <reference path="panzoom.ts" />
 /// <reference path="screen.ts" />
 /// <reference path="shape.ts" />
+/// <reference path="layer.ts" />
+/// <reference path="page.ts" />
 /// <reference path="select.ts" />
 /// <reference path="grid.ts" />
+/// <reference path="toollayer.ts" />
 /// <reference path="command.ts" />
 /// <reference path="tool.ts" />
+/// <reference path="editor.ts" />
 /// <reference path="stylepanel.ts" />
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -4045,57 +4369,19 @@ var LayoutEditor;
 (function (LayoutEditor) {
     "use strict";
 
-    var g_tool = null;
     var g_propertyTool = null;
-    var stylePanel = new LayoutEditor.StylePanel(LayoutEditor.g_styleList);
-    var toolList = [];
-
-    function setTool(toolName) {
-        switch (toolName) {
-            case "selectTool":
-                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.SelectTool()];
-                break;
-
-            case "resizeTool":
-                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.SelectTool()];
-                break;
-
-            case "moveTool":
-                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.MoveTool(), new LayoutEditor.SelectTool()];
-                break;
-
-            case "rectTool":
-                toolList = [new LayoutEditor.RectTool()];
-                break;
-
-            case "ellipseTool":
-                toolList = [new LayoutEditor.EllipseTool()];
-                break;
-
-            case "rotateTool":
-                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.RotateTool(), new LayoutEditor.SelectTool()];
-                break;
-
-            case "panZoomTool":
-                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.PanZoomTool()];
-                break;
-
-            case "textTool":
-                toolList = [new LayoutEditor.TextTool(), new LayoutEditor.ResizeTool(), new LayoutEditor.SelectTool()];
-                break;
-        }
-    }
+    var g_stylePanel = new LayoutEditor.StylePanel(LayoutEditor.g_styleList);
+    var g_editor = null;
 
     //------------------------------
     function toolButtonClick(e) {
-        setTool(e.target.id);
+        g_editor.setTool(e.target.id);
     }
 
     function saveData() {
         var obj = {
             styleList: LayoutEditor.g_styleList.saveData(),
-            shapeList: LayoutEditor.g_shapeList.saveData(),
-            panZoom: LayoutEditor.g_panZoom.saveData()
+            editor: g_editor.saveData()
         };
         var objString = JSON.stringify(obj);
         localStorage['layouteditor'] = objString;
@@ -4108,27 +4394,29 @@ var LayoutEditor;
         var obj = JSON.parse(localStorage['layouteditor']);
         reset();
         LayoutEditor.g_styleList.loadData(obj.styleList);
-        LayoutEditor.g_shapeList.loadData(obj.shapeList);
-        LayoutEditor.g_panZoom.loadData(obj.panZoom);
+        g_editor.loadData(obj.editor);
     }
 
     function reset() {
-        LayoutEditor.g_commandList.reset();
-        LayoutEditor.g_shapeList.reset();
-        LayoutEditor.g_panZoom.reset();
-        LayoutEditor.g_styleList.reset();
-        LayoutEditor.g_selectList.reset();
-        stylePanel.reset();
+        g_editor.reset();
+        LayoutEditor.g_propertyPanel.reset();
 
-        // provide a slide border so we can see the screen box
-        LayoutEditor.g_panZoom.panX = -10;
-        LayoutEditor.g_panZoom.panY = -10;
-
-        LayoutEditor.g_draw(LayoutEditor.g_shapeList);
-        LayoutEditor.g_draw(LayoutEditor.g_screen);
-        LayoutEditor.g_draw(LayoutEditor.g_panZoom);
-        LayoutEditor.g_draw(LayoutEditor.g_selectList);
-        LayoutEditor.g_draw(stylePanel);
+        g_editor.setTool("rectTool");
+        shapesSelect();
+        // g_commandList.reset();
+        // g_shapeList.reset();
+        // g_panZoom.reset();
+        // g_styleList.reset();
+        // g_selectList.reset();
+        // stylePanel.reset();
+        // // provide a slide border so we can see the screen box
+        // g_panZoom.panX = -10;
+        // g_panZoom.panY = -10;
+        // g_draw(g_shapeList);
+        // g_draw(g_screen);
+        // g_draw(g_panZoom);
+        // g_draw(g_selectList);
+        // g_draw(stylePanel);
     }
 
     var requestFrame = false;
@@ -4145,78 +4433,71 @@ var LayoutEditor;
     }
 
     function clear(ctx) {
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        // ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     }
 
     function renderFrame() {
-        if (drawList.indexOf(LayoutEditor.g_screen) !== -1 || drawList.indexOf(LayoutEditor.g_shapeList) !== -1 || drawList.indexOf(LayoutEditor.g_panZoom) !== -1) {
-            clear(LayoutEditor.g_drawCtx);
-            LayoutEditor.g_screen.draw(LayoutEditor.g_drawCtx);
-            LayoutEditor.g_shapeList.draw(LayoutEditor.g_drawCtx);
-        }
-
-        clear(LayoutEditor.g_toolCtx);
-        LayoutEditor.g_selectList.draw(LayoutEditor.g_toolCtx);
-
-        for (var i = 0; i < drawList.length; ++i) {
-            var tool = drawList[i];
-            if (tool instanceof LayoutEditor.Tool) {
-                tool.draw(LayoutEditor.g_toolCtx);
-            }
-        }
-
-        if (drawList.indexOf(stylePanel)) {
-            stylePanel.refresh();
-        }
-
-        drawList.length = 0;
-        requestFrame = false;
+        // if (drawList.indexOf(g_screen) !== -1 || drawList.indexOf(g_shapeList) !== -1 || drawList.indexOf(g_panZoom) !== -1) {
+        //     clear(g_drawCtx);
+        //     g_screen.draw(g_drawCtx);
+        //     g_shapeList.draw(g_drawCtx);
+        // }
+        // clear(g_toolCtx);
+        // g_selectList.draw(g_toolCtx);
+        // for (var i: number = 0; i < drawList.length; ++i) {
+        //     var tool = drawList[i];
+        //     if (tool instanceof Tool) {
+        //         tool.draw(g_toolCtx);
+        //     }
+        // }
+        // if (drawList.indexOf(stylePanel)) {
+        //     stylePanel.refresh();
+        // }
+        // drawList.length = 0;
+        // requestFrame = false;
     }
 
     function duplicateSelect() {
-        LayoutEditor.g_commandList.addCommand(new LayoutEditor.DuplicateSelectedCommand());
+        // g_editor.commandList.addCommand(new DuplicateSelectedCommand(g_editor.selectList));
     }
 
     function deleteSelect() {
-        LayoutEditor.g_commandList.addCommand(new LayoutEditor.DeleteSelectedCommand());
+        // g_editor.commandList.addCommand(new DeleteSelectedCommand(g_editor.selectList));
     }
 
     function changePlatform(e) {
-        LayoutEditor.g_screen.setPlatform(parseInt(e.target.value));
+        g_editor.toolLayer.screen.setPlatform(parseInt(e.target.value));
     }
 
     function shapesSelect() {
-        document.getElementById('layoutShapes').classList.remove('hidden');
-        document.getElementById('layoutTool').classList.remove('hidden');
+        document.getElementById('editor').classList.remove('hidden');
         document.getElementById('layoutStyles').classList.add('hidden');
     }
 
     function stylesSelect() {
-        document.getElementById('layoutShapes').classList.add('hidden');
-        document.getElementById('layoutTool').classList.add('hidden');
+        document.getElementById('editor').classList.add('hidden');
         document.getElementById('layoutStyles').classList.remove('hidden');
     }
 
     window.addEventListener("load", function () {
-        var canvas = document.getElementById("layoutShapes");
-        var toolCanvas = document.getElementById("layoutTool");
-        var interactionCanvas = document.getElementById("interaction");
+        // var canvas = < HTMLCanvasElement > document.getElementById("layoutShapes");
+        // var toolCanvas = < HTMLCanvasElement > document.getElementById("layoutTool");
+        // var interactionCanvas = < HTMLCanvasElement > document.getElementById("interaction");
+        var editorElem = document.getElementById("editor");
 
-        LayoutEditor.g_drawCtx = canvas.getContext("2d");
-        LayoutEditor.g_toolCtx = toolCanvas.getContext("2d");
-
-        LayoutEditor.g_draw = draw;
-
+        // g_drawCtx = canvas.getContext("2d");
+        // g_toolCtx = toolCanvas.getContext("2d");
+        // g_draw = draw;
         var toolElems = document.querySelectorAll(".tool");
         for (var i = 0; i < toolElems.length; ++i) {
             toolElems[i].addEventListener("click", toolButtonClick);
         }
 
         document.getElementById("undo").addEventListener("click", function () {
-            LayoutEditor.g_commandList.undo();
+            g_editor.undo();
         });
         document.getElementById("redo").addEventListener("click", function () {
-            LayoutEditor.g_commandList.redo();
+            g_editor.redo();
         });
         document.getElementById("clear").addEventListener("click", reset);
         document.getElementById("load").addEventListener("click", loadData);
@@ -4226,10 +4507,6 @@ var LayoutEditor;
         document.getElementById("shapes").addEventListener("click", shapesSelect);
         document.getElementById("styles").addEventListener("click", stylesSelect);
 
-        var platformSelect = document.getElementById("platform");
-        platformSelect.addEventListener("change", changePlatform);
-        platformSelect.value = LayoutEditor.g_screen.getPlatform().toString();
-
         LayoutEditor.g_inputText = document.getElementById("inputText");
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");
 
@@ -4237,43 +4514,27 @@ var LayoutEditor;
         LayoutEditor.g_propertyPanel.setRootElem(document.getElementById("PropertyPanel"));
         LayoutEditor.g_textPropertyEditor.setInputElem(LayoutEditor.g_inputText);
 
-        stylePanel.setRootElem(document.getElementById("layoutStyles"));
-        stylePanel.selectChanged.add(function (styleName) {
+        g_stylePanel.setRootElem(document.getElementById("layoutStyles"));
+        g_stylePanel.selectChanged.add(function (styleName) {
             LayoutEditor.g_propertyPanel.setObjects([LayoutEditor.g_styleList.getStyle(styleName)], function () {
-                stylePanel.refresh();
-                LayoutEditor.g_shapeList.refresh();
+                g_stylePanel.draw();
+                g_editor.draw();
             });
         });
 
-        setTool("rectTool");
-        shapesSelect();
+        g_editor = new LayoutEditor.Editor(editorElem, 500, 500);
+        g_editor.selectChanged.add(function (objects) {
+            LayoutEditor.g_propertyPanel.setObjects(objects, function () {
+                g_editor.draw();
+            });
+        });
+
+        var platformSelect = document.getElementById("platform");
+        platformSelect.addEventListener("change", changePlatform);
+        platformSelect.value = g_editor.toolLayer.screen.getPlatform().toString();
 
         reset();
 
-        var watchCanvas = new InteractionHelper.Watch(interactionCanvas, function (e) {
-            LayoutEditor.g_panZoom.x = e.x;
-            LayoutEditor.g_panZoom.y = e.y;
-            LayoutEditor.g_panZoom.deltaX = e.deltaX;
-            LayoutEditor.g_panZoom.deltaY = e.deltaY;
-            LayoutEditor.g_panZoom.pinchDistance = e.pinchDistance;
-
-            e.x = LayoutEditor.g_panZoom.toX(e.x);
-            e.y = LayoutEditor.g_panZoom.toY(e.y);
-            e.deltaX = LayoutEditor.g_panZoom.toW(e.deltaX);
-            e.deltaY = LayoutEditor.g_panZoom.toH(e.deltaY);
-            e.pinchDistance *= LayoutEditor.g_panZoom.zoom;
-
-            if (g_tool && g_tool.isUsing) {
-                if (!g_tool.onPointer(e))
-                    g_tool = null; // this input can be used by other tools
-            } else {
-                g_tool = null;
-            }
-
-            for (var i = 0; g_tool === null && i < toolList.length; ++i) {
-                if (toolList[i].onPointer(e))
-                    g_tool = toolList[i];
-            }
-        });
+        var watchCanvas = new InteractionHelper.Watch(editorElem, g_editor.onPointer.bind(g_editor));
     });
 })(LayoutEditor || (LayoutEditor = {}));

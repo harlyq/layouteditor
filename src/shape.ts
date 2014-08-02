@@ -260,14 +260,14 @@ module LayoutEditor {
 
     //------------------------------
     export class Shape {
-        private style: Style = g_style;
-        isDeleted: boolean = false;
-        isHidden: boolean = false;
+        style: Style = g_style;
         oabb: Bounds = new Bounds();
         aabb: Bounds = new Bounds();
         transform: Transform = new Transform();
         name: string = "";
         text: string = "";
+        layer: Layer = null;
+        onChanged = new Helper.Callback < () => void > ()
 
         static uniqueID: number = 1;
 
@@ -282,12 +282,8 @@ module LayoutEditor {
             this.name = "Shape" + Shape.uniqueID++;
         }
 
-        setStyle(style: Style) {
-            this.style = style;
-        }
-
-        getStyle(): Style {
-            return this.style;
+        refresh() {
+            this.calculateBounds();
         }
 
         draw(ctx, panZoom) {
@@ -306,27 +302,27 @@ module LayoutEditor {
         // implemented in the derived class
         public buildPath(ctx, panZoom: PanZoom) {}
 
-        drawSelect(ctx) {
+        drawSelect(ctx, panZoom: PanZoom) {
             var oabb = this.oabb;
             ctx.save();
-            g_panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
+            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
             ctx.beginPath();
             ctx.rect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
             ctx.restore();
             ctx.stroke();
         }
 
-        drawAABB(ctx) {
+        drawAABB(ctx, panZoom: PanZoom) {
             var aabb = this.aabb;
             ctx.save();
-            g_panZoom.transform(ctx);
+            panZoom.transform(ctx);
             ctx.beginPath();
             ctx.rect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
             ctx.restore();
             ctx.stroke();
         }
 
-        drawText(ctx, panZoom) {
+        drawText(ctx, panZoom: PanZoom) {
             if (this.text.length === 0)
                 return;
 
@@ -385,7 +381,7 @@ module LayoutEditor {
         calculateBounds() {}
 
         isInsideXY(ctx, x: number, y: number): boolean {
-            this.buildPath(ctx, g_noPanZoom);
+            this.buildPath(ctx, PanZoom.none);
             return ctx.isPointInPath(x, y);
         }
 
@@ -447,13 +443,12 @@ module LayoutEditor {
 
         copy(other: Shape) {
             this.style = other.style;
-            this.isDeleted = other.isDeleted;
-            this.isHidden = other.isHidden;
             this.oabb.copy(other.oabb);
             this.aabb.copy(other.aabb);
             this.transform.copy(other.transform);
             this.name = other.name;
             this.text = other.text;
+            this.layer = other.layer;
         }
 
         clone(): Shape {
@@ -469,6 +464,7 @@ module LayoutEditor {
                 text: this.text,
                 style: this.style.name,
                 transform: this.transform
+                //layer: this.layer -- layers must be set up manually
             };
         }
 
@@ -759,15 +755,6 @@ module LayoutEditor {
             this.encloseShapes();
         }
 
-        setStyle(style: Style) {
-            super.setStyle(style);
-
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].setStyle(style);
-            }
-        }
-
-
         copy(other: GroupShape) {
             super.copy(other);
             this.lastTransform.copy(other.lastTransform);
@@ -786,16 +773,16 @@ module LayoutEditor {
         }
 
         // shapes in this group will be drawn independently
-        draw(ctx) {}
+        draw(ctx, panZoom: PanZoom) {}
 
         // use a standard draw for the subelements, when selected
-        drawSelect(ctx) {
+        drawSelect(ctx, panZoom: PanZoom) {
             if (this.shapes.length === 0)
                 return; // nothing to draw
 
             // draw the bounds
             g_selectStyle.drawShape(ctx);
-            super.drawSelect(ctx);
+            super.drawSelect(ctx, panZoom);
         }
 
         // check each sub-shape individually
@@ -911,168 +898,6 @@ module LayoutEditor {
         }
     }
 
-    //------------------------------
-    export class ShapeList {
-        shapes: Shape[] = [];
-        deletedShapes: Shape[] = [];
-        private hitCtx;
-
-        constructor() {
-            this.hitCtx = document.createElement("canvas").getContext("2d");
-        }
-
-        reset() {
-            this.shapes.length = 0;
-            this.deletedShapes.length = 0;
-        }
-
-        refresh() {
-            g_draw(this);
-        }
-
-        addShapes(shapes: Shape[]) {
-            for (var i: number = 0; i < shapes.length; ++i)
-                this.addShape(shapes[i]);
-        }
-
-        removeShapes(shapes: Shape[]) {
-            for (var i: number = 0; i < shapes.length; ++i)
-                this.removeShape(shapes[i]);
-        }
-
-        addShape(shape: Shape) {
-            shape.isDeleted = false;
-
-            // add the shape if not already present
-            var shapeIndex: number = this.shapes.indexOf(shape);
-            if (shapeIndex === -1)
-                this.shapes.push(shape);
-
-            // undelete the shape if necessary
-            var deletedIndex: number = this.deletedShapes.indexOf(shape);
-            if (deletedIndex !== -1)
-                this.deletedShapes.splice(deletedIndex, 1);
-
-            g_draw(this);
-        }
-
-        removeShape(shape: Shape) {
-            shape.isDeleted = true;
-
-            var shapeIndex: number = this.shapes.indexOf(shape);
-            if (shapeIndex !== -1)
-                this.shapes.splice(shapeIndex, 1);
-
-            var deletedIndex: number = this.deletedShapes.indexOf(shape);
-            if (deletedIndex === -1)
-                this.deletedShapes.push(shape);
-
-            g_draw(this);
-        }
-
-        hideShapes(shapes: Shape[]) {
-            for (var i: number = 0; i < shapes.length; ++i) {
-                shapes[i].isHidden = true;
-            }
-            g_draw(this);
-        }
-
-        showShapes(shapes: Shape[]) {
-            for (var i: number = 0; i < shapes.length; ++i) {
-                shapes[i].isHidden = false;
-            }
-            g_draw(this);
-        }
-
-        duplicateShape(shape: Shape): Shape {
-            var newShape: Shape = shape.clone();
-            newShape.makeUnique();
-
-            this.addShape(newShape);
-            return newShape;
-        }
-
-        draw(ctx) {
-            // normal shapes
-            var numShapes: number = this.shapes.length;
-            for (var i: number = 0; i < numShapes; ++i) {
-                var shape: Shape = this.shapes[i];
-                if (!shape.isHidden)
-                    shape.draw(ctx, g_panZoom);
-            }
-        }
-
-        getShapeInXY(x: number, y: number): Shape {
-            // in reverse as the last shapes are drawn on top
-            for (var i: number = this.shapes.length - 1; i >= 0; --i) {
-                var shape: Shape = this.shapes[i];
-                if (!shape.isHidden && shape.isInsideXY(this.hitCtx, x, y))
-                    return shape;
-            }
-
-            return null;
-        }
-
-        getShapesInBounds(bounds: Bounds): Shape[] {
-            var shapes: Shape[] = [];
-
-            // forward, so the list order is the same as the draw order
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                var shape: Shape = this.shapes[i];
-                if (!shape.isHidden && shape.isOverlapBounds(bounds)) {
-                    shape.isOverlapBounds(bounds);
-                    shapes.push(shape);
-                }
-            }
-
-            return shapes;
-        }
-
-        create(type: string): Shape {
-            switch (type) {
-                case "RectShape":
-                    return new RectShape("", 0, 0);
-                case "EllipseShape":
-                    return new EllipseShape("", 0, 0);
-                case "AABBShape":
-                    return new AABBShape();
-            }
-        }
-
-        isValidName(shapeName: string): boolean {
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                if (this.shapes[i].name === shapeName)
-                    return false;
-            }
-            return true;
-        }
-
-        saveData(): any {
-            var obj = {
-                shapes: []
-            };
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                var shape: Shape = this.shapes[i];
-                obj.shapes.push(shape.saveData());
-            }
-            return obj;
-        }
-
-        loadData(obj: any) {
-            this.reset();
-            for (var i: number = 0; i < obj.shapes.length; ++i) {
-                var shapeSave = obj.shapes[i];
-                var newShape: Shape = this.create(shapeSave.type);
-                newShape.loadData(shapeSave);
-                newShape.calculateBounds();
-                g_shapeList.addShape(newShape);
-            }
-        }
-    }
-
-    export
-    var g_shapeList: ShapeList = new ShapeList();
-
     g_propertyPanel.addPropertyList({
         canHandle: (obj: any) => {
             return obj instanceof Shape;
@@ -1081,9 +906,9 @@ module LayoutEditor {
             prop: 'name',
             match: '^[a-zA-Z]\\w*$',
             allowMultiple: false,
-            isValid: function(value) {
-                return g_shapeList.isValidName(value);
-            }
+            // isValid: function(value) {
+            //     return g_Page.isValidShapeName(value);
+            // }
         }, {
             prop: 'style',
             type: 'list',
@@ -1093,5 +918,6 @@ module LayoutEditor {
         }]
     });
 
-
+    // export
+    // var g_LayerList: LayerList = null;
 }

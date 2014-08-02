@@ -13,6 +13,11 @@ module LayoutEditor {
         commands: Command[] = [];
         currentIndex: number = 0;
 
+        // globals
+        layer: Layer = null;
+        propertyPanel: PropertyPanel = null;
+        style: Style = null;
+
         constructor() {}
 
         addCommand(command: Command) {
@@ -43,62 +48,65 @@ module LayoutEditor {
             this.currentIndex++;
         }
     }
-    export
-    var g_commandList: CommandList = new CommandList();
 
     export class ShapeCommand implements Command {
         public shape: Shape = null;
 
+        constructor(public page: Page, public layer: Layer) {}
+
         redo() {
-            g_shapeList.addShape(this.shape);
-            g_selectList.setSelectedShapes([this.shape]);
-            g_propertyPanel.setObjects([this.shape], this.onPropertyChanged.bind(this));
+            this.layer.addShape(this.shape);
+            this.page.requestDraw(this.layer);
+            // this.commandList.selectList.setSelectedShapes([this.shape]);
+            // this.commandList.propertyPanel.setObjects([this.shape], this.onPropertyChanged.bind(this));
         }
 
         undo() {
-            g_shapeList.removeShape(this.shape);
+            this.layer.removeShape(this.shape);
+            this.page.requestDraw(this.layer);
 
             // what do we set the property panel to display?
         }
 
-        onPropertyChanged() {
-            g_draw(g_shapeList);
-        }
+        // onPropertyChanged() {
+        //     this.layer.refresh();
+        // }
     }
 
     export class RectCommand extends ShapeCommand {
 
-        constructor(cx: number, cy: number, w: number, h: number) {
-            super();
+        constructor(page: Page, layer: Layer, cx: number, cy: number, w: number, h: number, style: Style) {
+            super(page, layer);
 
             this.shape = new RectShape("", w, h);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
-            this.shape.setStyle(g_style);
+            this.shape.style = style;
             this.shape.calculateBounds();
         }
     }
 
     export class EllipseCommand extends ShapeCommand {
 
-        constructor(cx: number, cy: number, rx: number, ry: number) {
-            super();
+        constructor(page: Page, layer: Layer, cx: number, cy: number, rx: number, ry: number, style: Style) {
+            super(page, layer);
 
             this.shape = new EllipseShape("", rx, ry);
             this.shape.transform.tx = cx;
             this.shape.transform.ty = cy;
-            this.shape.setStyle(g_style);
+            this.shape.style = style;
             this.shape.calculateBounds();
         }
     }
 
     // handles MoveCommand, RotateCommand, ResizeCommand
     export class TransformCommand implements Command {
+        private layers: Layer = null;
         private shapes: Shape[] = [];
         private oldTransforms: Transform[] = [];
         private transforms: Transform[] = [];
 
-        constructor(shapes: Shape[], oldTransforms: Transform[]) {
+        constructor(public page: Page, public layer: Layer, shapes: Shape[], oldTransforms: Transform[]) {
             for (var i: number = 0; i < shapes.length; ++i) {
                 this.shapes[i] = shapes[i];
                 this.transforms[i] = shapes[i].transform.clone();
@@ -109,35 +117,37 @@ module LayoutEditor {
         redo() {
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 this.shapes[i].transform.copy(this.transforms[i]);
+                this.shapes[i].refresh();
             }
-
-            g_draw(g_shapeList);
+            this.page.requestDraw(this.layer);
         }
 
         undo() {
             for (var i: number = 0; i < this.shapes.length; ++i) {
                 this.shapes[i].transform.copy(this.oldTransforms[i]);
+                this.shapes[i].refresh();
             }
-
-            g_draw(g_shapeList);
+            this.page.requestDraw(this.layer);
         }
     }
 
     export class TextCommand implements Command {
         oldText: string;
 
-        constructor(public shape: Shape, public text: string) {
+        constructor(public page: Page, public layer: Layer, public shape: Shape, public text: string) {
             this.oldText = this.shape.text;
         }
 
         redo() {
             this.shape.text = this.text;
-            g_draw(g_shapeList);
+            this.shape.refresh();
+            this.page.requestDraw(this.layer);
         }
 
         undo() {
             this.shape.text = this.oldText;
-            g_draw(g_shapeList);
+            this.shape.refresh();
+            this.page.requestDraw(this.layer);
         }
     }
 
@@ -175,43 +185,51 @@ module LayoutEditor {
         oldSelected: Shape[];
         duplicatedShapes: Shape[];
 
-        constructor() {
-            this.oldSelected = g_selectList.getSelectedShapes().slice();
+        constructor(public page: Page, public layer: Layer, public selectList: SelectList) {
+            this.oldSelected = this.selectList.getSelectedShapes().slice(); // copy
         }
 
         redo() {
             if (!this.duplicatedShapes) {
-                this.duplicatedShapes = g_selectList.duplicateSelected();
+                this.duplicatedShapes = this.selectList.duplicateSelected();
             } else {
                 // re-add the shapes from the previous undo - don't re-duplicate them
-                g_shapeList.addShapes(this.duplicatedShapes);
+                this.selectList.layer.addShapes(this.duplicatedShapes);
             }
-            g_selectList.setSelectedShapes(this.duplicatedShapes);
+            this.selectList.setSelectedShapes(this.duplicatedShapes);
+            this.page.requestDraw(this.layer);
         }
 
         undo() {
-            g_selectList.deleteSelected();
-            g_selectList.setSelectedShapes(this.oldSelected);
+            this.selectList.deleteSelected();
+            this.selectList.setSelectedShapes(this.oldSelected);
+            this.page.requestDraw(this.layer);
         }
     }
 
     export class DeleteSelectedCommand implements Command {
         oldSelected: Shape[];
+        oldLayer: Layer;
 
-        constructor() {
-            this.oldSelected = g_selectList.getSelectedShapes().slice();
+        constructor(public page: Page, public layer: Layer, public selectList: SelectList) {
+            this.oldSelected = this.selectList.getSelectedShapes().slice();
+            this.oldLayer = this.selectList.layer;
         }
 
         redo() {
-            g_selectList.deleteSelected();
+            this.selectList.deleteSelected();
+            this.page.requestDraw(this.layer);
         }
 
         undo() {
-            g_shapeList.addShapes(this.oldSelected);
-            g_selectList.setSelectedShapes(this.oldSelected);
+            this.oldLayer.addShapes(this.oldSelected);
+            this.selectList.setSelectedShapes(this.oldSelected);
+            this.page.requestDraw(this.layer);
         }
     }
 
     export
     var g_drawCtx = null;
+    export
+    var g_Layer = null;
 }

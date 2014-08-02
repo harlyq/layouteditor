@@ -7,8 +7,14 @@ module LayoutEditor {
     export class SelectList {
         selectedShapes: Shape[] = [];
         selectGroup: GroupShape = new GroupShape("Select");
+        layer: Layer = null;
+        selectChanged = new Helper.Callback < (objects: any[]) => void > ();
 
         constructor() {}
+
+        setLayer(layer: Layer) {
+            this.layer = layer;
+        }
 
         reset() {
             this.selectedShapes.length = 0;
@@ -56,28 +62,21 @@ module LayoutEditor {
 
         // deletes all of the selected shapes
         deleteSelected() {
-            // loop backwards because removeShape will alter the selectedShapes list
-            for (var i: number = this.selectedShapes.length - 1; i >= 0; --i) {
-                g_shapeList.removeShape(this.selectedShapes[i]);
+            for (var i = 0; i < this.selectedShapes.length; ++i) {
+                var shape = this.selectedShapes[i];
+                shape.layer.removeShape(shape);
             }
             this.selectedShapes.length = 0;
 
             this.rebuildSelectGroup();
         }
 
-        showSelected() {
-            g_shapeList.showShapes(this.selectedShapes);
-        }
-
-        hideSelected() {
-            g_shapeList.hideShapes(this.selectedShapes);
-        }
-
         // duplicates all of the selected shapes
         duplicateSelected(): Shape[] {
             var copyShapes: Shape[] = [];
-            for (var i: number = 0; i < this.selectedShapes.length; ++i) {
-                var copyShape: Shape = g_shapeList.duplicateShape(this.selectedShapes[i]);
+            for (var i = 0; i < this.selectedShapes.length; ++i) {
+                var shape = this.selectedShapes[i];
+                var copyShape: Shape = shape.layer.duplicateShape(shape);
                 copyShape.transform.tx += 20;
                 copyShape.calculateBounds();
                 copyShapes.push(copyShape);
@@ -87,27 +86,14 @@ module LayoutEditor {
             return copyShapes;
         }
 
-        draw(ctx) {
-            this.selectGroup.drawSelect(ctx);
+        draw(ctx, panZoom: PanZoom) {
+            this.selectGroup.drawSelect(ctx, panZoom);
         }
 
         rebuildSelectGroup() {
             this.selectGroup.reset();
             this.selectGroup.setShapes(this.selectedShapes);
-
-            g_draw(this);
-
-            if (this.selectedShapes.length > 0)
-                g_propertyPanel.setObjects(this.selectedShapes, this.onPropertyChanged.bind(this));
-            else
-                g_propertyPanel.setObjects([], null);
-        }
-
-        onPropertyChanged() {
-            g_draw(g_shapeList);
+            this.selectChanged.fire(this.selectedShapes);
         }
     }
-
-    export
-    var g_selectList: SelectList = new SelectList();
 }

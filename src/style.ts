@@ -156,7 +156,7 @@ module LayoutEditor {
             return index !== -1;
         }
 
-        isValidName(styleName: string): boolean {
+        isValidStyleName(styleName: string): boolean {
             for (var i: number = 0; i < this.styles.length; ++i) {
                 if (this.styles[i].name === styleName)
                     return false;
@@ -166,6 +166,7 @@ module LayoutEditor {
 
         saveData(): any {
             var obj = {
+                type: "StyleList",
                 styles: []
             };
 
@@ -177,6 +178,8 @@ module LayoutEditor {
         }
 
         loadData(obj: any) {
+            Helper.assert(obj.type === "StyleList");
+
             this.reset();
             this.styles.length = 0; // we will load the default style
 
@@ -214,7 +217,7 @@ module LayoutEditor {
             match: '^[a-zA-Z]\\w*$',
             allowMultiple: false,
             isValid: function(value) {
-                return g_styleList.isValidName(value);
+                return g_styleList.isValidStyleName(value);
             }
         }, {
             prop: "strokeColor",

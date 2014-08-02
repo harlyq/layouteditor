@@ -48,7 +48,7 @@ module LayoutEditor {
                 this.selectStyle(this.styleList.styles[0].name);
         }
 
-        refresh() {
+        draw() {
             ( < any > this.selected).refresh();
         }
 
@@ -131,10 +131,10 @@ module LayoutEditor {
             var ctx = this.ctx;
 
             if (style !== null)
-                this.rectShape.setStyle(style);
+                this.rectShape.style = style;
 
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            this.rectShape.draw(ctx, g_noPanZoom);
+            this.rectShape.draw(ctx, PanZoom.none);
 
             this.labelElem.innerHTML = styleName;
         }

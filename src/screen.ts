@@ -52,6 +52,7 @@ module LayoutEditor {
         }, ];
 
         screenType: ScreenType = null;
+        screenChanged = new Helper.Callback < (screenType: ScreenType) => void > ();
 
         constructor() {
             this.screenType = this.getScreenType(Screen.Platform.iPhone_Portrait);
@@ -71,7 +72,7 @@ module LayoutEditor {
             var screenType: ScreenType = this.getScreenType(platform);
             if (screenType !== null) {
                 this.screenType = screenType;
-                g_draw(this);
+                this.screenChanged.fire(screenType);
             }
         }
 
@@ -79,15 +80,16 @@ module LayoutEditor {
             return this.screenType.platform;
         }
 
-        draw(ctx) {
+        draw(ctx, panZoom: PanZoom) {
             if (!this.screenType)
                 return;
 
             ctx.strokeStyle = "black";
             ctx.lineWidth = 1;
+            ctx.setLineDash([]);
 
             ctx.save();
-            g_panZoom.transform(ctx);
+            panZoom.transform(ctx);
 
             ctx.beginPath();
             ctx.rect(0, 0, this.screenType.width, this.screenType.height);
@@ -106,7 +108,4 @@ module LayoutEditor {
             iPad3_Landscape, iPad3_Portrait
         }
     }
-
-    export
-    var g_screen: Screen = new Screen();
 }

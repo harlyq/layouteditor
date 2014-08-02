@@ -27,7 +27,7 @@ module Helper {
 
         }
 
-        fire(params: any) {
+        fire(params ? : any) {
             this.isProcessing = true;
 
             // call each callback, skipping removed ones
@@ -151,4 +151,5 @@ module Helper {
         }
         return list;
     }
+
 }

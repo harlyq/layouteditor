@@ -16,6 +16,8 @@ module LayoutEditor {
         deltaY: number = 0;
         pinchDistance: number = 0;
 
+        static none = new PanZoom();
+
         constructor() {}
 
         reset() {
@@ -75,8 +77,4 @@ module LayoutEditor {
             Helper.extend(this, obj);
         }
     }
-    export
-    var g_panZoom: PanZoom = new PanZoom();
-    export
-    var g_noPanZoom: PanZoom = new PanZoom();
 }

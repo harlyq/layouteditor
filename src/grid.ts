@@ -115,41 +115,45 @@ module LayoutEditor {
             };
         }
 
-        rebuildTabs(excludeShapes: Shape[] = []) {
+        rebuildTabs(layers: Layer[], excludeShapes: Shape[] = []) {
             if (!this.snapToShape)
                 return;
 
             this.xTabs.length = 0;
             this.yTabs.length = 0;
 
-            for (var i: number = 0; i < g_shapeList.shapes.length; ++i) {
-                var shape: Shape = g_shapeList.shapes[i];
-                if (shape.isHidden || excludeShapes.indexOf(shape) !== -1)
-                    continue;
+            for (var j = 0; j < layers.length; ++j) {
+                var layer: Layer = layers[j];
 
-                var polygon: number[] = shape.aabb.toPolygon();
-                var x1: number = Helper.arrayMin(polygon, 0, 2);
-                var x2: number = Helper.arrayMax(polygon, 0, 2);
-                var y1: number = Helper.arrayMin(polygon, 1, 2);
-                var y2: number = Helper.arrayMax(polygon, 1, 2);
-                var cx: number = (x1 + x2) * 0.5;
-                var cy: number = (y1 + y2) * 0.5;
+                for (var i: number = 0; i < layer.shapes.length; ++i) {
+                    var shape: Shape = layer.shapes[i];
+                    if (excludeShapes.indexOf(shape) !== -1)
+                        continue;
 
-                insertSortedUnique(this.xTabs, x1);
-                insertSortedUnique(this.xTabs, x2);
-                insertSortedUnique(this.xTabs, cx);
-                insertSortedUnique(this.yTabs, y1);
-                insertSortedUnique(this.yTabs, y2);
-                insertSortedUnique(this.yTabs, cy);
+                    var polygon: number[] = shape.aabb.toPolygon();
+                    var x1: number = Helper.arrayMin(polygon, 0, 2);
+                    var x2: number = Helper.arrayMax(polygon, 0, 2);
+                    var y1: number = Helper.arrayMin(polygon, 1, 2);
+                    var y2: number = Helper.arrayMax(polygon, 1, 2);
+                    var cx: number = (x1 + x2) * 0.5;
+                    var cy: number = (y1 + y2) * 0.5;
+
+                    insertSortedUnique(this.xTabs, x1);
+                    insertSortedUnique(this.xTabs, x2);
+                    insertSortedUnique(this.xTabs, cx);
+                    insertSortedUnique(this.yTabs, y1);
+                    insertSortedUnique(this.yTabs, y2);
+                    insertSortedUnique(this.yTabs, cy);
+                }
             }
         }
 
-        draw(ctx) {
+        draw(ctx, panZoom: PanZoom) {
             if (this.snappedX !== undefined || this.snappedY !== undefined) {
                 g_snapStyle.drawShape(ctx);
 
                 ctx.save();
-                g_panZoom.transform(ctx);
+                panZoom.transform(ctx);
 
                 ctx.beginPath();
 

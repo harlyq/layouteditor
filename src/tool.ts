@@ -6,27 +6,27 @@ module LayoutEditor {
     export class Tool {
         isUsing: boolean = false;
 
-        constructor() {}
+        constructor(public toolLayer: ToolLayer) {}
 
         onPointer(e: InteractionHelper.Event): boolean {
             return false;
         }
-        onChangeFocus(focus: string) {}
         draw(ctx) {}
+
+        refresh() {}
     }
 
     export class DrawTool extends Tool {
         public shape: Shape = null;
         public canUse: boolean = false;
 
-        constructor() {
-            super();
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
         }
 
         public draw(ctx) {
             if (this.shape && this.isUsing) {
-                this.shape.calculateBounds();
-                this.shape.draw(ctx, g_panZoom);
+                this.shape.draw(ctx, this.toolLayer.page.panZoom);
             }
         }
 
@@ -34,7 +34,6 @@ module LayoutEditor {
             return false;
         }
 
-        onChangeFocus(focus: string) {}
     }
 
     export class RectTool extends DrawTool {
@@ -44,42 +43,45 @@ module LayoutEditor {
         private x2: number = -1;
         private y2: number = -1;
 
-        constructor() {
-            super();
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
             this.shape = this.rectShape;
-            this.rectShape.setStyle(g_drawStyle);
+            this.rectShape.style = this.toolLayer.style;
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
             var isHandled: boolean = false;
+            var grid = this.toolLayer.grid;
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    g_grid.rebuildTabs();
-                    var pos: XY = g_grid.snapXY(e.x, e.y);
-                    this.x1 = pos.x;
-                    this.y1 = pos.y;
+                    grid.rebuildTabs([this.toolLayer.layer]);
+                    var pos: XY = grid.snapXY(e.x, e.y);
+                    this.x1 = this.x2 = pos.x;
+                    this.y1 = this.y2 = pos.y;
                     this.isUsing = true;
                     break;
 
                 case InteractionHelper.State.Move:
-                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    var pos: XY = grid.snapXY(e.x, e.y);
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    g_draw(this);
                     break;
 
                 case InteractionHelper.State.End:
                     if (this.canUse) {
+                        var toolLayer = this.toolLayer;
                         var newCommand = new RectCommand(
+                            toolLayer.page,
+                            toolLayer.layer,
                             this.rectShape.transform.tx,
                             this.rectShape.transform.ty,
                             this.rectShape.w,
-                            this.rectShape.h);
-                        g_commandList.addCommand(newCommand);
+                            this.rectShape.h,
+                            toolLayer.style);
+                        toolLayer.commandList.addCommand(newCommand);
                         this.canUse = false;
-                        g_draw(this);
                     }
 
                     this.isUsing = false;
@@ -100,19 +102,6 @@ module LayoutEditor {
                 Math.abs(this.y2 - this.y1));
 
             super.draw(ctx);
-
-            if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
-                ctx.save();
-                g_panZoom.transform(ctx);
-                ctx.beginPath();
-                g_snapStyle.drawShape(ctx);
-                ctx.moveTo(g_grid.snappedX, 0);
-                ctx.lineTo(g_grid.snappedX, 1000);
-                ctx.moveTo(0, g_grid.snappedY);
-                ctx.lineTo(1000, g_grid.snappedY);
-                ctx.stroke();
-                ctx.restore();
-            }
         }
     }
 
@@ -123,39 +112,45 @@ module LayoutEditor {
         private y1: number;
         private y2: number;
 
-        constructor() {
-            super();
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
             this.shape = this.ellipseShape;
-            this.ellipseShape.setStyle(g_drawStyle);
+            this.ellipseShape.style = this.toolLayer.style;
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
             var isHandled: boolean = false;
+            var grid = this.toolLayer.grid;
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    g_grid.rebuildTabs();
-                    var pos: XY = g_grid.snapXY(e.x, e.y);
-                    this.x1 = pos.x;
-                    this.y1 = pos.y;
+                    grid.rebuildTabs([this.toolLayer.layer]);
+                    var pos: XY = grid.snapXY(e.x, e.y);
+                    this.x1 = this.x2 = pos.x;
+                    this.y1 = this.y2 = pos.y;
                     this.isUsing = true;
                     break;
+
                 case InteractionHelper.State.Move:
-                    var pos: XY = g_grid.snapXY(e.x, e.y);
+                    var pos: XY = grid.snapXY(e.x, e.y);
                     this.x2 = pos.x;
                     this.y2 = pos.y;
                     this.canUse = true;
-                    g_draw(this);
                     break;
+
                 case InteractionHelper.State.End:
                     if (this.isUsing) {
                         if (this.canUse) {
+                            var toolLayer = this.toolLayer;
                             var newCommand = new EllipseCommand(
+                                toolLayer.page,
+                                toolLayer.layer,
                                 this.ellipseShape.transform.tx,
                                 this.ellipseShape.transform.ty,
                                 this.ellipseShape.rx,
-                                this.ellipseShape.ry);
-                            g_commandList.addCommand(newCommand);
+                                this.ellipseShape.ry,
+                                toolLayer.style);
+                            toolLayer.commandList.addCommand(newCommand);
                             this.canUse = false;
                         }
                         this.isUsing = false;
@@ -176,20 +171,8 @@ module LayoutEditor {
                 Math.min(this.y1, this.y2),
                 Math.abs(this.x2 - this.x1),
                 Math.abs(this.y2 - this.y1));
-            super.draw(ctx);
 
-            if (g_grid.snappedX > -1 || g_grid.snappedY > -1) {
-                ctx.save();
-                g_panZoom.transform(ctx);
-                ctx.beginPath();
-                g_snapStyle.drawShape(ctx);
-                ctx.moveTo(g_grid.snappedX, 0);
-                ctx.lineTo(g_grid.snappedX, 1000);
-                ctx.moveTo(0, g_grid.snappedY);
-                ctx.lineTo(1000, g_grid.snappedY);
-                ctx.stroke();
-                ctx.restore();
-            }
+            super.draw(ctx);
         }
     }
 
@@ -199,9 +182,9 @@ module LayoutEditor {
         private x2: number;
         private y2: number;
 
-        constructor() {
-            super();
-            this.aabbShape.setStyle(g_selectStyle);
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
+            this.aabbShape.style = g_selectStyle;
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -213,22 +196,22 @@ module LayoutEditor {
                     this.aabbShape.y1 = e.y;
                     this.aabbShape.x2 = e.x;
                     this.aabbShape.y2 = e.y;
-                    this.aabbShape.calculateBounds();
+                    this.aabbShape.refresh();
                     this.isUsing = true;
-                    g_draw(this);
                     break;
+
                 case InteractionHelper.State.Move:
                     if (this.isUsing) {
                         this.aabbShape.x2 = e.x;
                         this.aabbShape.y2 = e.y;
-                        this.aabbShape.calculateBounds();
-                        g_draw(this);
+                        this.aabbShape.refresh();
                     }
                     break;
+
                 case InteractionHelper.State.End:
                     if (this.isUsing) {
-                        var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
-                        g_selectList.setSelectedShapes(shapes);
+                        var shapes: Shape[] = this.toolLayer.layer.getShapesInBounds(this.aabbShape.aabb);
+                        this.toolLayer.selectList.setSelectedShapes(shapes);
 
                         this.isUsing = false;
 
@@ -240,18 +223,16 @@ module LayoutEditor {
             return this.isUsing || isHandled;
         }
 
-        onChangeFocus(focus: string) {}
-
         public draw(ctx) {
             if (!this.isUsing)
                 return;
 
-            this.aabbShape.draw(ctx, g_panZoom);
+            this.aabbShape.draw(ctx, this.toolLayer.page.panZoom);
 
             g_selectStyle.drawShape(ctx);
-            var shapes: Shape[] = g_shapeList.getShapesInBounds(this.aabbShape.aabb);
+            var shapes: Shape[] = this.toolLayer.layer.getShapesInBounds(this.aabbShape.aabb);
             for (var i = 0; i < shapes.length; ++i) {
-                shapes[i].drawSelect(ctx);
+                shapes[i].drawSelect(ctx, this.toolLayer.page.panZoom);
             }
         }
     }
@@ -269,8 +250,8 @@ module LayoutEditor {
         private oldOABB: Bounds = new Bounds();
         private oldShapeTransforms: Transform[] = [];
 
-        constructor() {
-            super()
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -278,24 +259,24 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    var shape: Shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    var shape: Shape = this.toolLayer.layer.getShapeInXY(e.x, e.y);
                     this.handle = ResizeTool.HandleFlag.None;
 
                     if (shape) {
-                        if (!g_selectList.isSelected(shape)) {
-                            g_selectList.setSelectedShapes([shape]);
+                        if (!this.toolLayer.selectList.isSelected(shape)) {
+                            this.toolLayer.selectList.setSelectedShapes([shape]);
                         }
                     }
 
-                    var selectGroup: GroupShape = g_selectList.selectGroup;
+                    var selectGroup: GroupShape = this.toolLayer.selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
-                        g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
-                        g_grid.rebuildTabs();
+                        this.toolLayer.moveSelectToToolLayer();
+                        this.toolLayer.grid.rebuildTabs([this.toolLayer.layer]);
 
                         this.oldOABB.copy(selectGroup.oabb);
                         this.oldTransform.copy(selectGroup.transform);
 
-                        var shapes: Shape[] = g_selectList.selectGroup.shapes;
+                        var shapes: Shape[] = this.toolLayer.selectList.selectGroup.shapes;
                         for (var i: number = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
@@ -326,13 +307,12 @@ module LayoutEditor {
                         this.deltaY = 0;
 
                         isHandled = true;
-                        g_draw(this);
                     }
                     break;
 
                 case InteractionHelper.State.Move:
                     if (this.isUsing) {
-                        var transform = g_selectList.selectGroup.transform;
+                        var transform = this.toolLayer.selectList.selectGroup.transform;
                         var oldOABB = this.oldOABB;
                         var oldInfo = this.oldInfo;
 
@@ -383,20 +363,24 @@ module LayoutEditor {
 
                         this.canUse = this.handle !== ResizeTool.HandleFlag.None;
 
-                        g_selectList.selectGroup.calculateBounds();
-                        g_draw(this);
+                        this.toolLayer.selectList.selectGroup.refresh();
                         isHandled = true;
                     }
                     break;
 
                 case InteractionHelper.State.End:
                     if (this.isUsing) {
+                        var toolLayer = this.toolLayer;
+
                         if (this.canUse) {
-                            var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                            g_commandList.addCommand(newCommand);
+                            var newCommand = new TransformCommand(
+                                toolLayer.page,
+                                toolLayer.layer,
+                                toolLayer.selectList.selectGroup.shapes,
+                                this.oldShapeTransforms);
+                            toolLayer.commandList.addCommand(newCommand);
                         }
-                        g_selectList.showSelected();
-                        g_draw(this);
+                        toolLayer.moveSelectToLayer();
                         isHandled = true;
 
                         this.canUse = false;
@@ -409,14 +393,12 @@ module LayoutEditor {
             return isHandled || this.isUsing;
         }
 
-        onChangeFocus(focus: string) {}
-
         public draw(ctx) {
             if (!this.isUsing)
                 return;
 
-            for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
-                g_selectList.selectedShapes[i].draw(ctx, g_panZoom); // draw the shape in the tool context
+            for (var i: number = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+                this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
         }
     }
@@ -434,8 +416,8 @@ module LayoutEditor {
         private oldTransform: Transform = new Transform();
         private oldShapeTransforms: Transform[] = [];
 
-        constructor() {
-            super();
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -443,20 +425,20 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    var shape: Shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    var shape: Shape = this.toolLayer.layer.getShapeInXY(e.x, e.y);
                     if (shape) {
-                        if (!g_selectList.isSelected(shape)) {
-                            g_selectList.setSelectedShapes([shape]);
+                        if (!this.toolLayer.selectList.isSelected(shape)) {
+                            this.toolLayer.selectList.setSelectedShapes([shape]);
                         }
                     }
 
-                    var selectGroup: GroupShape = g_selectList.selectGroup;
+                    var selectGroup: GroupShape = this.toolLayer.selectList.selectGroup;
                     if (selectGroup.isInsideOABBXY(e.x, e.y)) {
-                        g_selectList.hideSelected();
+                        this.toolLayer.moveSelectToToolLayer();
 
                         this.oldTransform.copy(selectGroup.transform);
 
-                        var shapes: Shape[] = g_selectList.selectGroup.shapes;
+                        var shapes: Shape[] = this.toolLayer.selectList.selectGroup.shapes;
                         for (var i: number = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
@@ -466,8 +448,6 @@ module LayoutEditor {
                         this.lastAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
                         this.isUsing = true;
 
-                        g_draw(this);
-
                         isHandled = true;
                     }
                     break;
@@ -475,9 +455,8 @@ module LayoutEditor {
                 case InteractionHelper.State.Move:
                     if (this.isUsing) {
                         var newAngle = this.getAngle(e.x, e.y, this.pivotX, this.pivotY);
-                        g_selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
-                        g_selectList.selectGroup.calculateBounds();
-                        g_draw(this);
+                        this.toolLayer.selectList.selectGroup.transform.rotate(newAngle - this.lastAngle);
+                        this.toolLayer.selectList.selectGroup.refresh();
 
                         isHandled = true;
                         this.lastAngle = newAngle;
@@ -486,10 +465,14 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.isUsing) {
-                        var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                        g_commandList.addCommand(newCommand);
-                        g_selectList.showSelected();
-                        g_draw(this);
+                        var toolLayer = this.toolLayer;
+                        var newCommand = new TransformCommand(
+                            toolLayer.page,
+                            toolLayer.layer,
+                            toolLayer.selectList.selectGroup.shapes,
+                            this.oldShapeTransforms);
+                        toolLayer.commandList.addCommand(newCommand);
+                        toolLayer.moveSelectToLayer();
                         isHandled = true;
                         this.isUsing = false;
                     }
@@ -500,14 +483,12 @@ module LayoutEditor {
             return isHandled || this.isUsing;
         }
 
-        onChangeFocus(focus: string) {}
-
         public draw(ctx) {
             if (!this.isUsing)
                 return;
 
-            for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
-                g_selectList.selectedShapes[i].draw(ctx, g_panZoom); // draw the shape in the tool context
+            for (var i: number = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+                this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
         }
 
@@ -530,8 +511,8 @@ module LayoutEditor {
         private oldAABB: Bounds = new Bounds();
         private oldShapeTransforms: Transform[] = [];
 
-        constructor() {
-            super();
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -539,27 +520,26 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
-                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    this.shape = this.toolLayer.layer.getShapeInXY(e.x, e.y);
 
                     if (this.shape) {
-                        if (!g_selectList.isSelected(this.shape)) {
-                            g_selectList.setSelectedShapes([this.shape]);
+                        if (!this.toolLayer.selectList.isSelected(this.shape)) {
+                            this.toolLayer.selectList.setSelectedShapes([this.shape]);
                         }
 
-                        var shapes: Shape[] = g_selectList.selectGroup.shapes;
+                        var shapes: Shape[] = this.toolLayer.selectList.selectGroup.shapes;
                         for (var i: number = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
 
-                        g_selectList.hideSelected(); // hide before rebuilding tabs, so we don't include them
-                        g_grid.rebuildTabs();
-                        this.oldTransform.copy(g_selectList.selectGroup.transform);
-                        this.oldAABB.copy(g_selectList.selectGroup.aabb);
+                        this.toolLayer.moveSelectToToolLayer(); // hide before rebuilding tabs, so we don't include them
+                        this.toolLayer.grid.rebuildTabs([this.toolLayer.layer]);
+                        this.oldTransform.copy(this.toolLayer.selectList.selectGroup.transform);
+                        this.oldAABB.copy(this.toolLayer.selectList.selectGroup.aabb);
                         this.deltaX = 0;
                         this.deltaY = 0;
                         this.isUsing = true;
 
-                        g_draw(this);
                         isHandled = true;
                     }
                     break;
@@ -571,28 +551,32 @@ module LayoutEditor {
 
                         var delta: XY = this.snapAABBToGrid(this.deltaX, this.deltaY);
 
-                        var moveTransform = g_selectList.selectGroup.transform;
+                        var moveTransform = this.toolLayer.selectList.selectGroup.transform;
 
                         moveTransform.tx = this.oldTransform.tx + delta.x;
                         moveTransform.ty = this.oldTransform.ty + delta.y;
 
-                        g_selectList.selectGroup.calculateBounds();
+                        this.toolLayer.selectList.selectGroup.refresh();
 
                         this.canUse = true;
 
-                        g_draw(this);
                         isHandled = true;
                     }
                     break;
 
                 case InteractionHelper.State.End:
                     if (this.isUsing) {
+                        var toolLayer = this.toolLayer;
                         if (this.canUse) {
-                            var newCommand = new TransformCommand(g_selectList.selectGroup.shapes, this.oldShapeTransforms);
-                            g_commandList.addCommand(newCommand);
+                            var newCommand = new TransformCommand(
+                                toolLayer.page,
+                                toolLayer.layer,
+                                toolLayer.selectList.selectGroup.shapes,
+                                this.oldShapeTransforms);
+                            toolLayer.commandList.addCommand(newCommand);
                         }
-                        g_selectList.showSelected();
-                        g_grid.clearSnap();
+                        toolLayer.moveSelectToLayer();
+                        toolLayer.grid.clearSnap();
 
                         this.canUse = false;
                         this.shape = null;
@@ -606,22 +590,19 @@ module LayoutEditor {
             return isHandled || this.shape !== null;
         }
 
-        onChangeFocus(focus: string) {}
-
         public draw(ctx) {
             if (!this.isUsing)
                 return;
 
-            for (var i: number = 0; i < g_selectList.selectedShapes.length; ++i) {
-                g_selectList.selectedShapes[i].draw(ctx, g_panZoom); // draw the shape in the tool context
+            for (var i: number = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+                this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
-
-            g_grid.draw(ctx);
         }
 
         private snapAABBToGrid(dx: number, dy: number): XY {
             // the delta is wrt to the original aabb
             var aabb = this.oldAABB;
+            var grid = this.toolLayer.grid;
 
             var centerX: number = aabb.cx + dx;
             var centerY: number = aabb.cy + dy;
@@ -635,30 +616,30 @@ module LayoutEditor {
                 y: dy
             };
 
-            var newLeft: number = g_grid.snapX(left);
+            var newLeft: number = grid.snapX(left);
             if (left !== newLeft) {
                 delta.x += newLeft - left;
             } else {
-                var newRight: number = g_grid.snapX(right);
+                var newRight: number = grid.snapX(right);
                 if (right !== newRight) {
                     delta.x += newRight - right;
                 } else {
-                    var newCenterX: number = g_grid.snapX(centerX);
+                    var newCenterX: number = grid.snapX(centerX);
                     if (newCenterX !== centerX) {
                         delta.x += newCenterX - centerX;
                     }
                 }
             }
 
-            var newTop: number = g_grid.snapY(top);
+            var newTop: number = grid.snapY(top);
             if (top !== newTop) {
                 delta.y += newTop - top;
             } else {
-                var newBottom: number = g_grid.snapY(bottom);
+                var newBottom: number = grid.snapY(bottom);
                 if (bottom !== newBottom) {
                     delta.y += newBottom - bottom;
                 } else {
-                    var newCenterY: number = g_grid.snapY(centerY);
+                    var newCenterY: number = grid.snapY(centerY);
                     if (newCenterY !== centerY) {
                         delta.y += newCenterY - centerY;
                     }
@@ -670,12 +651,13 @@ module LayoutEditor {
     }
 
     export class PanZoomTool extends Tool {
-        constructor() {
-            super();
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
             var isHandled = false;
+            var panZoom = this.toolLayer.page.panZoom;
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
@@ -683,33 +665,32 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.Move:
-                    g_panZoom.panX += g_panZoom.deltaX;
-                    g_panZoom.panY += g_panZoom.deltaY;
-                    g_draw(g_panZoom);
+                    panZoom.panX += panZoom.deltaX;
+                    panZoom.panY += panZoom.deltaY;
+
                     isHandled = true;
                     break;
 
                 case InteractionHelper.State.MouseWheel:
-                    var scale = (g_panZoom.deltaY > 0 ? 1 / 1.15 : 1.15);
-                    g_panZoom.panX += e.x * g_panZoom.zoom * (1 - scale);
-                    g_panZoom.panY += e.y * g_panZoom.zoom * (1 - scale);
-                    g_panZoom.zoom *= scale;
+                    var scale = (panZoom.deltaY > 0 ? 1 / 1.15 : 1.15);
+                    panZoom.panX += e.x * panZoom.zoom * (1 - scale);
+                    panZoom.panY += e.y * panZoom.zoom * (1 - scale);
+                    panZoom.zoom *= scale;
 
-                    g_draw(g_panZoom);
                     isHandled = true;
-
                     break;
 
                 case InteractionHelper.State.End:
                     this.isUsing = false;
-                    //g_draw(g_panZoom); not needed as we're not clearing anything
                     break;
+            }
+
+            if (this.isUsing || isHandled) {
+                this.toolLayer.page.requestDraw();
             }
 
             return this.isUsing || isHandled;
         }
-
-        onChangeFocus(focus: string) {}
 
         draw(ctx) {}
     }
@@ -719,12 +700,11 @@ module LayoutEditor {
         editShape: Shape = null;
         inputListener: any = null;
 
-        constructor() {
-            super();
-            var self = this;
-            g_inputMultiLine.addEventListener('input', function(e) {
-                self.onInput(e);
-            });
+        constructor(toolLayer: ToolLayer) {
+            super(toolLayer);
+
+            g_inputMultiLine.addEventListener('input', this.onInput.bind(this));
+
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
@@ -732,13 +712,13 @@ module LayoutEditor {
 
             switch (e.state) {
                 case InteractionHelper.State.DoubleClick:
-                    this.shape = g_shapeList.getShapeInXY(e.x, e.y);
+                    var toolLayer = this.toolLayer;
+                    this.shape = toolLayer.layer.getShapeInXY(e.x, e.y);
                     if (this.shape) {
                         this.editShape = this.shape.clone();
 
-                        // TODO remove dependency on g_toolCtx
-                        var left: string = this.shape.oabb.cx + g_toolCtx.canvas.offsetLeft + "px";
-                        var top: string = this.shape.oabb.cy + g_toolCtx.canvas.offsetTop + "px";
+                        var left: string = this.shape.oabb.cx + toolLayer.canvas.offsetLeft + "px";
+                        var top: string = this.shape.oabb.cy + toolLayer.canvas.offsetTop + "px";
                         g_inputMultiLine.style.left = left;
                         g_inputMultiLine.style.top = top;
                         g_inputMultiLine.value = this.editShape.text;
@@ -751,7 +731,7 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.Start:
-                    if (this.shape && g_shapeList.getShapeInXY(e.x, e.y) !== this.shape) {
+                    if (this.shape && this.toolLayer.layer.getShapeInXY(e.x, e.y) !== this.shape) {
                         this.stopTool();
                         this.isUsing = false;
 
@@ -764,22 +744,17 @@ module LayoutEditor {
             return isHandled || this.isUsing;
         }
 
-        onChangeFocus(focus: string) {
-            if (this.shape)
-                this.stopTool();
-        }
-
         private stopTool() {
             if (this.shape) {
-                var newCommand = new TextCommand(this.shape, this.editShape.text);
-                g_commandList.addCommand(newCommand);
+                var toolLayer = this.toolLayer;
+                var newCommand = new TextCommand(toolLayer.page, toolLayer.layer, this.shape, this.editShape.text);
+                toolLayer.commandList.addCommand(newCommand);
 
                 this.shape = null;
                 this.isUsing = false;
 
                 g_inputMultiLine.value = "";
                 g_inputMultiLine.style.display = "none";
-                g_draw(this);
             }
         }
 
@@ -788,20 +763,19 @@ module LayoutEditor {
                 return;
 
             this.editShape.text = g_inputMultiLine.value;
-            g_draw(this);
+            this.toolLayer.draw();
+            this.draw(this.toolLayer.ctx);
         }
 
         public draw(ctx) {
             if (!this.isUsing)
                 return;
 
-            this.editShape.draw(ctx, g_panZoom);
+            this.editShape.draw(ctx, this.toolLayer.page.panZoom);
         }
     }
 
-    export
-    var g_inputMultiLine = null;
 
     export
-    var g_toolCtx = null;
+    var g_inputMultiLine = null;
 }

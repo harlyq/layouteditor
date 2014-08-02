@@ -15,7 +15,7 @@ gulp.task('less', function() {
 });
 
 gulp.task('typescript', function() {
-    run('tsc.cmd --out dist/layouteditor.js src/layouteditor.ts').exec().on('error', gutil.log);
+    run('tsc.cmd --target ES5 --out dist/layouteditor.js src/layouteditor.ts').exec().on('error', gutil.log);
 
     // This should work, but actually generates a non --out file in layouteditor.js
     // return gulp

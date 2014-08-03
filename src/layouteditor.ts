@@ -32,6 +32,24 @@ module LayoutEditor {
         g_editor.loadData(obj.editor);
     }
 
+    function uploadData(e) {
+        var files = e.target.files;
+        if (files.length === 0)
+            return;
+
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var obj: any = JSON.parse(e.target.result);
+            reset();
+            g_styleList.loadData(obj.styleList);
+            g_editor.loadData(obj.editor);
+
+            g_stylePanel.draw();
+            g_editor.draw();
+        }
+        reader.readAsText(files[0]);
+    }
+
     function reset() {
         g_editor.reset();
         g_propertyPanel.reset();
@@ -155,6 +173,7 @@ module LayoutEditor {
         document.getElementById("delete").addEventListener("click", deleteSelect);
         document.getElementById("shapes").addEventListener("click", shapesSelect);
         document.getElementById("styles").addEventListener("click", stylesSelect);
+        document.getElementById("upload").addEventListener("change", uploadData);
 
         g_inputText = document.getElementById("inputText");
         g_inputMultiLine = document.getElementById("inputMultiLine");

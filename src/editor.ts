@@ -157,6 +157,10 @@ module LayoutEditor {
             this.reset();
 
             this.page.loadData(obj.page);
+
+            this.toolLayer.page = this.page;
+            if (this.page.layers.length > 0)
+                this.toolLayer.layer = this.page.layers[0];
         }
     }
 }

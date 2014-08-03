@@ -81,6 +81,7 @@ module LayoutEditor {
                             this.rectShape.h,
                             toolLayer.style);
                         toolLayer.commandList.addCommand(newCommand);
+                        toolLayer.selectList.setSelectedShapes([newCommand.shape]);
                         this.canUse = false;
                     }
 
@@ -150,7 +151,9 @@ module LayoutEditor {
                                 this.ellipseShape.rx,
                                 this.ellipseShape.ry,
                                 toolLayer.style);
+
                             toolLayer.commandList.addCommand(newCommand);
+                            toolLayer.selectList.setSelectedShapes([newCommand.shape]);
                             this.canUse = false;
                         }
                         this.isUsing = false;
@@ -210,6 +213,7 @@ module LayoutEditor {
 
                 case InteractionHelper.State.End:
                     if (this.isUsing) {
+                        var self = this;
                         var shapes: Shape[] = this.toolLayer.layer.getShapesInBounds(this.aabbShape.aabb);
                         this.toolLayer.selectList.setSelectedShapes(shapes);
 

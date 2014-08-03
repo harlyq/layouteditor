@@ -3340,6 +3340,7 @@ var LayoutEditor;
                         var toolLayer = this.toolLayer;
                         var newCommand = new LayoutEditor.RectCommand(toolLayer.page, toolLayer.layer, this.rectShape.transform.tx, this.rectShape.transform.ty, this.rectShape.w, this.rectShape.h, toolLayer.style);
                         toolLayer.commandList.addCommand(newCommand);
+                        toolLayer.selectList.setSelectedShapes([newCommand.shape]);
                         this.canUse = false;
                     }
 
@@ -3395,7 +3396,9 @@ var LayoutEditor;
                         if (this.canUse) {
                             var toolLayer = this.toolLayer;
                             var newCommand = new LayoutEditor.EllipseCommand(toolLayer.page, toolLayer.layer, this.ellipseShape.transform.tx, this.ellipseShape.transform.ty, this.ellipseShape.rx, this.ellipseShape.ry, toolLayer.style);
+
                             toolLayer.commandList.addCommand(newCommand);
+                            toolLayer.selectList.setSelectedShapes([newCommand.shape]);
                             this.canUse = false;
                         }
                         this.isUsing = false;
@@ -3449,6 +3452,7 @@ var LayoutEditor;
 
                 case 3 /* End */:
                     if (this.isUsing) {
+                        var self = this;
                         var shapes = this.toolLayer.layer.getShapesInBounds(this.aabbShape.aabb);
                         this.toolLayer.selectList.setSelectedShapes(shapes);
 
@@ -4180,6 +4184,10 @@ var LayoutEditor;
             this.reset();
 
             this.page.loadData(obj.page);
+
+            this.toolLayer.page = this.page;
+            if (this.page.layers.length > 0)
+                this.toolLayer.layer = this.page.layers[0];
         };
         return Editor;
     })();
@@ -4397,6 +4405,24 @@ var LayoutEditor;
         g_editor.loadData(obj.editor);
     }
 
+    function uploadData(e) {
+        var files = e.target.files;
+        if (files.length === 0)
+            return;
+
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            var obj = JSON.parse(e.target.result);
+            reset();
+            LayoutEditor.g_styleList.loadData(obj.styleList);
+            g_editor.loadData(obj.editor);
+
+            g_stylePanel.draw();
+            g_editor.draw();
+        };
+        reader.readAsText(files[0]);
+    }
+
     function reset() {
         g_editor.reset();
         LayoutEditor.g_propertyPanel.reset();
@@ -4506,6 +4532,7 @@ var LayoutEditor;
         document.getElementById("delete").addEventListener("click", deleteSelect);
         document.getElementById("shapes").addEventListener("click", shapesSelect);
         document.getElementById("styles").addEventListener("click", stylesSelect);
+        document.getElementById("upload").addEventListener("change", uploadData);
 
         LayoutEditor.g_inputText = document.getElementById("inputText");
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");

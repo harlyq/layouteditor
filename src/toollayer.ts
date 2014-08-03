@@ -54,10 +54,14 @@ module LayoutEditor {
 
         undo() {
             this.commandList.undo();
+            this.selectList.refresh(); // in case a selected shape was changed
+            this.requestDraw();
         }
 
         redo() {
             this.commandList.redo();
+            this.selectList.refresh(); // in case a selected shape was changed
+            this.requestDraw();
         }
 
         requestDraw() {
@@ -66,6 +70,31 @@ module LayoutEditor {
             this.hasRequestDraw = true;
 
             requestAnimationFrame(this.draw.bind(this));
+        }
+
+        duplicateSelect() {
+            var command = new DuplicateShapesCommand(this.page, this.layer, this.selectList.selectedShapes);
+            this.commandList.addCommand(command);
+            this.selectList.setSelectedShapes(command.duplicatedShapes);
+            this.requestDraw();
+        }
+
+        deleteSelect() {
+            this.commandList.addCommand(new DeleteShapesCommand(this.page, this.layer, this.selectList.selectedShapes));
+            this.selectList.refresh();
+            this.requestDraw();
+        }
+
+        distributeSelect(distribute: DistributeStyle) {
+            this.commandList.addCommand(new DistributeShapesCommand(this.page, this.layer, this.selectList.selectedShapes, distribute));
+            this.selectList.refresh();
+            this.requestDraw();
+        }
+
+        makeSquareSelect() {
+            this.commandList.addCommand(new MakeSquareShapesCommand(this.page, this.layer, this.selectList.selectedShapes));
+            this.selectList.refresh();
+            this.requestDraw();
         }
 
         moveSelectToToolLayer() {

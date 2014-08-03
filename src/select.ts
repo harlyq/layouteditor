@@ -13,7 +13,15 @@ module LayoutEditor {
         constructor() {}
 
         setLayer(layer: Layer) {
+            if (layer == this.layer)
+                return;
+
             this.layer = layer;
+            this.selectGroup.setShapes([]);
+        }
+
+        refresh() {
+            this.rebuildSelectGroup();
         }
 
         reset() {
@@ -60,32 +68,6 @@ module LayoutEditor {
             this.rebuildSelectGroup();
         }
 
-        // deletes all of the selected shapes
-        deleteSelected() {
-            for (var i = 0; i < this.selectedShapes.length; ++i) {
-                var shape = this.selectedShapes[i];
-                shape.layer.removeShape(shape);
-            }
-            this.selectedShapes.length = 0;
-
-            this.rebuildSelectGroup();
-        }
-
-        // duplicates all of the selected shapes
-        duplicateSelected(): Shape[] {
-            var copyShapes: Shape[] = [];
-            for (var i = 0; i < this.selectedShapes.length; ++i) {
-                var shape = this.selectedShapes[i];
-                var copyShape: Shape = shape.layer.duplicateShape(shape);
-                copyShape.transform.tx += 20;
-                copyShape.calculateBounds();
-                copyShapes.push(copyShape);
-            }
-
-            this.rebuildSelectGroup();
-            return copyShapes;
-        }
-
         draw(ctx, panZoom: PanZoom) {
             this.selectGroup.drawSelect(ctx, panZoom);
         }
@@ -93,7 +75,7 @@ module LayoutEditor {
         rebuildSelectGroup() {
             this.selectGroup.reset();
             this.selectGroup.setShapes(this.selectedShapes);
-            this.selectChanged.fire(this.selectedShapes);
+            this.selectChanged.fire(this.selectGroup.enclosedShapes);
         }
     }
 }

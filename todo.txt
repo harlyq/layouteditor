@@ -1,6 +1,14 @@
-- remove g_ globals, linkage should occur in layouteditor.ts
 - bundle panels into web components
 - make a small seperate presentation framework for the files
+- option to mirror selection
+
+3-Aug-14
+- option to square the selected objects
+- option to distrube selected shapes (left, right, top, horizontal, vertical, bottom)
+
+2-Aug-14
+= added load from file support
+- remove g_ globals, linkage should occur in layouteditor.ts
 
 30-Jul-14
 - use multiple tools at once e.g. resize and draw, resize and select

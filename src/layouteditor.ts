@@ -56,73 +56,14 @@ module LayoutEditor {
 
         g_editor.setTool("rectTool");
         shapesSelect();
-
-        // g_commandList.reset();
-        // g_shapeList.reset();
-        // g_panZoom.reset();
-        // g_styleList.reset();
-        // g_selectList.reset();
-        // stylePanel.reset();
-
-        // // provide a slide border so we can see the screen box
-        // g_panZoom.panX = -10;
-        // g_panZoom.panY = -10;
-
-        // g_draw(g_shapeList);
-        // g_draw(g_screen);
-        // g_draw(g_panZoom);
-        // g_draw(g_selectList);
-        // g_draw(stylePanel);
-    }
-
-    var requestFrame: boolean = false;
-    var drawList: any[] = [];
-
-    function draw(obj) {
-        if (drawList.indexOf(obj) === -1)
-            drawList.push(obj);
-
-        if (!requestFrame) {
-            requestAnimationFrame(renderFrame);
-        }
-        requestFrame = true;
-    }
-
-    function clear(ctx) {
-        // ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    }
-
-    function renderFrame() {
-        // if (drawList.indexOf(g_screen) !== -1 || drawList.indexOf(g_shapeList) !== -1 || drawList.indexOf(g_panZoom) !== -1) {
-        //     clear(g_drawCtx);
-        //     g_screen.draw(g_drawCtx);
-        //     g_shapeList.draw(g_drawCtx);
-        // }
-
-        // clear(g_toolCtx);
-        // g_selectList.draw(g_toolCtx);
-
-        // for (var i: number = 0; i < drawList.length; ++i) {
-        //     var tool = drawList[i];
-        //     if (tool instanceof Tool) {
-        //         tool.draw(g_toolCtx);
-        //     }
-        // }
-
-        // if (drawList.indexOf(stylePanel)) {
-        //     stylePanel.refresh();
-        // }
-
-        // drawList.length = 0;
-        // requestFrame = false;
     }
 
     function duplicateSelect() {
-        // g_editor.commandList.addCommand(new DuplicateSelectedCommand(g_editor.selectList));
+        g_editor.toolLayer.duplicateSelect();
     }
 
     function deleteSelect() {
-        // g_editor.commandList.addCommand(new DeleteSelectedCommand(g_editor.selectList));
+        g_editor.toolLayer.deleteSelect();
     }
 
     function changePlatform(e) {
@@ -139,21 +80,17 @@ module LayoutEditor {
         document.getElementById('layoutStyles').classList.remove('hidden');
     }
 
-    interface PanelInfo {
-        name: string;
-        code: Tool;
+    function distribute(e) {
+        g_editor.toolLayer.distributeSelect(parseInt(e.target.value));
+        e.target.value = 0; // reset to None
+    }
+
+    function makeSquare() {
+        g_editor.toolLayer.makeSquareSelect();
     }
 
     window.addEventListener("load", function() {
-        // var canvas = < HTMLCanvasElement > document.getElementById("layoutShapes");
-        // var toolCanvas = < HTMLCanvasElement > document.getElementById("layoutTool");
-        // var interactionCanvas = < HTMLCanvasElement > document.getElementById("interaction");
         var editorElem = document.getElementById("editor");
-
-        // g_drawCtx = canvas.getContext("2d");
-        // g_toolCtx = toolCanvas.getContext("2d");
-
-        // g_draw = draw;
 
         var toolElems = document.querySelectorAll(".tool");
         for (var i: number = 0; i < toolElems.length; ++i) {
@@ -174,6 +111,8 @@ module LayoutEditor {
         document.getElementById("shapes").addEventListener("click", shapesSelect);
         document.getElementById("styles").addEventListener("click", stylesSelect);
         document.getElementById("upload").addEventListener("change", uploadData);
+        document.getElementById("makeSquare").addEventListener("click", makeSquare);
+        document.getElementById("distribute").addEventListener("change", distribute);
 
         g_inputText = document.getElementById("inputText");
         g_inputMultiLine = document.getElementById("inputMultiLine");
@@ -183,8 +122,8 @@ module LayoutEditor {
         g_textPropertyEditor.setInputElem(g_inputText);
 
         g_stylePanel.setRootElem(document.getElementById("layoutStyles"));
-        g_stylePanel.selectChanged.add(function(styleName) {
-            g_propertyPanel.setObjects([g_styleList.getStyle(styleName)], function() {
+        g_stylePanel.selectChanged.add(function(styles: Style[]) {
+            g_propertyPanel.setObjects(styles, function() {
                 g_stylePanel.draw();
                 g_editor.draw();
             });

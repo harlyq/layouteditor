@@ -55,6 +55,14 @@ module LayoutEditor {
                 this.removeShape(shapes[i]);
         }
 
+        duplicateShapes(shapes: Shape[]): Shape[] {
+            var newShapes: Shape[] = [];
+            for (var i = 0; i < shapes.length; ++i)
+                newShapes.push(this.duplicateShape(shapes[i]));
+
+            return newShapes;
+        }
+
         addShape(shape: Shape) {
             var shapeIndex: number = this.shapes.indexOf(shape);
             if (shapeIndex !== -1)
@@ -76,8 +84,10 @@ module LayoutEditor {
         }
 
         duplicateShape(shape: Shape): Shape {
-            var newShape: Shape = shape.clone();
+            var newShape = shape.clone();
             newShape.makeUnique();
+            newShape.transform.tx += 20;
+            newShape.calculateBounds();
 
             this.addShape(newShape);
             return newShape;

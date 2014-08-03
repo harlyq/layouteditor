@@ -99,7 +99,7 @@ module LayoutEditor {
             if (!this.isArraySame(this.objects, objects)) {
                 this.commitEditing();
 
-                this.objects = objects;
+                this.objects = objects.slice(); // copy
                 this.onChangeCallback = onChangeCallback;
                 this.bindings.length = 0;
 
@@ -147,7 +147,7 @@ module LayoutEditor {
         private onClick(e) {
             var elem = e.target;
             var idString: string = "";
-            while (elem && !elem.hasAttribute("data-id"))
+            while (elem && elem != document && !elem.hasAttribute("data-id"))
                 elem = elem.parentNode;
 
             if (!elem)

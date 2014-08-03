@@ -9,9 +9,9 @@ module LayoutEditor {
         private ctx = null;
         private rootElem: HTMLElement = null;
         private addButton: HTMLElement = null;
-        private selected: HTMLElement = null;
+        private selected: Style[] = [];
         private elems: {
-            [key: string]: HTMLElement
+            [key: number]: HTMLElement
         } = {};
         selectChanged = new Helper.Callback();
 
@@ -31,7 +31,7 @@ module LayoutEditor {
         private onClick(e) {
             var xStyleButton = this.getXStyleButton(e.target);
             if (xStyleButton)
-                this.selectStyle(xStyleButton.getAttribute("value"));
+                this.selectStyle(parseInt(xStyleButton.getAttribute("value")));
         }
 
         private getXStyleButton(target) {
@@ -45,26 +45,35 @@ module LayoutEditor {
             this.buildHTML();
 
             if (this.styleList.styles.length > 0)
-                this.selectStyle(this.styleList.styles[0].name);
+                this.selectStyle(this.styleList.styles[0].id);
         }
 
         draw() {
-            ( < any > this.selected).refresh();
+            for (var styleID in this.elems) {
+                ( < any > this.elems[styleID]).refresh();
+            }
         }
 
-        selectStyle(styleName: string) {
-            if (this.selected)
-                this.selected.classList.remove('selectedStyle');
+        selectStyle(styleID: number) {
+            var styleElem = this.elems[styleID];
+            if (styleElem) {
+                var style = g_styleList.getStyle(styleID);
+                var index = this.selected.indexOf(style);
 
-            this.selected = this.elems[styleName];
-            if (this.selected) {
-                this.selected.classList.add('selectedStyle');
-                this.selectChanged.fire(styleName);
+                if (index === -1) {
+                    this.selected.push(style);
+                    styleElem.classList.add("selectedStyle");
+                } else {
+                    this.selected.splice(index, 1);
+                    styleElem.classList.remove("selectedStyle");
+                }
+
+                this.selectChanged.fire(this.selected);
             }
         }
 
         private buildHTML() {
-            this.selected = null;
+            this.selected = [];
 
             while (this.rootElem.lastChild)
                 this.rootElem.removeChild(this.rootElem.lastChild);
@@ -77,12 +86,12 @@ module LayoutEditor {
 
             for (var i: number = 0; i < this.styleList.styles.length; ++i) {
                 var newElem = document.createElement('x-styleButton');
-                var name = this.styleList.styles[i].name;
+                var id = this.styleList.styles[i].id;
 
-                newElem.setAttribute('value', name);
+                newElem.setAttribute('value', id.toString());
 
                 this.rootElem.appendChild(newElem);
-                this.elems[name] = newElem;
+                this.elems[id] = newElem;
             }
         }
 
@@ -90,7 +99,7 @@ module LayoutEditor {
             var newStyle: Style = new Style();
             this.styleList.addStyle(newStyle);
             this.buildHTML();
-            this.selectStyle(newStyle.name);
+            this.selectStyle(newStyle.id);
         }
     }
 
@@ -126,17 +135,17 @@ module LayoutEditor {
         }
 
         private refresh() {
-            var styleName = this.elem.getAttribute("value");
-            var style: Style = g_styleList.getStyle(styleName);
+            var id: number = parseInt(this.elem.getAttribute("value"));
+            var style: Style = g_styleList.getStyle(id);
             var ctx = this.ctx;
 
-            if (style !== null)
+            if (style !== null) {
                 this.rectShape.style = style;
+                this.labelElem.innerHTML = style.name;
+            }
 
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             this.rectShape.draw(ctx, PanZoom.none);
-
-            this.labelElem.innerHTML = styleName;
         }
     }
 

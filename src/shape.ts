@@ -21,6 +21,10 @@ module LayoutEditor {
             this.hh = undefined;
         }
 
+        isValid() {
+            return this.cx !== undefined;
+        }
+
         getArea() {
             return this.hw * this.hh * 4;
         }
@@ -65,7 +69,7 @@ module LayoutEditor {
             var sr = Math.sin(this.rotate);
 
             var polygon: number[] = [-this.hw, -this.hh, this.hw, -this.hh, this.hw, this.hh, -this.hw, this.hh];
-            for (var i: number = 0; i < polygon.length; i += 2) {
+            for (var i = 0; i < polygon.length; i += 2) {
                 var x = polygon[i];
                 var y = polygon[i + 1];
                 polygon[i] = x * cr - y * sr + this.cx;
@@ -304,6 +308,7 @@ module LayoutEditor {
 
         drawSelect(ctx, panZoom: PanZoom) {
             var oabb = this.oabb;
+
             ctx.save();
             panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
             ctx.beginPath();
@@ -314,6 +319,7 @@ module LayoutEditor {
 
         drawAABB(ctx, panZoom: PanZoom) {
             var aabb = this.aabb;
+
             ctx.save();
             panZoom.transform(ctx);
             ctx.beginPath();
@@ -338,7 +344,7 @@ module LayoutEditor {
             var textWidth: number = 0;
             var textHeight: number = textLines.length * lineHeight;
 
-            for (var i: number = 0; i < textLines.length; ++i) {
+            for (var i = 0; i < textLines.length; ++i) {
                 var lineWidth = ctx.measureText(textLines[i]).width;
                 if (lineWidth > textWidth)
                     textWidth = lineWidth;
@@ -369,7 +375,7 @@ module LayoutEditor {
                     break
             }
 
-            for (var i: number = 0; i < textLines.length; ++i) {
+            for (var i = 0; i < textLines.length; ++i) {
                 ctx.fillText(textLines[i], x, y);
                 y += lineHeight;
             }
@@ -396,7 +402,7 @@ module LayoutEditor {
             var polygonA: number[] = this.aabb.toPolygon();
             var polygonB: number[] = bounds.toPolygon();
 
-            for (var i: number = 0; i < 2; ++i) {
+            for (var i = 0; i < 2; ++i) {
                 var polygon: number[] = (i === 0 ? polygonA : polygonB);
                 var x1: number = polygon[polygon.length - 2];
                 var y1: number = polygon[polygon.length - 1];
@@ -462,7 +468,7 @@ module LayoutEditor {
             return {
                 name: this.name,
                 text: this.text,
-                style: this.style.name,
+                style: this.style.id,
                 transform: this.transform
                 //layer: this.layer -- layers must be set up manually
             };
@@ -729,7 +735,8 @@ module LayoutEditor {
     }
 
     export class GroupShape extends Shape {
-        shapes: Shape[] = [];
+        shapes: Shape[] = []; // shapes in the group
+        enclosedShapes: Shape[] = []; // non-deleted shapes in the group
         oldTransforms: Transform[] = []; // original transform for each shape
         private lastTransform: Transform = new Transform();
         private encloseHH: number = 0;
@@ -743,6 +750,7 @@ module LayoutEditor {
 
         reset() {
             this.shapes.length = 0;
+            this.enclosedShapes.length = 0;
             this.encloseHW = 0;
             this.encloseHH = 0;
             this.encloseCX = 0;
@@ -759,7 +767,7 @@ module LayoutEditor {
             super.copy(other);
             this.lastTransform.copy(other.lastTransform);
 
-            for (var i: number = 0; i < this.shapes.length; ++i) {
+            for (var i = 0; i < this.shapes.length; ++i) {
                 this.oldTransforms[i] = new Transform();
                 this.oldTransforms[i].copy(other.oldTransforms[i]);
                 this.shapes[i] = other.shapes[i].clone();
@@ -777,7 +785,7 @@ module LayoutEditor {
 
         // use a standard draw for the subelements, when selected
         drawSelect(ctx, panZoom: PanZoom) {
-            if (this.shapes.length === 0)
+            if (this.enclosedShapes.length === 0)
                 return; // nothing to draw
 
             // draw the bounds
@@ -787,7 +795,7 @@ module LayoutEditor {
 
         // check each sub-shape individually
         isInsideXY(ctx, x: number, y: number): boolean {
-            for (var i: number = 0; i < this.shapes.length; ++i) {
+            for (var i = 0; i < this.shapes.length; ++i) {
                 if (this.shapes[i].isInsideXY(ctx, x, y))
                     return true;
             }
@@ -802,47 +810,54 @@ module LayoutEditor {
             var transform: Transform = this.transform;
             var info: SimpleTransform = transform.decompose();
 
-            for (var i: number = 0; i < this.shapes.length; ++i) {
-                var shape: Shape = this.shapes[i];
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
                 var oldTransform: Transform = this.oldTransforms[i];
 
                 var newPos: XY = transform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
 
-                Helper.extend(shape.transform, oldTransform);
+                shape.transform.copy(oldTransform);
                 shape.transform.tx = newPos.x;
                 shape.transform.ty = newPos.y;
 
-                // TODO - this is wrong
                 shape.transform.scale(info.scaleX, info.scaleY);
                 shape.transform.rotate(info.rotate);
 
                 shape.calculateBounds();
             }
 
-            Helper.extend(this.lastTransform, this.transform);
+            this.lastTransform.copy(this.transform);
         }
 
         encloseShapes() {
             var aabb: Bounds = this.aabb;
             var oabb: Bounds = this.oabb;
 
-            var numShapes: number = this.shapes.length;
+            var numShapes = this.shapes.length;
+            var usedShapes = 0;
+            var enclosedShapes = this.enclosedShapes;
+
             aabb.reset();
+            enclosedShapes.length = 0;
 
             this.oldTransforms.length = 0;
-            for (var i: number = 0; i < numShapes; ++i) {
-                var shape: Shape = this.shapes[i];
+            for (var i = 0; i < numShapes; ++i) {
+                var shape = this.shapes[i];
+                if (shape.layer === null)
+                    continue; // shape deleted
 
-                this.oldTransforms[i] = new Transform();
-                Helper.extend(this.oldTransforms[i], this.shapes[i].transform);
+                this.oldTransforms[i] = this.shapes[i].transform.clone();
 
                 aabb.enclose(shape.aabb);
+                enclosedShapes.push(shape);
+                oabb.copy(shape.oabb); // mimic
+                usedShapes++;
             }
 
-            if (numShapes === 1) {
-                Helper.extend(oabb, this.shapes[0].oabb); // if only one shape then mimic it
-            } else {
-                Helper.extend(oabb, aabb); // initial oabb matches aabb
+            if (enclosedShapes.length === 1) {
+                oabb.copy(enclosedShapes[0].oabb); // exact copy
+            } else if (enclosedShapes.length > 1) {
+                oabb.copy(aabb); // for multiple shapes, initial oabb matches aabb
             }
 
             var transform: Transform = this.transform;
@@ -850,7 +865,7 @@ module LayoutEditor {
             transform.tx = aabb.cx;
             transform.ty = aabb.cy;
 
-            Helper.extend(this.lastTransform, transform);
+            this.lastTransform.copy(transform);
 
             this.encloseHW = aabb.hw;
             this.encloseHH = aabb.hh;

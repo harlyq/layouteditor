@@ -34,12 +34,14 @@ module LayoutEditor {
         fontStyle: StyleFontStyle = StyleFontStyle.normal;
         fontColor: string = "black"
         fontSpacing: number = 1;
+        id: number = 0;
 
         static uniqueID: number = 1;
 
         constructor(name ? : string) {
+            this.id = Style.uniqueID++;
             if (typeof name === "undefined")
-                this.name = "Style" + Style.uniqueID++;
+                this.name = "Style" + this.id;
             else
                 this.name = name;
         }
@@ -123,10 +125,10 @@ module LayoutEditor {
             g_style = defaultStyle;
         }
 
-        getStyle(name: string): Style {
+        getStyle(id: number): Style {
             for (var i: number = 0; i < this.styles.length; ++i) {
                 var style: Style = this.styles[i];
-                if (style.name === name)
+                if (style.id === id)
                     return style;
             }
 
@@ -183,13 +185,14 @@ module LayoutEditor {
             this.reset();
             this.styles.length = 0; // we will load the default style
 
+            var style = null;
             for (var i = 0; i < obj.styles.length; ++i) {
-                var style = new Style();
+                style = new Style();
                 style.loadData(obj.styles[i]);
                 this.styles.push(style);
             }
 
-            g_style = this.getStyle("default");
+            g_style = style; // last style loaded
         }
 
         getList(): ReferenceItem[] {

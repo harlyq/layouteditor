@@ -116,16 +116,18 @@ module LayoutEditor {
 
         redo() {
             for (var i: number = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].transform.copy(this.transforms[i]);
-                this.shapes[i].refresh();
+                var shape = this.shapes[i];
+                shape.transform.copy(this.transforms[i]);
+                shape.refresh();
             }
             this.page.requestDraw(this.layer);
         }
 
         undo() {
             for (var i: number = 0; i < this.shapes.length; ++i) {
-                this.shapes[i].transform.copy(this.oldTransforms[i]);
-                this.shapes[i].refresh();
+                var shape = this.shapes[i];
+                shape.transform.copy(this.oldTransforms[i]);
+                shape.refresh();
             }
             this.page.requestDraw(this.layer);
         }
@@ -181,49 +183,189 @@ module LayoutEditor {
     //     }
     // }
 
-    export class DuplicateSelectedCommand implements Command {
-        oldSelected: Shape[];
+    // TODO this should have nothing to do with the selectList!
+    export class DuplicateShapesCommand implements Command {
+        shapes: Shape[];
         duplicatedShapes: Shape[];
 
-        constructor(public page: Page, public layer: Layer, public selectList: SelectList) {
-            this.oldSelected = this.selectList.getSelectedShapes().slice(); // copy
+        constructor(public page: Page, public layer: Layer, shapes: Shape[]) {
+            this.shapes = shapes.slice(); // copy
         }
 
         redo() {
             if (!this.duplicatedShapes) {
-                this.duplicatedShapes = this.selectList.duplicateSelected();
+                this.duplicatedShapes = this.layer.duplicateShapes(this.shapes);
             } else {
                 // re-add the shapes from the previous undo - don't re-duplicate them
-                this.selectList.layer.addShapes(this.duplicatedShapes);
+                this.layer.addShapes(this.duplicatedShapes);
             }
-            this.selectList.setSelectedShapes(this.duplicatedShapes);
             this.page.requestDraw(this.layer);
         }
 
         undo() {
-            this.selectList.deleteSelected();
-            this.selectList.setSelectedShapes(this.oldSelected);
+            this.layer.removeShapes(this.duplicatedShapes);
             this.page.requestDraw(this.layer);
         }
     }
 
-    export class DeleteSelectedCommand implements Command {
-        oldSelected: Shape[];
-        oldLayer: Layer;
+    export class DeleteShapesCommand implements Command {
+        shapes: Shape[];
 
-        constructor(public page: Page, public layer: Layer, public selectList: SelectList) {
-            this.oldSelected = this.selectList.getSelectedShapes().slice();
-            this.oldLayer = this.selectList.layer;
+        constructor(public page: Page, public layer: Layer, shapes: Shape[]) {
+            this.shapes = shapes.slice(); // copy
         }
 
         redo() {
-            this.selectList.deleteSelected();
+            this.layer.removeShapes(this.shapes);
             this.page.requestDraw(this.layer);
         }
 
         undo() {
-            this.oldLayer.addShapes(this.oldSelected);
-            this.selectList.setSelectedShapes(this.oldSelected);
+            this.layer.addShapes(this.shapes);
+            this.page.requestDraw(this.layer);
+        }
+    }
+
+    export enum DistributeStyle {
+        None, Left, Right, Top, Bottom, Vertical, Horizontal
+    };
+
+    export class DistributeShapesCommand implements Command {
+        shapes: Shape[];
+        oldTransforms: Transform[] = [];
+
+        constructor(public page: Page, public layer: Layer, shapes: Shape[], public style: DistributeStyle) {
+            this.shapes = shapes.slice(); // copy
+            for (var i = 0; i < shapes.length; ++i) {
+                this.oldTransforms[i] = shapes[i].transform.clone();
+            }
+        }
+
+        redo() {
+            var numShapes = this.shapes.length;
+            if (numShapes <= 1)
+                return;
+
+            var min = 1e10;
+            var max = -1e10;
+            for (var i = 0; i < numShapes; ++i) {
+                var aabb = this.shapes[i].aabb;
+
+                switch (this.style) {
+                    case DistributeStyle.Left:
+                        min = Math.min(min, aabb.cx - aabb.hw);
+                        break;
+                    case DistributeStyle.Right:
+                        max = Math.max(max, aabb.cx + aabb.hw);
+                        break;
+                    case DistributeStyle.Top:
+                        min = Math.min(min, aabb.cy - aabb.hh);
+                        break;
+                    case DistributeStyle.Bottom:
+                        max = Math.max(max, aabb.cy + aabb.hh);
+                        break;
+                    case DistributeStyle.Vertical:
+                        min = Math.min(min, aabb.cy);
+                        max = Math.max(max, aabb.cy);
+                        break;
+                    case DistributeStyle.Horizontal:
+                        min = Math.min(min, aabb.cx);
+                        max = Math.max(max, aabb.cx);
+                        break;
+                }
+            }
+
+            var delta = (max - min) / (numShapes - 1)
+
+            for (var i = 0; i < numShapes; ++i) {
+                var shape = this.shapes[i];
+                var aabb = shape.aabb;
+                var transform = shape.transform;
+
+                switch (this.style) {
+                    case DistributeStyle.Left:
+                        transform.tx += min - (aabb.cx - aabb.hw);
+                        break;
+                    case DistributeStyle.Right:
+                        transform.tx += max - (aabb.cx + aabb.hw);
+                        break;
+                    case DistributeStyle.Top:
+                        transform.ty += min - (aabb.cy - aabb.hh);
+                        break;
+                    case DistributeStyle.Bottom:
+                        transform.ty += max - (aabb.cy + aabb.hh);
+                        break;
+                    case DistributeStyle.Vertical:
+                        transform.ty += min + delta * i - aabb.cy;
+                        break;
+                    case DistributeStyle.Horizontal:
+                        transform.tx += min + delta * i - aabb.cx;
+                        break;
+                }
+
+                shape.refresh();
+            }
+
+            this.page.requestDraw(this.layer);
+        }
+
+        undo() {
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                shape.transform.copy(this.oldTransforms[i]);
+                shape.refresh();
+            }
+
+            this.page.requestDraw(this.layer);
+        }
+    }
+
+    export class MakeSquareShapesCommand implements Command {
+        shapes: Shape[];
+        oldTransforms: Transform[] = [];
+
+        constructor(public page: Page, public layer: Layer, shapes: Shape[]) {
+            this.shapes = shapes.slice(); // copy
+            for (var i = 0; i < shapes.length; ++i) {
+                this.oldTransforms[i] = shapes[i].transform.clone();
+            }
+        }
+
+        redo() {
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                if (shape instanceof RectShape) {
+                    var rectShape = < RectShape > shape;
+                    var simpleTransform = rectShape.transform.decompose();
+                    var scaleW = rectShape.w * simpleTransform.scaleX;
+                    var scaleH = rectShape.h * simpleTransform.scaleY;
+                    var size = Math.max(scaleW, scaleH);
+
+                    rectShape.transform.scale(size / scaleW, size / scaleH);
+                    rectShape.refresh();
+
+                } else if (shape instanceof EllipseShape) {
+                    var ellipseShape = < EllipseShape > shape;
+                    var simpleTransform = ellipseShape.transform.decompose();
+                    var scaleW = ellipseShape.rx * simpleTransform.scaleX;
+                    var scaleH = ellipseShape.ry * simpleTransform.scaleY;
+                    var size = Math.max(scaleW, scaleH);
+
+                    ellipseShape.transform.scale(size / scaleW, size / scaleH);
+                    ellipseShape.refresh();
+                }
+            }
+
+            this.page.requestDraw(this.layer);
+        }
+
+        undo() {
+            for (var i = 0; i < this.shapes.length; ++i) {
+                var shape = this.shapes[i];
+                shape.transform.copy(this.oldTransforms[i]);
+                shape.refresh();
+            }
+
             this.page.requestDraw(this.layer);
         }
     }

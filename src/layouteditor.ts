@@ -44,15 +44,19 @@ module LayoutEditor {
             g_styleList.loadData(obj.styleList);
             g_editor.loadData(obj.editor);
 
-            g_stylePanel.draw();
+            g_stylePanel.reset();
             g_editor.draw();
         }
         reader.readAsText(files[0]);
     }
 
     function reset() {
+        ( < HTMLInputElement > document.getElementById("upload")).value = "";
+
         g_editor.reset();
         g_propertyPanel.reset();
+        g_styleList.reset();
+        g_stylePanel.reset();
 
         g_editor.setTool("rectTool");
         shapesSelect();
@@ -89,6 +93,10 @@ module LayoutEditor {
         g_editor.toolLayer.makeSquareSelect();
     }
 
+    function newPage(e) {
+        g_editor.pageNumber = parseInt(( < HTMLInputElement > e.target).value);
+    }
+
     window.addEventListener("load", function() {
         var editorElem = document.getElementById("editor");
 
@@ -113,6 +121,7 @@ module LayoutEditor {
         document.getElementById("upload").addEventListener("change", uploadData);
         document.getElementById("makeSquare").addEventListener("click", makeSquare);
         document.getElementById("distribute").addEventListener("change", distribute);
+        document.getElementById("page").addEventListener("change", newPage);
 
         g_inputText = document.getElementById("inputText");
         g_inputMultiLine = document.getElementById("inputMultiLine");

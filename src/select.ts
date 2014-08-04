@@ -26,6 +26,7 @@ module LayoutEditor {
 
         reset() {
             this.selectedShapes.length = 0;
+            this.selectGroup.reset();
         }
 
         // removes the shape from the selected list

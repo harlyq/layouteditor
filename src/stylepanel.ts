@@ -74,6 +74,7 @@ module LayoutEditor {
 
         private buildHTML() {
             this.selected = [];
+            this.elems = {};
 
             while (this.rootElem.lastChild)
                 this.rootElem.removeChild(this.rootElem.lastChild);

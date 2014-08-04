@@ -23,6 +23,7 @@ module LayoutEditor {
         createCanvas(parentElem: HTMLElement, width: number, height: number) {
             this.canvas = document.createElement("canvas");
             this.canvas.classList.add("layout");
+            this.canvas.classList.add("hidden");
             this.canvas.setAttribute("data-id", this.id);
             this.canvas.width = width;
             this.canvas.height = height;
@@ -37,6 +38,16 @@ module LayoutEditor {
                 if (oldElem !== null)
                     parentElem.removeChild(oldElem);
             }
+        }
+
+        hide() {
+            if (this.canvas)
+                this.canvas.classList.add("hidden");
+        }
+
+        show() {
+            if (this.canvas)
+                this.canvas.classList.remove("hidden");
         }
 
         draw(panZoom) {

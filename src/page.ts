@@ -36,7 +36,19 @@ module LayoutEditor {
             // do nothing
         }
 
-        requestDraw(layer: Layer) {
+        hide() {
+            for (var i = 0; i < this.layers.length; ++i)
+                this.layers[i].hide();
+        }
+
+        show() {
+            for (var i = 0; i < this.layers.length; ++i)
+                this.layers[i].show();
+
+            this.requestDraw();
+        }
+
+        requestDraw(layer: Layer = null) {
             var index = this.requestDrawList.indexOf(layer);
             if (index !== -1)
                 return; // already in the list
@@ -54,8 +66,8 @@ module LayoutEditor {
             });
         }
 
-        draw(layer ? : Layer) {
-            if (typeof layer === "undefined") {
+        draw(layer: Layer = null) {
+            if (layer === null) {
                 for (var i = 0; i < this.layers.length; ++i)
                     this.layers[i].draw(this.panZoom);
             } else {

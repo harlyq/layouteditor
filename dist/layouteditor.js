@@ -2428,6 +2428,7 @@ var LayoutEditor;
         Layer.prototype.createCanvas = function (parentElem, width, height) {
             this.canvas = document.createElement("canvas");
             this.canvas.classList.add("layout");
+            this.canvas.classList.add("hidden");
             this.canvas.setAttribute("data-id", this.id);
             this.canvas.width = width;
             this.canvas.height = height;
@@ -2442,6 +2443,16 @@ var LayoutEditor;
                 if (oldElem !== null)
                     parentElem.removeChild(oldElem);
             }
+        };
+
+        Layer.prototype.hide = function () {
+            if (this.canvas)
+                this.canvas.classList.add("hidden");
+        };
+
+        Layer.prototype.show = function () {
+            if (this.canvas)
+                this.canvas.classList.remove("hidden");
         };
 
         Layer.prototype.draw = function (panZoom) {
@@ -2602,7 +2613,20 @@ var LayoutEditor;
             // do nothing
         };
 
+        Page.prototype.hide = function () {
+            for (var i = 0; i < this.layers.length; ++i)
+                this.layers[i].hide();
+        };
+
+        Page.prototype.show = function () {
+            for (var i = 0; i < this.layers.length; ++i)
+                this.layers[i].show();
+
+            this.requestDraw();
+        };
+
         Page.prototype.requestDraw = function (layer) {
+            if (typeof layer === "undefined") { layer = null; }
             var index = this.requestDrawList.indexOf(layer);
             if (index !== -1)
                 return;
@@ -2621,7 +2645,8 @@ var LayoutEditor;
         };
 
         Page.prototype.draw = function (layer) {
-            if (typeof layer === "undefined") {
+            if (typeof layer === "undefined") { layer = null; }
+            if (layer === null) {
                 for (var i = 0; i < this.layers.length; ++i)
                     this.layers[i].draw(this.panZoom);
             } else {
@@ -2709,6 +2734,7 @@ var LayoutEditor;
 
         SelectList.prototype.reset = function () {
             this.selectedShapes.length = 0;
+            this.selectGroup.reset();
         };
 
         // removes the shape from the selected list
@@ -2963,9 +2989,9 @@ var LayoutEditor;
             this.grid = new LayoutEditor.Grid();
             this.commandList = new LayoutEditor.CommandList();
             this.style = null;
-            this.page = null;
             this.hasRequestDraw = false;
             this._layer = null;
+            this._page = null;
 
             var self = this;
             this.screen.screenChanged.add(function (screenType) {
@@ -2984,6 +3010,24 @@ var LayoutEditor;
             configurable: true
         });
 
+        Object.defineProperty(ToolLayer.prototype, "page", {
+            get: function () {
+                return this._page;
+            },
+            set: function (page) {
+                this._page = page;
+                this.selectList.reset();
+
+                if (page.layers.length > 0)
+                    this.layer = page.layers[0];
+                else
+                    this.layer = null;
+                this.requestDraw();
+            },
+            enumerable: true,
+            configurable: true
+        });
+
         ToolLayer.prototype.reset = function () {
             //this.screen.reset();
             this.selectList.reset();
@@ -2993,9 +3037,12 @@ var LayoutEditor;
 
             //this.style.reset();
             this.style = LayoutEditor.g_styleList.styles[0]; // HACK
+            this.requestDraw();
         };
 
         ToolLayer.prototype.draw = function () {
+            Helper.assert(this.page !== null);
+
             var panZoom = this.page.panZoom;
             _super.prototype.draw.call(this, panZoom); // must be first, clears the ctx
 
@@ -3064,6 +3111,7 @@ var LayoutEditor;
         ToolLayer.prototype.createCanvas = function (parentElem, width, height) {
             _super.prototype.createCanvas.call(this, parentElem, width, height);
             this.canvas.style.zIndex = "1000"; // tool layer always on top
+            _super.prototype.show.call(this);
         };
         return ToolLayer;
     })(LayoutEditor.Layer);
@@ -4226,9 +4274,37 @@ var LayoutEditor;
             this.toolLayer = new LayoutEditor.ToolLayer();
             this.tool = null;
             this.toolGroup = [];
-            this.page = new LayoutEditor.Page();
+            this.pages = [new LayoutEditor.Page(), new LayoutEditor.Page(), new LayoutEditor.Page()];
+            this._pageNumber = 0;
             this.reset();
         }
+        Object.defineProperty(Editor.prototype, "pageNumber", {
+            get: function () {
+                return this._pageNumber;
+            },
+            set: function (val) {
+                var oldPage = this.page;
+                if (oldPage) {
+                    oldPage.hide();
+                }
+
+                this._pageNumber = val;
+
+                var page = this.pages[val];
+                this.toolLayer.page = page;
+                page.show();
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(Editor.prototype, "page", {
+            get: function () {
+                return this.pages[this._pageNumber];
+            },
+            enumerable: true,
+            configurable: true
+        });
+
         Object.defineProperty(Editor.prototype, "selectChanged", {
             get: function () {
                 return this.toolLayer.selectList.selectChanged;
@@ -4241,20 +4317,22 @@ var LayoutEditor;
             while (this.parentElem.lastChild)
                 this.parentElem.removeChild(this.parentElem.lastChild);
 
-            this.page.reset();
-            this.page.setRootElem(this.parentElem, this.width, this.height);
+            for (var i = 0; i < this.pages.length; ++i) {
+                var page = this.pages[i];
+                page.reset();
+                page.setRootElem(this.parentElem, this.width, this.height);
 
-            var layer = new LayoutEditor.Layer();
-            this.page.addLayer(layer);
+                var layer = new LayoutEditor.Layer();
+                page.addLayer(layer);
+            }
 
             this.toolLayer.destroyCanvas(this.parentElem);
             this.toolLayer.reset();
-            this.toolLayer.page = this.page;
-            this.toolLayer.layer = layer;
             this.toolLayer.createCanvas(this.parentElem, this.width, this.height);
 
             this.toolGroup.length = 0;
             this.tool = null;
+            this.pageNumber = 0;
 
             this.requestToolDraw();
         };
@@ -4364,8 +4442,13 @@ var LayoutEditor;
         Editor.prototype.saveData = function () {
             var obj = {
                 type: "editor",
-                page: this.page.saveData()
+                pages: []
             };
+
+            for (var i = 0; i < this.pages.length; ++i) {
+                obj.pages[i] = this.pages[i].saveData();
+            }
+
             return obj;
         };
 
@@ -4373,11 +4456,14 @@ var LayoutEditor;
             Helper.assert(obj.type === "editor");
             this.reset();
 
-            this.page.loadData(obj.page);
+            this.pages.length = 0;
+            for (var i = 0; i < obj.pages.length; ++i) {
+                var page = new LayoutEditor.Page();
+                page.loadData(obj.pages[i]);
+                this.pages[i] = page;
+            }
 
-            this.toolLayer.page = this.page;
-            if (this.page.layers.length > 0)
-                this.toolLayer.layer = this.page.layers[0];
+            this.pageNumber = 0;
         };
         return Editor;
     })();
@@ -4457,6 +4543,7 @@ var LayoutEditor;
 
         StylePanel.prototype.buildHTML = function () {
             this.selected = [];
+            this.elems = {};
 
             while (this.rootElem.lastChild)
                 this.rootElem.removeChild(this.rootElem.lastChild);
@@ -4616,15 +4703,19 @@ var LayoutEditor;
             LayoutEditor.g_styleList.loadData(obj.styleList);
             g_editor.loadData(obj.editor);
 
-            g_stylePanel.draw();
+            g_stylePanel.reset();
             g_editor.draw();
         };
         reader.readAsText(files[0]);
     }
 
     function reset() {
+        document.getElementById("upload").value = "";
+
         g_editor.reset();
         LayoutEditor.g_propertyPanel.reset();
+        LayoutEditor.g_styleList.reset();
+        g_stylePanel.reset();
 
         g_editor.setTool("rectTool");
         shapesSelect();
@@ -4661,6 +4752,10 @@ var LayoutEditor;
         g_editor.toolLayer.makeSquareSelect();
     }
 
+    function newPage(e) {
+        g_editor.pageNumber = parseInt(e.target.value);
+    }
+
     window.addEventListener("load", function () {
         var editorElem = document.getElementById("editor");
 
@@ -4685,6 +4780,7 @@ var LayoutEditor;
         document.getElementById("upload").addEventListener("change", uploadData);
         document.getElementById("makeSquare").addEventListener("click", makeSquare);
         document.getElementById("distribute").addEventListener("change", distribute);
+        document.getElementById("page").addEventListener("change", newPage);
 
         LayoutEditor.g_inputText = document.getElementById("inputText");
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");

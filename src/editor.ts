@@ -9,7 +9,28 @@ module LayoutEditor {
         toolLayer: ToolLayer = new ToolLayer();
         tool: Tool = null;
         toolGroup: Tool[] = [];
-        page: Page = new Page();
+        pages: Page[] = [new Page(), new Page(), new Page()];
+
+        private _pageNumber = 0;
+        get pageNumber(): number {
+            return this._pageNumber;
+        }
+        set pageNumber(val: number) {
+            var oldPage = this.page;
+            if (oldPage) {
+                oldPage.hide();
+            }
+
+            this._pageNumber = val;
+
+            var page = this.pages[val];
+            this.toolLayer.page = page;
+            page.show();
+        }
+        get page(): Page {
+            return this.pages[this._pageNumber];
+        }
+
 
         get selectChanged(): Helper.Callback < (objects: any[]) => void > {
             return this.toolLayer.selectList.selectChanged;
@@ -23,20 +44,22 @@ module LayoutEditor {
             while (this.parentElem.lastChild)
                 this.parentElem.removeChild(this.parentElem.lastChild);
 
-            this.page.reset();
-            this.page.setRootElem(this.parentElem, this.width, this.height);
+            for (var i = 0; i < this.pages.length; ++i) {
+                var page = this.pages[i];
+                page.reset();
+                page.setRootElem(this.parentElem, this.width, this.height);
 
-            var layer = new Layer();
-            this.page.addLayer(layer);
+                var layer = new Layer();
+                page.addLayer(layer);
+            }
 
             this.toolLayer.destroyCanvas(this.parentElem);
             this.toolLayer.reset();
-            this.toolLayer.page = this.page;
-            this.toolLayer.layer = layer;
             this.toolLayer.createCanvas(this.parentElem, this.width, this.height);
 
             this.toolGroup.length = 0;
             this.tool = null;
+            this.pageNumber = 0;
 
             this.requestToolDraw();
         }
@@ -147,8 +170,13 @@ module LayoutEditor {
         saveData(): any {
             var obj = {
                 type: "editor",
-                page: this.page.saveData()
+                pages: []
             };
+
+            for (var i = 0; i < this.pages.length; ++i) {
+                obj.pages[i] = this.pages[i].saveData();
+            }
+
             return obj;
         }
 
@@ -156,11 +184,14 @@ module LayoutEditor {
             Helper.assert(obj.type === "editor");
             this.reset();
 
-            this.page.loadData(obj.page);
+            this.pages.length = 0;
+            for (var i = 0; i < obj.pages.length; ++i) {
+                var page = new Page();
+                page.loadData(obj.pages[i]);
+                this.pages[i] = page;
+            }
 
-            this.toolLayer.page = this.page;
-            if (this.page.layers.length > 0)
-                this.toolLayer.layer = this.page.layers[0];
+            this.pageNumber = 0;
         }
     }
 }

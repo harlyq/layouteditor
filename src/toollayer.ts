@@ -10,7 +10,6 @@ module LayoutEditor {
         grid = new Grid();
         commandList = new CommandList();
         style = null;
-        page = null;
 
         private hasRequestDraw = false;
         private _layer: Layer = null;
@@ -21,6 +20,22 @@ module LayoutEditor {
             this._layer = val;
             this.selectList.layer = val;
         }
+
+        private _page: Page = null;
+        get page(): Page {
+            return this._page;
+        }
+        set page(page: Page) {
+            this._page = page;
+            this.selectList.reset();
+
+            if (page.layers.length > 0)
+                this.layer = page.layers[0];
+            else
+                this.layer = null;
+            this.requestDraw();
+        }
+
 
         constructor() {
             super();
@@ -39,9 +54,12 @@ module LayoutEditor {
             //this.style.reset();
 
             this.style = g_styleList.styles[0]; // HACK
+            this.requestDraw();
         }
 
         draw() {
+            Helper.assert(this.page !== null);
+
             var panZoom = this.page.panZoom;
             super.draw(panZoom); // must be first, clears the ctx
 
@@ -110,6 +128,7 @@ module LayoutEditor {
         createCanvas(parentElem: HTMLElement, width: number, height: number) {
             super.createCanvas(parentElem, width, height);
             this.canvas.style.zIndex = "1000"; // tool layer always on top
+            super.show();
         }
     }
 }

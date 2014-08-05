@@ -125,6 +125,13 @@ module LayoutEditor {
             this.page.requestDraw(this._layer);
         }
 
+        addImage(imageSrc: string) {
+            var command = new ImageCommand(this.page, this.layer, imageSrc, this.style);
+            this.commandList.addCommand(command);
+            this.selectList.setSelectedShapes([command.imageShape]);
+            this.page.requestDraw(this._layer);
+        }
+
         createCanvas(parentElem: HTMLElement, width: number, height: number) {
             super.createCanvas(parentElem, width, height);
             this.canvas.style.zIndex = "1000"; // tool layer always on top

@@ -97,6 +97,19 @@ module LayoutEditor {
         g_editor.pageNumber = parseInt(( < HTMLInputElement > e.target).value);
     }
 
+    function addImage(e) {
+        var file = e.target.files[0];
+        ( < HTMLInputElement > document.getElementById("imageTool")).value = "";
+        if (!file)
+            return;
+
+        var reader = new FileReader();
+        reader.onloadend = function(e) {
+            g_editor.toolLayer.addImage(reader.result);
+        }
+        reader.readAsDataURL(file);
+    }
+
     window.addEventListener("load", function() {
         var editorElem = document.getElementById("editor");
 
@@ -122,6 +135,7 @@ module LayoutEditor {
         document.getElementById("makeSquare").addEventListener("click", makeSquare);
         document.getElementById("distribute").addEventListener("change", distribute);
         document.getElementById("page").addEventListener("change", newPage);
+        document.getElementById("imageTool").addEventListener("change", addImage);
 
         g_inputText = document.getElementById("inputText");
         g_inputMultiLine = document.getElementById("inputMultiLine");

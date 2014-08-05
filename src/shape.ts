@@ -13,12 +13,13 @@ module LayoutEditor {
 
         constructor() {}
 
-        reset() {
+        reset(): Bounds {
             this.rotate = 0;
             this.cx = undefined;
             this.cy = undefined;
             this.hw = undefined;
             this.hh = undefined;
+            return this;
         }
 
         isValid() {
@@ -29,21 +30,21 @@ module LayoutEditor {
             return this.hw * this.hh * 4;
         }
 
-        copy(other: Bounds) {
+        copy(other: Bounds): Bounds {
             this.rotate = other.rotate;
             this.cx = other.cx;
             this.cy = other.cy;
             this.hw = other.hw;
             this.hh = other.hh;
+            return this;
         }
 
         clone() {
             var newBounds: Bounds = new Bounds();
-            newBounds.copy(this);
-            return newBounds;
+            return newBounds.copy(this);
         }
 
-        enclose(aabb: Bounds) {
+        enclose(aabb: Bounds): Bounds {
             Helper.assert(aabb.rotate === 0); // only works with unrotated bounds 0
             Helper.assert(this.rotate === 0);
 
@@ -62,6 +63,8 @@ module LayoutEditor {
                 this.hw = (x2 - x1) * 0.5;
                 this.hh = (y2 - y1) * 0.5;
             }
+
+            return this;
         }
 
         toPolygon(): number[] {
@@ -110,6 +113,36 @@ module LayoutEditor {
                 y: ly
             };
         }
+
+        oabbFromRectangle(transform, w, h): Bounds {
+            var dx = w * 0.5;
+            var dy = h * 0.5;
+
+            var info: SimpleTransform = transform.decompose();
+            this.rotate = info.rotate;
+            this.hw = Math.abs(dx * info.scaleX);
+            this.hh = Math.abs(dy * info.scaleY);
+            this.cx = transform.tx;
+            this.cy = transform.ty;
+
+            return this;
+        }
+
+        aabbFromOABB(oabb: Bounds): Bounds {
+            var polygon: number[] = oabb.toPolygon();
+            var x1: number = Helper.arrayMin(polygon, 0, 2);
+            var x2: number = Helper.arrayMax(polygon, 0, 2);
+            var y1: number = Helper.arrayMin(polygon, 1, 2);
+            var y2: number = Helper.arrayMax(polygon, 1, 2);
+
+            this.rotate = 0;
+            this.hw = (x2 - x1) * 0.5;
+            this.hh = (y2 - y1) * 0.5;
+            this.cx = (x1 + x2) * 0.5;
+            this.cy = (y1 + y2) * 0.5;
+
+            return this;
+        }
     }
 
     export
@@ -147,11 +180,12 @@ module LayoutEditor {
 
         constructor() {}
 
-        setIdentity() {
+        setIdentity(): Transform {
             this.constructor();
+            return this;
         }
 
-        setRotate(rad) {
+        setRotate(rad): Transform {
             var sr: number = Math.sin(rad);
             var cr: number = Math.cos(rad);
             this.a = cr;
@@ -160,9 +194,17 @@ module LayoutEditor {
             this.d = cr;
             // this.tx = 0;
             // this.ty = 0;
+
+            return this;
         }
 
-        rotate(rad) {
+        setTranslate(tx: number, ty: number): Transform {
+            this.tx = tx;
+            this.ty = ty;
+            return this;
+        }
+
+        rotate(rad): Transform {
             var sr: number = Math.sin(rad);
             var cr: number = Math.cos(rad);
             var a: number = this.a;
@@ -173,20 +215,24 @@ module LayoutEditor {
             this.b = a * sr + b * cr;
             this.c = c * cr - d * sr;
             this.d = c * sr + d * cr;
+            return this;
         }
 
-        scale(sx: number, sy: number) {
+        scale(sx: number, sy: number): Transform {
             this.a *= sx;
             this.b *= sy;
             this.c *= sx;
             this.d *= sy;
+            return this;
         }
 
-        translate(tx: number, ty: number) {
+        translate(tx: number, ty: number): Transform {
             this.tx += tx;
             this.ty += ty;
+            return this;
         }
 
+        // warning: scaleX -1, scaleY -1 is the same as rotate PI
         decompose(): SimpleTransform {
             var a: number = this.a;
             var b: number = this.b;
@@ -223,19 +269,19 @@ module LayoutEditor {
             };
         }
 
-        copy(other: Transform) {
+        copy(other: Transform): Transform {
             this.a = other.a;
             this.b = other.b;
             this.c = other.c;
             this.d = other.d;
             this.tx = other.tx;
             this.ty = other.ty;
+            return this;
         }
 
         clone(): Transform {
             var t: Transform = new Transform();
-            t.copy(this);
-            return t;
+            return t.copy(this);
         }
 
         invXY(x: number, y: number): XY {
@@ -260,6 +306,11 @@ module LayoutEditor {
                 this.a === other.a && this.b === other.b &&
                 this.c === other.c && this.d === other.d;
         }
+
+        // applyTransform should be nested in ctx.save() and ctx.restore()
+        draw(ctx) {
+            ctx.transform(this.a, this.b, this.c, this.d, this.tx, this.ty);
+        }
     }
 
     //------------------------------
@@ -272,6 +323,7 @@ module LayoutEditor {
         text: string = "";
         layer: Layer = null;
         onChanged = new Helper.Callback < () => void > ()
+        fixedAspect: boolean = false;
 
         static uniqueID: number = 1;
 
@@ -290,23 +342,30 @@ module LayoutEditor {
             this.calculateBounds();
         }
 
-        draw(ctx, panZoom) {
+        draw(ctx, panZoom): any {
             this.style.drawShape(ctx);
 
-            this.buildPath(ctx, panZoom);
+            ctx.save()
+            panZoom.draw(ctx, this.transform);
+            this.buildPath(ctx);
+            ctx.restore();
 
             if (this.style.fillColor !== "none")
                 ctx.fill();
             if (this.style.strokeColor !== "none")
                 ctx.stroke();
 
+            this.drawImage(ctx, panZoom);
             this.drawText(ctx, panZoom);
+            return this;
         }
 
         // implemented in the derived class
-        public buildPath(ctx, panZoom: PanZoom) {}
+        public buildPath(ctx): Shape {
+            return this;
+        }
 
-        drawSelect(ctx, panZoom: PanZoom) {
+        drawSelect(ctx, panZoom: PanZoom): any {
             var oabb = this.oabb;
 
             ctx.save();
@@ -315,9 +374,10 @@ module LayoutEditor {
             ctx.rect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
             ctx.restore();
             ctx.stroke();
+            return this;
         }
 
-        drawAABB(ctx, panZoom: PanZoom) {
+        drawAABB(ctx, panZoom: PanZoom): any {
             var aabb = this.aabb;
 
             ctx.save();
@@ -326,16 +386,21 @@ module LayoutEditor {
             ctx.rect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
             ctx.restore();
             ctx.stroke();
+            return this;
         }
 
-        drawText(ctx, panZoom: PanZoom) {
+        drawImage(ctx, panZoom: PanZoom): any {
+            return this;
+        }
+
+        drawText(ctx, panZoom: PanZoom): any {
             if (this.text.length === 0)
                 return;
 
             var oabb = this.oabb;
 
             ctx.save();
-            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
+            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate); // no scale, don't stretch the font
 
             this.style.drawFont(ctx);
 
@@ -381,13 +446,19 @@ module LayoutEditor {
             }
 
             ctx.restore();
+            return this;
         }
 
         // performed by the derived class
-        calculateBounds() {}
+        calculateBounds(): Shape {
+            return this;
+        }
 
         isInsideXY(ctx, x: number, y: number): boolean {
-            this.buildPath(ctx, PanZoom.none);
+            ctx.save();
+            this.transform.draw(ctx); // no zoom
+            this.buildPath(ctx);
+            ctx.restore();
             return ctx.isPointInPath(x, y);
         }
 
@@ -447,7 +518,7 @@ module LayoutEditor {
             return true;
         }
 
-        copy(other: Shape) {
+        copy(other: Shape): Shape {
             this.style = other.style;
             this.oabb.copy(other.oabb);
             this.aabb.copy(other.aabb);
@@ -455,12 +526,12 @@ module LayoutEditor {
             this.name = other.name;
             this.text = other.text;
             this.layer = other.layer;
+            return this;
         }
 
         clone(): Shape {
             var shape = new Shape();
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         }
 
         // overloaded by specific shape
@@ -475,11 +546,12 @@ module LayoutEditor {
         }
 
         // overloaded by specific shape
-        loadData(obj: any) {
+        loadData(obj: any): any {
             this.name = obj.name;
             this.text = obj.text;
             this.style = g_styleList.getStyle(obj.style);
             Helper.extend(this.transform, obj.transform);
+            return this;
         }
     }
 
@@ -488,61 +560,38 @@ module LayoutEditor {
             super(name);
         }
 
-        buildPath(ctx, panZoom: PanZoom) {
-            var transform = this.transform;
-
-            ctx.save();
-            panZoom.transformComplete(ctx, transform);
-
+        buildPath(ctx): any {
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
-            ctx.restore();
+            return this;
         }
 
-        copy(other: RectShape) {
+        copy(other: RectShape): RectShape {
             super.copy(other);
             this.w = other.w;
             this.h = other.h;
+            return this;
         }
 
         clone(): RectShape {
             var shape = new RectShape(this.name, this.w, this.h);
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         }
 
 
-        fromRect(x: number, y: number, w: number, h: number) {
+        fromRect(x: number, y: number, w: number, h: number): any {
             this.transform.tx = x + w * 0.5;
             this.transform.ty = y + h * 0.5;
             this.w = w;
             this.h = h;
             this.calculateBounds();
+            return this;
         }
 
-        calculateBounds() {
-            var transform = this.transform;
-            var dx = this.w * 0.5;
-            var dy = this.h * 0.5;
-
-            var info: SimpleTransform = transform.decompose();
-            this.oabb.rotate = info.rotate;
-            this.oabb.hw = Math.abs(dx * info.scaleX);
-            this.oabb.hh = Math.abs(dy * info.scaleY);
-            this.oabb.cx = transform.tx;
-            this.oabb.cy = transform.ty;
-
-            var polygon: number[] = this.oabb.toPolygon();
-            var x1: number = Helper.arrayMin(polygon, 0, 2);
-            var x2: number = Helper.arrayMax(polygon, 0, 2);
-            var y1: number = Helper.arrayMin(polygon, 1, 2);
-            var y2: number = Helper.arrayMax(polygon, 1, 2);
-
-            this.aabb.rotate = 0;
-            this.aabb.hw = (x2 - x1) * 0.5;
-            this.aabb.hh = (y2 - y1) * 0.5;
-            this.aabb.cx = (x1 + x2) * 0.5;
-            this.aabb.cy = (y1 + y2) * 0.5;
+        calculateBounds(): RectShape {
+            this.oabb.oabbFromRectangle(this.transform, this.w, this.h);
+            this.aabb.aabbFromOABB(this.oabb);
+            return this;
         }
 
         saveData(): any {
@@ -554,12 +603,14 @@ module LayoutEditor {
             return obj;
         }
 
-        loadData(obj: any) {
+        loadData(obj: any): any {
             Helper.assert(obj.type === "RectShape");
             this.w = obj.w;
             this.h = obj.h;
             this.text = obj.text;
             super.loadData(obj);
+
+            return this;
         }
     }
 
@@ -568,13 +619,9 @@ module LayoutEditor {
             super(name);
         }
 
-        buildPath(ctx, panZoom: PanZoom) {
-            var transform = this.transform;
+        buildPath(ctx): any {
             var rx = Math.abs(this.rx);
             var ry = Math.abs(this.ry);
-
-            ctx.save();
-            panZoom.transformComplete(ctx, transform);
 
             var kappa = .5522848,
                 ox = rx * kappa, // control point offset horizontal
@@ -589,30 +636,31 @@ module LayoutEditor {
 
             // ctx.beginPath();
             // ctx.ellipse(0, 0, rx, ry, 0, 0, 2 * Math.PI);    chrome only
-            ctx.restore();
+            return this;
         }
 
-        copy(other: EllipseShape) {
+        copy(other: EllipseShape): EllipseShape {
             super.copy(other);
             this.rx = other.rx;
             this.ry = other.ry;
+            return this;
         }
 
         clone(): EllipseShape {
             var shape = new EllipseShape(this.name, this.rx, this.ry);
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         }
 
-        fromRect(x: number, y: number, w: number, h: number) {
+        fromRect(x: number, y: number, w: number, h: number): any {
             this.transform.tx = x + w * 0.5;
             this.transform.ty = y + h * 0.5;
             this.rx = w * 0.5;
             this.ry = h * 0.5;
             this.calculateBounds();
+            return this;
         }
 
-        calculateBounds() {
+        calculateBounds(): EllipseShape {
             var transform = this.transform;
 
             var info: SimpleTransform = transform.decompose();
@@ -640,6 +688,7 @@ module LayoutEditor {
             this.aabb.cy = this.oabb.cy;
             this.aabb.hw = rotatedHW;
             this.aabb.hh = rotatedHH;
+            return this;
         }
 
         saveData(): any {
@@ -650,11 +699,12 @@ module LayoutEditor {
             return obj;
         }
 
-        loadData(obj: any) {
+        loadData(obj: any): any {
             Helper.assert(obj.type === "EllipseShape");
             this.rx = obj.rx;
             this.ry = obj.ry;
             super.loadData(obj);
+            return this;
         }
     }
 
@@ -669,39 +719,38 @@ module LayoutEditor {
             super();
         }
 
-        copy(other: AABBShape) {
+        copy(other: AABBShape): any {
             super.copy(other);
             this.x1 = other.x1;
             this.y1 = other.y1;
             this.x2 = other.x2;
             this.y2 = other.y2;
+            return this;
         }
 
         clone(): AABBShape {
             var shape = new AABBShape();
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         }
 
-        reset() {
+        reset(): any {
             this.x1 = undefined;
             this.y1 = undefined;
             this.x2 = undefined;
             this.y2 = undefined;
+            return this;
         }
 
-        buildPath(ctx, panZoom: PanZoom) {
+        buildPath(ctx): any {
             // don't apply transform!
             var x1 = this.oabb.cx - this.oabb.hw;
             var y1 = this.oabb.cy - this.oabb.hh;
-            ctx.save();
-            panZoom.transform(ctx);
             ctx.beginPath();
             ctx.rect(x1, y1, this.oabb.hw * 2, this.oabb.hh * 2);
-            ctx.restore();
+            return this;
         }
 
-        calculateBounds() {
+        calculateBounds(): AABBShape {
             var hw = (this.x2 - this.x1) * 0.5;
             var hh = (this.y2 - this.y1) * 0.5;
 
@@ -712,6 +761,7 @@ module LayoutEditor {
             this.oabb.hh = Math.abs(hh);
 
             this.aabb = this.oabb;
+            return this;
         }
 
         saveData(): any {
@@ -724,13 +774,14 @@ module LayoutEditor {
             return obj;
         }
 
-        loadData(obj: any) {
+        loadData(obj: any): any {
             Helper.assert(obj.type === "AABBShape");
             this.x1 = obj.x1;
             this.y1 = obj.y1;
             this.x2 = obj.x2;
             this.y2 = obj.y2;
             super.loadData(obj);
+            return this;
         }
     }
 
@@ -748,22 +799,24 @@ module LayoutEditor {
             super(name);
         }
 
-        reset() {
+        reset(): any {
             this.shapes.length = 0;
             this.enclosedShapes.length = 0;
             this.encloseHW = 0;
             this.encloseHH = 0;
             this.encloseCX = 0;
             this.encloseCY = 0;
+            return this;
         }
 
-        setShapes(shapes: Shape[]) {
+        setShapes(shapes: Shape[]): any {
             this.shapes = shapes.slice(); // copy
 
             this.encloseShapes();
+            return this;
         }
 
-        copy(other: GroupShape) {
+        copy(other: GroupShape): any {
             super.copy(other);
             this.lastTransform.copy(other.lastTransform);
 
@@ -772,25 +825,28 @@ module LayoutEditor {
                 this.oldTransforms[i].copy(other.oldTransforms[i]);
                 this.shapes[i] = other.shapes[i].clone();
             }
+            return this;
         }
 
         clone(): GroupShape {
             var shape = new GroupShape();
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         }
 
         // shapes in this group will be drawn independently
-        draw(ctx, panZoom: PanZoom) {}
+        draw(ctx, panZoom: PanZoom): any {
+            return this;
+        }
 
         // use a standard draw for the subelements, when selected
-        drawSelect(ctx, panZoom: PanZoom) {
+        drawSelect(ctx, panZoom: PanZoom): any {
             if (this.enclosedShapes.length === 0)
                 return; // nothing to draw
 
             // draw the bounds
             g_selectStyle.drawShape(ctx);
             super.drawSelect(ctx, panZoom);
+            return this;
         }
 
         // check each sub-shape individually
@@ -803,33 +859,32 @@ module LayoutEditor {
             return false;
         }
 
-        private applyTransform() {
+        private applyTransform(): any {
             if (this.transform.isEqual(this.lastTransform))
                 return;
 
-            var transform: Transform = this.transform;
-            var info: SimpleTransform = transform.decompose();
+            var groupTransform: Transform = this.transform;
+            var info: SimpleTransform = groupTransform.decompose();
 
             for (var i = 0; i < this.shapes.length; ++i) {
                 var shape = this.shapes[i];
                 var oldTransform: Transform = this.oldTransforms[i];
 
-                var newPos: XY = transform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
+                var newPos: XY = groupTransform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
 
-                shape.transform.copy(oldTransform);
-                shape.transform.tx = newPos.x;
-                shape.transform.ty = newPos.y;
-
-                shape.transform.scale(info.scaleX, info.scaleY);
-                shape.transform.rotate(info.rotate);
+                shape.transform.copy(oldTransform)
+                    .setTranslate(newPos.x, newPos.y)
+                    .scale(info.scaleX, info.scaleY)
+                    .rotate(info.rotate);
 
                 shape.calculateBounds();
             }
 
             this.lastTransform.copy(this.transform);
+            return this;
         }
 
-        encloseShapes() {
+        encloseShapes(): any {
             var aabb: Bounds = this.aabb;
             var oabb: Bounds = this.oabb;
 
@@ -860,20 +915,18 @@ module LayoutEditor {
                 oabb.copy(aabb); // for multiple shapes, initial oabb matches aabb
             }
 
-            var transform: Transform = this.transform;
-            transform.setIdentity();
-            transform.tx = aabb.cx;
-            transform.ty = aabb.cy;
+            this.transform.setIdentity().setTranslate(aabb.cx, aabb.cy);
 
-            this.lastTransform.copy(transform);
+            this.lastTransform.copy(this.transform);
 
             this.encloseHW = aabb.hw;
             this.encloseHH = aabb.hh;
             this.encloseCX = aabb.cx;
             this.encloseCY = aabb.cy;
+            return this;
         }
 
-        calculateBounds() {
+        calculateBounds(): GroupShape {
             // move all the sub-objects
             this.applyTransform();
 
@@ -899,17 +952,20 @@ module LayoutEditor {
             aabb.hh = (y2 - y1) * 0.5;
             aabb.cx = (x1 + x2) * 0.5;
             aabb.cy = (y1 + y2) * 0.5;
+            return this;
         }
 
+        // TODO save group shape list by ID
         saveData(): any {
             var obj: any = super.saveData();
             obj.type = "GroupShape";
             return obj;
         }
 
-        loadData(obj: any) {
+        loadData(obj: any): GroupShape {
             Helper.assert(obj.type === "GroupShape");
             super.loadData(obj);
+            return this;
         }
     }
 
@@ -933,6 +989,81 @@ module LayoutEditor {
         }]
     });
 
-    // export
-    // var g_LayerList: LayerList = null;
+    export class ImageShape extends Shape {
+        private image = new Image();
+        get w(): number {
+            return this.image.width;
+        }
+        get h(): number {
+            return this.image.height;
+        }
+
+        // TODO use a repository for the imageSrc
+        constructor(name: string, public imageSrc: string) {
+            super(name);
+            var image = this.image;
+            image.src = imageSrc;
+            this.fixedAspect = true;
+        }
+
+        buildPath(ctx): ImageShape {
+            var hw = this.image.width * 0.5;
+            var hh = this.image.height * 0.5;
+            ctx.beginPath();
+            ctx.rect(-hw, -hh, 2 * hw, 2 * hh);
+            return this;
+        }
+
+        drawImage(ctx, panZoom: PanZoom): any {
+            var oabb = this.oabb;
+            var image = this.image;
+            var info = this.transform.decompose();
+            var hw = image.width * 0.5;
+            var hh = image.height * 0.5;
+
+            // pick the smallest absolute scale, but maintain the sign of the scaling
+            var sx = Math.abs(info.scaleX);
+            var sy = Math.abs(info.scaleY);
+            sx = Math.min(sx, sy);
+            sy = sx * Helper.sgn(info.scaleY);
+            sx *= Helper.sgn(info.scaleX);
+
+            ctx.save();
+
+            // images are always drawn up-right
+            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate, sx, sy);
+            ctx.drawImage(image, -hw, -hh);
+            ctx.restore();
+        }
+
+        calculateBounds(): ImageShape {
+            this.oabb.oabbFromRectangle(this.transform, this.image.width, this.image.height);
+            this.aabb.aabbFromOABB(this.oabb);
+            return this;
+        }
+
+        copy(other: ImageShape): ImageShape {
+            this.imageSrc = other.imageSrc;
+            return this;
+        }
+
+        clone(): ImageShape {
+            var shape = new ImageShape(this.name, this.imageSrc);
+            return shape.copy(this);
+        }
+
+        saveData(): any {
+            var obj: any = super.saveData();
+            obj.type = "ImageShape";
+            obj.imageSrc = this.imageSrc;
+            return obj;
+        }
+
+        loadData(obj: any): ImageShape {
+            Helper.assert(obj.type === "ImageShape");
+            this.imageSrc = obj.imageSrc;
+            super.loadData(obj);
+            return this;
+        }
+    }
 }

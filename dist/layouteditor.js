@@ -404,6 +404,16 @@ var Helper;
     })();
     Helper.Callback = Callback;
 
+    function sgn(val) {
+        if (val > 0)
+            return 1;
+        else if (val < 0)
+            return -1;
+        else
+            return 0;
+    }
+    Helper.sgn = sgn;
+
     function assert(cond) {
         if (!cond)
             debugger;
@@ -1315,6 +1325,7 @@ var LayoutEditor;
             };
         };
 
+        // transform should be nested in ctx.save() and ctx.restore()
         PanZoom.prototype.transform = function (ctx, tx, ty, rotate, sx, sy) {
             if (typeof tx === "undefined") { tx = 0; }
             if (typeof ty === "undefined") { ty = 0; }
@@ -1326,7 +1337,8 @@ var LayoutEditor;
             ctx.scale(sx * this.zoom, sy * this.zoom);
         };
 
-        PanZoom.prototype.transformComplete = function (ctx, t) {
+        // applyTransform should be nested in ctx.save() and ctx.restore()
+        PanZoom.prototype.draw = function (ctx, t) {
             var zoom = this.zoom;
             ctx.transform(zoom * t.a, zoom * t.b, zoom * t.c, zoom * t.d, t.tx * zoom + this.panX, t.ty * zoom + this.panY);
         };
@@ -1483,6 +1495,7 @@ var LayoutEditor;
             this.cy = undefined;
             this.hw = undefined;
             this.hh = undefined;
+            return this;
         };
 
         Bounds.prototype.isValid = function () {
@@ -1499,12 +1512,12 @@ var LayoutEditor;
             this.cy = other.cy;
             this.hw = other.hw;
             this.hh = other.hh;
+            return this;
         };
 
         Bounds.prototype.clone = function () {
             var newBounds = new Bounds();
-            newBounds.copy(this);
-            return newBounds;
+            return newBounds.copy(this);
         };
 
         Bounds.prototype.enclose = function (aabb) {
@@ -1526,6 +1539,8 @@ var LayoutEditor;
                 this.hw = (x2 - x1) * 0.5;
                 this.hh = (y2 - y1) * 0.5;
             }
+
+            return this;
         };
 
         Bounds.prototype.toPolygon = function () {
@@ -1574,6 +1589,36 @@ var LayoutEditor;
                 y: ly
             };
         };
+
+        Bounds.prototype.oabbFromRectangle = function (transform, w, h) {
+            var dx = w * 0.5;
+            var dy = h * 0.5;
+
+            var info = transform.decompose();
+            this.rotate = info.rotate;
+            this.hw = Math.abs(dx * info.scaleX);
+            this.hh = Math.abs(dy * info.scaleY);
+            this.cx = transform.tx;
+            this.cy = transform.ty;
+
+            return this;
+        };
+
+        Bounds.prototype.aabbFromOABB = function (oabb) {
+            var polygon = oabb.toPolygon();
+            var x1 = Helper.arrayMin(polygon, 0, 2);
+            var x2 = Helper.arrayMax(polygon, 0, 2);
+            var y1 = Helper.arrayMin(polygon, 1, 2);
+            var y2 = Helper.arrayMax(polygon, 1, 2);
+
+            this.rotate = 0;
+            this.hw = (x2 - x1) * 0.5;
+            this.hh = (y2 - y1) * 0.5;
+            this.cx = (x1 + x2) * 0.5;
+            this.cy = (y1 + y2) * 0.5;
+
+            return this;
+        };
         return Bounds;
     })();
     LayoutEditor.Bounds = Bounds;
@@ -1621,6 +1666,7 @@ var LayoutEditor;
         }
         Transform.prototype.setIdentity = function () {
             this.constructor();
+            return this;
         };
 
         Transform.prototype.setRotate = function (rad) {
@@ -1630,8 +1676,16 @@ var LayoutEditor;
             this.b = -sr;
             this.c = sr;
             this.d = cr;
+
             // this.tx = 0;
             // this.ty = 0;
+            return this;
+        };
+
+        Transform.prototype.setTranslate = function (tx, ty) {
+            this.tx = tx;
+            this.ty = ty;
+            return this;
         };
 
         Transform.prototype.rotate = function (rad) {
@@ -1645,6 +1699,7 @@ var LayoutEditor;
             this.b = a * sr + b * cr;
             this.c = c * cr - d * sr;
             this.d = c * sr + d * cr;
+            return this;
         };
 
         Transform.prototype.scale = function (sx, sy) {
@@ -1652,13 +1707,16 @@ var LayoutEditor;
             this.b *= sy;
             this.c *= sx;
             this.d *= sy;
+            return this;
         };
 
         Transform.prototype.translate = function (tx, ty) {
             this.tx += tx;
             this.ty += ty;
+            return this;
         };
 
+        // warning: scaleX -1, scaleY -1 is the same as rotate PI
         Transform.prototype.decompose = function () {
             var a = this.a;
             var b = this.b;
@@ -1702,12 +1760,12 @@ var LayoutEditor;
             this.d = other.d;
             this.tx = other.tx;
             this.ty = other.ty;
+            return this;
         };
 
         Transform.prototype.clone = function () {
             var t = new Transform();
-            t.copy(this);
-            return t;
+            return t.copy(this);
         };
 
         Transform.prototype.invXY = function (x, y) {
@@ -1730,6 +1788,11 @@ var LayoutEditor;
         Transform.prototype.isEqual = function (other) {
             return this.tx === other.tx && this.ty === other.ty && this.a === other.a && this.b === other.b && this.c === other.c && this.d === other.d;
         };
+
+        // applyTransform should be nested in ctx.save() and ctx.restore()
+        Transform.prototype.draw = function (ctx) {
+            ctx.transform(this.a, this.b, this.c, this.d, this.tx, this.ty);
+        };
         return Transform;
     })();
     LayoutEditor.Transform = Transform;
@@ -1745,6 +1808,7 @@ var LayoutEditor;
             this.text = "";
             this.layer = null;
             this.onChanged = new Helper.Callback();
+            this.fixedAspect = false;
             if (typeof name === "undefined" || name.length === 0)
                 this.makeUnique();
             else
@@ -1761,18 +1825,24 @@ var LayoutEditor;
         Shape.prototype.draw = function (ctx, panZoom) {
             this.style.drawShape(ctx);
 
-            this.buildPath(ctx, panZoom);
+            ctx.save();
+            panZoom.draw(ctx, this.transform);
+            this.buildPath(ctx);
+            ctx.restore();
 
             if (this.style.fillColor !== "none")
                 ctx.fill();
             if (this.style.strokeColor !== "none")
                 ctx.stroke();
 
+            this.drawImage(ctx, panZoom);
             this.drawText(ctx, panZoom);
+            return this;
         };
 
         // implemented in the derived class
-        Shape.prototype.buildPath = function (ctx, panZoom) {
+        Shape.prototype.buildPath = function (ctx) {
+            return this;
         };
 
         Shape.prototype.drawSelect = function (ctx, panZoom) {
@@ -1784,6 +1854,7 @@ var LayoutEditor;
             ctx.rect(-oabb.hw, -oabb.hh, oabb.hw * 2, oabb.hh * 2);
             ctx.restore();
             ctx.stroke();
+            return this;
         };
 
         Shape.prototype.drawAABB = function (ctx, panZoom) {
@@ -1795,6 +1866,11 @@ var LayoutEditor;
             ctx.rect(aabb.cx - aabb.hw, aabb.cy - aabb.hh, aabb.hw * 2, aabb.hh * 2);
             ctx.restore();
             ctx.stroke();
+            return this;
+        };
+
+        Shape.prototype.drawImage = function (ctx, panZoom) {
+            return this;
         };
 
         Shape.prototype.drawText = function (ctx, panZoom) {
@@ -1804,7 +1880,7 @@ var LayoutEditor;
             var oabb = this.oabb;
 
             ctx.save();
-            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate);
+            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate); // no scale, don't stretch the font
 
             this.style.drawFont(ctx);
 
@@ -1850,14 +1926,19 @@ var LayoutEditor;
             }
 
             ctx.restore();
+            return this;
         };
 
         // performed by the derived class
         Shape.prototype.calculateBounds = function () {
+            return this;
         };
 
         Shape.prototype.isInsideXY = function (ctx, x, y) {
-            this.buildPath(ctx, LayoutEditor.PanZoom.none);
+            ctx.save();
+            this.transform.draw(ctx); // no zoom
+            this.buildPath(ctx);
+            ctx.restore();
             return ctx.isPointInPath(x, y);
         };
 
@@ -1924,12 +2005,12 @@ var LayoutEditor;
             this.name = other.name;
             this.text = other.text;
             this.layer = other.layer;
+            return this;
         };
 
         Shape.prototype.clone = function () {
             var shape = new Shape();
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         };
 
         // overloaded by specific shape
@@ -1948,6 +2029,7 @@ var LayoutEditor;
             this.text = obj.text;
             this.style = LayoutEditor.g_styleList.getStyle(obj.style);
             Helper.extend(this.transform, obj.transform);
+            return this;
         };
         Shape.uniqueID = 1;
         return Shape;
@@ -1961,27 +2043,22 @@ var LayoutEditor;
             this.w = w;
             this.h = h;
         }
-        RectShape.prototype.buildPath = function (ctx, panZoom) {
-            var transform = this.transform;
-
-            ctx.save();
-            panZoom.transformComplete(ctx, transform);
-
+        RectShape.prototype.buildPath = function (ctx) {
             ctx.beginPath();
             ctx.rect(-this.w * 0.5, -this.h * 0.5, this.w, this.h);
-            ctx.restore();
+            return this;
         };
 
         RectShape.prototype.copy = function (other) {
             _super.prototype.copy.call(this, other);
             this.w = other.w;
             this.h = other.h;
+            return this;
         };
 
         RectShape.prototype.clone = function () {
             var shape = new RectShape(this.name, this.w, this.h);
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         };
 
         RectShape.prototype.fromRect = function (x, y, w, h) {
@@ -1990,31 +2067,13 @@ var LayoutEditor;
             this.w = w;
             this.h = h;
             this.calculateBounds();
+            return this;
         };
 
         RectShape.prototype.calculateBounds = function () {
-            var transform = this.transform;
-            var dx = this.w * 0.5;
-            var dy = this.h * 0.5;
-
-            var info = transform.decompose();
-            this.oabb.rotate = info.rotate;
-            this.oabb.hw = Math.abs(dx * info.scaleX);
-            this.oabb.hh = Math.abs(dy * info.scaleY);
-            this.oabb.cx = transform.tx;
-            this.oabb.cy = transform.ty;
-
-            var polygon = this.oabb.toPolygon();
-            var x1 = Helper.arrayMin(polygon, 0, 2);
-            var x2 = Helper.arrayMax(polygon, 0, 2);
-            var y1 = Helper.arrayMin(polygon, 1, 2);
-            var y2 = Helper.arrayMax(polygon, 1, 2);
-
-            this.aabb.rotate = 0;
-            this.aabb.hw = (x2 - x1) * 0.5;
-            this.aabb.hh = (y2 - y1) * 0.5;
-            this.aabb.cx = (x1 + x2) * 0.5;
-            this.aabb.cy = (y1 + y2) * 0.5;
+            this.oabb.oabbFromRectangle(this.transform, this.w, this.h);
+            this.aabb.aabbFromOABB(this.oabb);
+            return this;
         };
 
         RectShape.prototype.saveData = function () {
@@ -2032,6 +2091,8 @@ var LayoutEditor;
             this.h = obj.h;
             this.text = obj.text;
             _super.prototype.loadData.call(this, obj);
+
+            return this;
         };
         return RectShape;
     })(Shape);
@@ -2044,13 +2105,9 @@ var LayoutEditor;
             this.rx = rx;
             this.ry = ry;
         }
-        EllipseShape.prototype.buildPath = function (ctx, panZoom) {
-            var transform = this.transform;
+        EllipseShape.prototype.buildPath = function (ctx) {
             var rx = Math.abs(this.rx);
             var ry = Math.abs(this.ry);
-
-            ctx.save();
-            panZoom.transformComplete(ctx, transform);
 
             var kappa = .5522848, ox = rx * kappa, oy = ry * kappa;
 
@@ -2063,19 +2120,19 @@ var LayoutEditor;
 
             // ctx.beginPath();
             // ctx.ellipse(0, 0, rx, ry, 0, 0, 2 * Math.PI);    chrome only
-            ctx.restore();
+            return this;
         };
 
         EllipseShape.prototype.copy = function (other) {
             _super.prototype.copy.call(this, other);
             this.rx = other.rx;
             this.ry = other.ry;
+            return this;
         };
 
         EllipseShape.prototype.clone = function () {
             var shape = new EllipseShape(this.name, this.rx, this.ry);
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         };
 
         EllipseShape.prototype.fromRect = function (x, y, w, h) {
@@ -2084,6 +2141,7 @@ var LayoutEditor;
             this.rx = w * 0.5;
             this.ry = h * 0.5;
             this.calculateBounds();
+            return this;
         };
 
         EllipseShape.prototype.calculateBounds = function () {
@@ -2114,6 +2172,7 @@ var LayoutEditor;
             this.aabb.cy = this.oabb.cy;
             this.aabb.hw = rotatedHW;
             this.aabb.hh = rotatedHH;
+            return this;
         };
 
         EllipseShape.prototype.saveData = function () {
@@ -2129,6 +2188,7 @@ var LayoutEditor;
             this.rx = obj.rx;
             this.ry = obj.ry;
             _super.prototype.loadData.call(this, obj);
+            return this;
         };
         return EllipseShape;
     })(Shape);
@@ -2146,12 +2206,12 @@ var LayoutEditor;
             this.y1 = other.y1;
             this.x2 = other.x2;
             this.y2 = other.y2;
+            return this;
         };
 
         AABBShape.prototype.clone = function () {
             var shape = new AABBShape();
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         };
 
         AABBShape.prototype.reset = function () {
@@ -2159,17 +2219,16 @@ var LayoutEditor;
             this.y1 = undefined;
             this.x2 = undefined;
             this.y2 = undefined;
+            return this;
         };
 
-        AABBShape.prototype.buildPath = function (ctx, panZoom) {
+        AABBShape.prototype.buildPath = function (ctx) {
             // don't apply transform!
             var x1 = this.oabb.cx - this.oabb.hw;
             var y1 = this.oabb.cy - this.oabb.hh;
-            ctx.save();
-            panZoom.transform(ctx);
             ctx.beginPath();
             ctx.rect(x1, y1, this.oabb.hw * 2, this.oabb.hh * 2);
-            ctx.restore();
+            return this;
         };
 
         AABBShape.prototype.calculateBounds = function () {
@@ -2183,6 +2242,7 @@ var LayoutEditor;
             this.oabb.hh = Math.abs(hh);
 
             this.aabb = this.oabb;
+            return this;
         };
 
         AABBShape.prototype.saveData = function () {
@@ -2202,6 +2262,7 @@ var LayoutEditor;
             this.x2 = obj.x2;
             this.y2 = obj.y2;
             _super.prototype.loadData.call(this, obj);
+            return this;
         };
         return AABBShape;
     })(Shape);
@@ -2227,12 +2288,14 @@ var LayoutEditor;
             this.encloseHH = 0;
             this.encloseCX = 0;
             this.encloseCY = 0;
+            return this;
         };
 
         GroupShape.prototype.setShapes = function (shapes) {
             this.shapes = shapes.slice(); // copy
 
             this.encloseShapes();
+            return this;
         };
 
         GroupShape.prototype.copy = function (other) {
@@ -2244,16 +2307,17 @@ var LayoutEditor;
                 this.oldTransforms[i].copy(other.oldTransforms[i]);
                 this.shapes[i] = other.shapes[i].clone();
             }
+            return this;
         };
 
         GroupShape.prototype.clone = function () {
             var shape = new GroupShape();
-            shape.copy(this);
-            return shape;
+            return shape.copy(this);
         };
 
         // shapes in this group will be drawn independently
         GroupShape.prototype.draw = function (ctx, panZoom) {
+            return this;
         };
 
         // use a standard draw for the subelements, when selected
@@ -2264,6 +2328,7 @@ var LayoutEditor;
             // draw the bounds
             LayoutEditor.g_selectStyle.drawShape(ctx);
             _super.prototype.drawSelect.call(this, ctx, panZoom);
+            return this;
         };
 
         // check each sub-shape individually
@@ -2280,26 +2345,22 @@ var LayoutEditor;
             if (this.transform.isEqual(this.lastTransform))
                 return;
 
-            var transform = this.transform;
-            var info = transform.decompose();
+            var groupTransform = this.transform;
+            var info = groupTransform.decompose();
 
             for (var i = 0; i < this.shapes.length; ++i) {
                 var shape = this.shapes[i];
                 var oldTransform = this.oldTransforms[i];
 
-                var newPos = transform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
+                var newPos = groupTransform.calcXY(oldTransform.tx - this.encloseCX, oldTransform.ty - this.encloseCY);
 
-                shape.transform.copy(oldTransform);
-                shape.transform.tx = newPos.x;
-                shape.transform.ty = newPos.y;
-
-                shape.transform.scale(info.scaleX, info.scaleY);
-                shape.transform.rotate(info.rotate);
+                shape.transform.copy(oldTransform).setTranslate(newPos.x, newPos.y).scale(info.scaleX, info.scaleY).rotate(info.rotate);
 
                 shape.calculateBounds();
             }
 
             this.lastTransform.copy(this.transform);
+            return this;
         };
 
         GroupShape.prototype.encloseShapes = function () {
@@ -2333,17 +2394,15 @@ var LayoutEditor;
                 oabb.copy(aabb); // for multiple shapes, initial oabb matches aabb
             }
 
-            var transform = this.transform;
-            transform.setIdentity();
-            transform.tx = aabb.cx;
-            transform.ty = aabb.cy;
+            this.transform.setIdentity().setTranslate(aabb.cx, aabb.cy);
 
-            this.lastTransform.copy(transform);
+            this.lastTransform.copy(this.transform);
 
             this.encloseHW = aabb.hw;
             this.encloseHH = aabb.hh;
             this.encloseCX = aabb.cx;
             this.encloseCY = aabb.cy;
+            return this;
         };
 
         GroupShape.prototype.calculateBounds = function () {
@@ -2372,8 +2431,10 @@ var LayoutEditor;
             aabb.hh = (y2 - y1) * 0.5;
             aabb.cx = (x1 + x2) * 0.5;
             aabb.cy = (y1 + y2) * 0.5;
+            return this;
         };
 
+        // TODO save group shape list by ID
         GroupShape.prototype.saveData = function () {
             var obj = _super.prototype.saveData.call(this);
             obj.type = "GroupShape";
@@ -2383,6 +2444,7 @@ var LayoutEditor;
         GroupShape.prototype.loadData = function (obj) {
             Helper.assert(obj.type === "GroupShape");
             _super.prototype.loadData.call(this, obj);
+            return this;
         };
         return GroupShape;
     })(Shape);
@@ -2405,6 +2467,95 @@ var LayoutEditor;
                 }
             }]
     });
+
+    var ImageShape = (function (_super) {
+        __extends(ImageShape, _super);
+        // TODO use a repository for the imageSrc
+        function ImageShape(name, imageSrc) {
+            _super.call(this, name);
+            this.imageSrc = imageSrc;
+            this.image = new Image();
+            var image = this.image;
+            image.src = imageSrc;
+            this.fixedAspect = true;
+        }
+        Object.defineProperty(ImageShape.prototype, "w", {
+            get: function () {
+                return this.image.width;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(ImageShape.prototype, "h", {
+            get: function () {
+                return this.image.height;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        ImageShape.prototype.buildPath = function (ctx) {
+            var hw = this.image.width * 0.5;
+            var hh = this.image.height * 0.5;
+            ctx.beginPath();
+            ctx.rect(-hw, -hh, 2 * hw, 2 * hh);
+            return this;
+        };
+
+        ImageShape.prototype.drawImage = function (ctx, panZoom) {
+            var oabb = this.oabb;
+            var image = this.image;
+            var info = this.transform.decompose();
+            var hw = image.width * 0.5;
+            var hh = image.height * 0.5;
+
+            // pick the smallest absolute scale, but maintain the sign of the scaling
+            var sx = Math.abs(info.scaleX);
+            var sy = Math.abs(info.scaleY);
+            sx = Math.min(sx, sy);
+            sy = sx * Helper.sgn(info.scaleY);
+            sx *= Helper.sgn(info.scaleX);
+
+            ctx.save();
+
+            // images are always drawn up-right
+            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate, sx, sy);
+            ctx.drawImage(image, -hw, -hh);
+            ctx.restore();
+        };
+
+        ImageShape.prototype.calculateBounds = function () {
+            this.oabb.oabbFromRectangle(this.transform, this.image.width, this.image.height);
+            this.aabb.aabbFromOABB(this.oabb);
+            return this;
+        };
+
+        ImageShape.prototype.copy = function (other) {
+            this.imageSrc = other.imageSrc;
+            return this;
+        };
+
+        ImageShape.prototype.clone = function () {
+            var shape = new ImageShape(this.name, this.imageSrc);
+            return shape.copy(this);
+        };
+
+        ImageShape.prototype.saveData = function () {
+            var obj = _super.prototype.saveData.call(this);
+            obj.type = "ImageShape";
+            obj.imageSrc = this.imageSrc;
+            return obj;
+        };
+
+        ImageShape.prototype.loadData = function (obj) {
+            Helper.assert(obj.type === "ImageShape");
+            this.imageSrc = obj.imageSrc;
+            _super.prototype.loadData.call(this, obj);
+            return this;
+        };
+        return ImageShape;
+    })(Shape);
+    LayoutEditor.ImageShape = ImageShape;
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -3108,6 +3259,13 @@ var LayoutEditor;
             this.page.requestDraw(this._layer);
         };
 
+        ToolLayer.prototype.addImage = function (imageSrc) {
+            var command = new LayoutEditor.ImageCommand(this.page, this.layer, imageSrc, this.style);
+            this.commandList.addCommand(command);
+            this.selectList.setSelectedShapes([command.imageShape]);
+            this.page.requestDraw(this._layer);
+        };
+
         ToolLayer.prototype.createCanvas = function (parentElem, width, height) {
             _super.prototype.createCanvas.call(this, parentElem, width, height);
             this.canvas.style.zIndex = "1000"; // tool layer always on top
@@ -3495,6 +3653,29 @@ var LayoutEditor;
         return MakeSquareShapesCommand;
     })();
     LayoutEditor.MakeSquareShapesCommand = MakeSquareShapesCommand;
+
+    var ImageCommand = (function () {
+        function ImageCommand(page, layer, imageSrc, style) {
+            this.page = page;
+            this.layer = layer;
+            this.imageShape = null;
+            var imageShape = new LayoutEditor.ImageShape("", imageSrc);
+            imageShape.transform.translate(imageShape.w * 0.5, imageShape.h * 0.5);
+            imageShape.style = style;
+            imageShape.calculateBounds();
+
+            this.imageShape = imageShape;
+        }
+        ImageCommand.prototype.redo = function () {
+            this.layer.addShape(this.imageShape);
+        };
+
+        ImageCommand.prototype.undo = function () {
+            this.layer.removeShape(this.imageShape);
+        };
+        return ImageCommand;
+    })();
+    LayoutEditor.ImageCommand = ImageCommand;
 
     LayoutEditor.g_drawCtx = null;
     LayoutEditor.g_Layer = null;
@@ -4756,6 +4937,19 @@ var LayoutEditor;
         g_editor.pageNumber = parseInt(e.target.value);
     }
 
+    function addImage(e) {
+        var file = e.target.files[0];
+        document.getElementById("imageTool").value = "";
+        if (!file)
+            return;
+
+        var reader = new FileReader();
+        reader.onloadend = function (e) {
+            g_editor.toolLayer.addImage(reader.result);
+        };
+        reader.readAsDataURL(file);
+    }
+
     window.addEventListener("load", function () {
         var editorElem = document.getElementById("editor");
 
@@ -4781,6 +4975,7 @@ var LayoutEditor;
         document.getElementById("makeSquare").addEventListener("click", makeSquare);
         document.getElementById("distribute").addEventListener("change", distribute);
         document.getElementById("page").addEventListener("change", newPage);
+        document.getElementById("imageTool").addEventListener("change", addImage);
 
         LayoutEditor.g_inputText = document.getElementById("inputText");
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");

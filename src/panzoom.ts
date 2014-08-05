@@ -51,13 +51,15 @@ module LayoutEditor {
             };
         }
 
+        // transform should be nested in ctx.save() and ctx.restore()
         transform(ctx, tx: number = 0, ty: number = 0, rotate: number = 0, sx: number = 1, sy: number = 1) {
             ctx.translate(tx * this.zoom + this.panX, ty * this.zoom + this.panY);
             ctx.rotate(rotate);
             ctx.scale(sx * this.zoom, sy * this.zoom);
         }
 
-        transformComplete(ctx, t: Transform) {
+        // applyTransform should be nested in ctx.save() and ctx.restore()
+        draw(ctx, t: Transform) {
             var zoom: number = this.zoom;
             ctx.transform(zoom * t.a, zoom * t.b, zoom * t.c, zoom * t.d, t.tx * zoom + this.panX, t.ty * zoom + this.panY);
         }

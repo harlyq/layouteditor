@@ -370,6 +370,27 @@ module LayoutEditor {
         }
     }
 
+    export class ImageCommand implements Command {
+        imageShape: ImageShape = null;
+
+        constructor(public page: Page, public layer: Layer, imageSrc: string, style: Style) {
+            var imageShape = new ImageShape("", imageSrc);
+            imageShape.transform.translate(imageShape.w * 0.5, imageShape.h * 0.5);
+            imageShape.style = style;
+            imageShape.calculateBounds();
+
+            this.imageShape = imageShape;
+        }
+
+        redo() {
+            this.layer.addShape(this.imageShape);
+        }
+
+        undo() {
+            this.layer.removeShape(this.imageShape);
+        }
+    }
+
     export
     var g_drawCtx = null;
     export

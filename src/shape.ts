@@ -315,7 +315,7 @@ module LayoutEditor {
 
     //------------------------------
     export class Shape {
-        style: Style = g_style;
+        style: Style = null;
         oabb: Bounds = new Bounds();
         aabb: Bounds = new Bounds();
         transform: Transform = new Transform();
@@ -323,7 +323,6 @@ module LayoutEditor {
         text: string = "";
         layer: Layer = null;
         onChanged = new Helper.Callback < () => void > ()
-        fixedAspect: boolean = false;
 
         static uniqueID: number = 1;
 
@@ -977,6 +976,8 @@ module LayoutEditor {
     }
 
     export class ImageShape extends Shape {
+        fixedAspect: boolean = false;
+
         private image = new Image();
         get w(): number {
             return this.image.width;
@@ -1058,28 +1059,34 @@ module LayoutEditor {
         }
     }
 
-    g_propertyPanel.addPropertyList({
-        canHandle: (obj: any) => {
-            return obj instanceof Shape;
-        },
-        items: [{
-            prop: 'name',
-            match: '^[a-zA-Z]\\w*$',
-            allowMultiple: false,
-            // isValid: function(value) {
-            //     return g_Page.isValidShapeName(value);
-            // }
-        }, {
-            prop: 'style',
-            type: 'list',
-            getList: (): ReferenceItem[] => {
-                return g_styleList.getList();
-            }
-        }, {
-            prop: 'fixedAspect'
-        }, {
-            prop: 'text'
-        }]
+    var shapePropertyList = new PropertyList();
+    shapePropertyList.canHandle = function(obj: any) {
+        return obj instanceof Shape;
+    };
+    shapePropertyList.items = [{
+        prop: 'name',
+        match: '^[a-zA-Z]\\w*$',
+        // isValid: function(value) {
+        //     return g_Page.isValidShapeName(value);
+        // }
+    }, {
+        prop: 'style',
+        type: 'list',
+        getList: (): ReferenceItem[] => {
+            return g_styleList.getList();
+        }
+    }, {
+        prop: 'text'
+    }];
+
+    var imageShapePropertyList: PropertyList = shapePropertyList.clone();
+    imageShapePropertyList.canHandle = (obj: any) => {
+        return obj instanceof ImageShape;
+    };
+    imageShapePropertyList.items.push({
+        prop: 'fixedAspect',
     });
 
+    g_propertyPanel.addPropertyList(shapePropertyList);
+    g_propertyPanel.addPropertyList(imageShapePropertyList);
 }

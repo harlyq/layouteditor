@@ -53,11 +53,11 @@ module LayoutEditor {
     function reset() {
         ( < HTMLInputElement > document.getElementById("upload")).value = "";
 
-        g_editor.reset();
         g_propertyPanel.reset();
         g_styleList.reset();
         g_stylePanel.reset();
 
+        g_editor.reset(); // reset after the styleList
         g_editor.setTool("rectTool");
         shapesSelect();
     }

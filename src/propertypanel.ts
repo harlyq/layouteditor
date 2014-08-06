@@ -12,9 +12,21 @@ module LayoutEditor {
         isValid ? : (value) => boolean;
     }
 
-    export interface PropertyList {
-        canHandle: (obj: any) => boolean;
-        items: PropertyItem[];
+    export class PropertyList {
+        canHandle: (obj: any) => boolean = null;
+        items: PropertyItem[] = [];
+
+        copy(other: PropertyList): PropertyList {
+            this.canHandle = other.canHandle;
+            this.items = other.items.slice(); // copy
+            return this;
+        }
+
+        clone(): PropertyList {
+            var newList = new PropertyList();
+            newList.copy(this);
+            return newList;
+        }
     }
 
     export class PropertyBinding {
@@ -468,8 +480,6 @@ module LayoutEditor {
             if (!binding.isValueSame()) {
                 valueSpan.innerHTML = "----";
             } else {
-                value = binding.getValue();
-
                 var list: ReferenceItem[] = binding.item.getList();
                 var value = binding.getValue();
 

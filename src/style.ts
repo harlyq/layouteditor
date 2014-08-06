@@ -211,62 +211,63 @@ module LayoutEditor {
     export
     var g_styleList = new StyleList();
 
-    g_propertyPanel.addPropertyList({
-        canHandle: (obj: any) => {
-            return obj instanceof Style;
-        },
-        items: [{
-            prop: 'name',
-            match: '^[a-zA-Z]\\w*$',
-            allowMultiple: false,
-            isValid: function(value) {
-                return g_styleList.isValidStyleName(value);
-            }
-        }, {
-            prop: "strokeColor",
-            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
-        }, {
-            prop: "fillColor",
-            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
-        }, {
-            prop: "lineWidth",
-            match: '^\\d+$'
-        }, {
-            prop: "textAlign",
-            type: 'list',
-            getList: () => {
-                return Helper.enumList(StyleTextAlign);
-            }
-        }, {
-            prop: "textBaseline",
-            type: 'list',
-            getList: () => {
-                return Helper.enumList(StyleTextBaseline);
-            }
-        }, {
-            prop: "fontSize",
-            match: '^\\d+$'
-        }, {
-            prop: "fontFamily",
-            match: '^[a-zA-Z]*$'
-        }, {
-            prop: "fontWeight",
-            type: 'list',
-            getList: () => {
-                return Helper.enumList(StyleFontWeight);
-            }
-        }, {
-            prop: "fontStyle",
-            type: 'list',
-            getList: () => {
-                return Helper.enumList(StyleFontStyle);
-            }
-        }, {
-            prop: "fontColor",
-            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
-        }, {
-            prop: 'fontSpacing'
-        }]
-    });
+    var stylePropertyList = new PropertyList();
+    stylePropertyList.canHandle = function(obj: any) {
+        return obj instanceof Style;
+    };
+    stylePropertyList.items = [{
+        prop: 'name',
+        match: '^[a-zA-Z]\\w*$',
+        // allowMultiple: false,
+        // isValid: function(value) {
+        //     return g_styleList.isValidStyleName(value);
+        // }
+    }, {
+        prop: "strokeColor",
+        match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+    }, {
+        prop: "fillColor",
+        match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+    }, {
+        prop: "lineWidth",
+        match: '^\\d+$'
+    }, {
+        prop: "textAlign",
+        type: 'list',
+        getList: () => {
+            return Helper.enumList(StyleTextAlign);
+        }
+    }, {
+        prop: "textBaseline",
+        type: 'list',
+        getList: () => {
+            return Helper.enumList(StyleTextBaseline);
+        }
+    }, {
+        prop: "fontSize",
+        match: '^\\d+$'
+    }, {
+        prop: "fontFamily",
+        match: '^[a-zA-Z]*$'
+    }, {
+        prop: "fontWeight",
+        type: 'list',
+        getList: () => {
+            return Helper.enumList(StyleFontWeight);
+        }
+    }, {
+        prop: "fontStyle",
+        type: 'list',
+        getList: () => {
+            return Helper.enumList(StyleFontStyle);
+        }
+    }, {
+        prop: "fontColor",
+        match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+    }, {
+        prop: 'fontSpacing'
+    }];
+
+    g_propertyPanel.addPropertyList(stylePropertyList);
 
 }

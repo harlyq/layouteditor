@@ -36,11 +36,12 @@ module LayoutEditor {
         snapToGrid: boolean = false;
         gridSize: number = 10;
         snapToShape: boolean = true;
-        xTabs: number[] = [];
-        yTabs: number[] = [];
-        shapeGravity: number = 10;
-        snappedX: number;
-        snappedY: number;
+        shapeGravity: number = 5;
+
+        private xTabs: number[] = [];
+        private yTabs: number[] = [];
+        private snappedX: number;
+        private snappedY: number;
 
         constructor() {
 
@@ -71,9 +72,11 @@ module LayoutEditor {
             return bestIndex;
         }
 
-        clearSnap() {
+        reset() {
             this.snappedX = undefined;
             this.snappedY = undefined;
+            this.xTabs.length = 0;
+            this.yTabs.length = 0;
         }
 
         snapX(x: number): number {

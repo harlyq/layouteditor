@@ -4,7 +4,7 @@
 module LayoutEditor {
     //------------------------------
     export class Tool {
-        isUsing: boolean = false;
+        isUsing = false;
 
         constructor(public toolLayer: ToolLayer) {}
 
@@ -18,7 +18,7 @@ module LayoutEditor {
 
     export class DrawTool extends Tool {
         public shape: Shape = null;
-        public canUse: boolean = false;
+        public canUse = false;
 
         constructor(toolLayer: ToolLayer) {
             super(toolLayer);
@@ -38,10 +38,10 @@ module LayoutEditor {
 
     export class RectTool extends DrawTool {
         private rectShape: RectShape = new RectShape("_RectTool", 0, 0);
-        private x1: number = -1;
-        private y1: number = -1;
-        private x2: number = -1;
-        private y2: number = -1;
+        private x1 = -1;
+        private y1 = -1;
+        private x2 = -1;
+        private y2 = -1;
 
         constructor(toolLayer: ToolLayer) {
             super(toolLayer);
@@ -50,7 +50,7 @@ module LayoutEditor {
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
-            var isHandled: boolean = false;
+            var isHandled = false;
             var grid = this.toolLayer.grid;
 
             switch (e.state) {
@@ -63,30 +63,35 @@ module LayoutEditor {
                     break;
 
                 case InteractionHelper.State.Move:
-                    var pos: XY = grid.snapXY(e.x, e.y);
-                    this.x2 = pos.x;
-                    this.y2 = pos.y;
-                    this.canUse = true;
+                    if (this.isUsing) {
+                        var pos: XY = grid.snapXY(e.x, e.y);
+                        this.x2 = pos.x;
+                        this.y2 = pos.y;
+                        this.canUse = true;
+                    }
                     break;
 
                 case InteractionHelper.State.End:
-                    if (this.canUse) {
-                        var toolLayer = this.toolLayer;
-                        var newCommand = new RectCommand(
-                            toolLayer.page,
-                            toolLayer.layer,
-                            this.rectShape.transform.tx,
-                            this.rectShape.transform.ty,
-                            this.rectShape.w,
-                            this.rectShape.h,
-                            toolLayer.style);
-                        toolLayer.commandList.addCommand(newCommand);
-                        toolLayer.selectList.setSelectedShapes([newCommand.shape]);
-                        this.canUse = false;
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var toolLayer = this.toolLayer;
+                            var newCommand = new RectCommand(
+                                toolLayer.page,
+                                toolLayer.layer,
+                                this.rectShape.transform.tx,
+                                this.rectShape.transform.ty,
+                                this.rectShape.w,
+                                this.rectShape.h,
+                                toolLayer.style);
+                            toolLayer.commandList.addCommand(newCommand);
+                            toolLayer.selectList.setSelectedShapes([newCommand.shape]);
+                            this.canUse = false;
+                        }
+                        this.isUsing = false;
+                        isHandled = true;
+                        grid.reset();
                     }
 
-                    this.isUsing = false;
-                    isHandled = true;
                     break;
             }
             return isHandled || this.isUsing;
@@ -120,7 +125,7 @@ module LayoutEditor {
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
-            var isHandled: boolean = false;
+            var isHandled = false;
             var grid = this.toolLayer.grid;
 
             switch (e.state) {
@@ -156,6 +161,7 @@ module LayoutEditor {
                             toolLayer.selectList.setSelectedShapes([newCommand.shape]);
                             this.canUse = false;
                         }
+                        grid.reset();
                         this.isUsing = false;
                         isHandled = true;
                     }
@@ -191,7 +197,7 @@ module LayoutEditor {
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
-            var isHandled: boolean = false;
+            var isHandled = false;
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
@@ -242,16 +248,16 @@ module LayoutEditor {
     }
 
     export class ResizeTool extends Tool {
-        handleSize: number = 20;
+        handleSize = 20;
 
         private handle: ResizeTool.HandleFlag = ResizeTool.HandleFlag.None;
-        private canUse: boolean = false;
+        private canUse = false;
         private startLocalPos: XY = null;
         private oldInfo: SimpleTransform = null;
         private oldTransform: Transform = new Transform();
-        private deltaX: number = 0;
-        private deltaY: number = 0;
-        private oldOABB: Bounds = new Bounds();
+        private deltaX = 0;
+        private deltaY = 0;
+        private oldOABB = new Bounds();
         private oldShapeTransforms: Transform[] = [];
 
         constructor(toolLayer: ToolLayer) {
@@ -259,7 +265,8 @@ module LayoutEditor {
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
-            var isHandled: boolean = false;
+            var isHandled = false;
+            var grid = this.toolLayer.grid;
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
@@ -281,12 +288,12 @@ module LayoutEditor {
                         this.oldTransform.copy(selectGroup.transform);
 
                         var shapes: Shape[] = this.toolLayer.selectList.selectGroup.shapes;
-                        for (var i: number = 0; i < shapes.length; ++i) {
+                        for (var i = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
 
-                        var oldOABB: Bounds = this.oldOABB;
-                        var localPos: XY = oldOABB.invXY(e.x, e.y);
+                        var oldOABB = this.oldOABB;
+                        var localPos = oldOABB.invXY(e.x, e.y);
                         var handleX = this.handleSize;
                         var handleY = this.handleSize;
 
@@ -401,7 +408,7 @@ module LayoutEditor {
             if (!this.isUsing)
                 return;
 
-            for (var i: number = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+            for (var i = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
                 this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
         }
@@ -414,9 +421,9 @@ module LayoutEditor {
     }
 
     export class RotateTool extends Tool {
-        private lastAngle: number = 0;
-        private pivotX: number = 0;
-        private pivotY: number = 0;
+        private lastAngle = 0;
+        private pivotX = 0;
+        private pivotY = 0;
         private oldTransform: Transform = new Transform();
         private oldShapeTransforms: Transform[] = [];
 
@@ -425,7 +432,7 @@ module LayoutEditor {
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
-            var isHandled: boolean = false;
+            var isHandled = false;
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
@@ -443,7 +450,7 @@ module LayoutEditor {
                         this.oldTransform.copy(selectGroup.transform);
 
                         var shapes: Shape[] = this.toolLayer.selectList.selectGroup.shapes;
-                        for (var i: number = 0; i < shapes.length; ++i) {
+                        for (var i = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
 
@@ -491,7 +498,7 @@ module LayoutEditor {
             if (!this.isUsing)
                 return;
 
-            for (var i: number = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+            for (var i = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
                 this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
         }
@@ -508,11 +515,11 @@ module LayoutEditor {
 
     export class MoveTool extends Tool {
         private shape: Shape = null;
-        private canUse: boolean = false;
-        private deltaX: number = 0;
-        private deltaY: number = 0;
+        private canUse = false;
+        private deltaX = 0;
+        private deltaY = 0;
         private oldTransform: Transform = new Transform();
-        private oldAABB: Bounds = new Bounds();
+        private oldAABB = new Bounds();
         private oldShapeTransforms: Transform[] = [];
 
         constructor(toolLayer: ToolLayer) {
@@ -520,7 +527,7 @@ module LayoutEditor {
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
-            var isHandled: boolean = false;
+            var isHandled = false;
 
             switch (e.state) {
                 case InteractionHelper.State.Start:
@@ -532,7 +539,7 @@ module LayoutEditor {
                         }
 
                         var shapes: Shape[] = this.toolLayer.selectList.selectGroup.shapes;
-                        for (var i: number = 0; i < shapes.length; ++i) {
+                        for (var i = 0; i < shapes.length; ++i) {
                             this.oldShapeTransforms[i] = shapes[i].transform.clone();
                         }
 
@@ -580,7 +587,7 @@ module LayoutEditor {
                             toolLayer.commandList.addCommand(newCommand);
                         }
                         toolLayer.moveSelectToLayer();
-                        toolLayer.grid.clearSnap();
+                        toolLayer.grid.reset();
 
                         this.canUse = false;
                         this.shape = null;
@@ -598,7 +605,7 @@ module LayoutEditor {
             if (!this.isUsing)
                 return;
 
-            for (var i: number = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
+            for (var i = 0; i < this.toolLayer.selectList.selectedShapes.length; ++i) {
                 this.toolLayer.selectList.selectedShapes[i].draw(ctx, this.toolLayer.page.panZoom); // draw the shape in the tool context
             }
         }
@@ -608,42 +615,42 @@ module LayoutEditor {
             var aabb = this.oldAABB;
             var grid = this.toolLayer.grid;
 
-            var centerX: number = aabb.cx + dx;
-            var centerY: number = aabb.cy + dy;
-            var left: number = centerX - aabb.hw;
-            var top: number = centerY - aabb.hh;
-            var right: number = centerX + aabb.hw;
-            var bottom: number = centerY + aabb.hh;
+            var centerX = aabb.cx + dx;
+            var centerY = aabb.cy + dy;
+            var left = centerX - aabb.hw;
+            var top = centerY - aabb.hh;
+            var right = centerX + aabb.hw;
+            var bottom = centerY + aabb.hh;
 
             var delta: XY = {
                 x: dx,
                 y: dy
             };
 
-            var newLeft: number = grid.snapX(left);
+            var newLeft = grid.snapX(left);
             if (left !== newLeft) {
                 delta.x += newLeft - left;
             } else {
-                var newRight: number = grid.snapX(right);
+                var newRight = grid.snapX(right);
                 if (right !== newRight) {
                     delta.x += newRight - right;
                 } else {
-                    var newCenterX: number = grid.snapX(centerX);
+                    var newCenterX = grid.snapX(centerX);
                     if (newCenterX !== centerX) {
                         delta.x += newCenterX - centerX;
                     }
                 }
             }
 
-            var newTop: number = grid.snapY(top);
+            var newTop = grid.snapY(top);
             if (top !== newTop) {
                 delta.y += newTop - top;
             } else {
-                var newBottom: number = grid.snapY(bottom);
+                var newBottom = grid.snapY(bottom);
                 if (bottom !== newBottom) {
                     delta.y += newBottom - bottom;
                 } else {
-                    var newCenterY: number = grid.snapY(centerY);
+                    var newCenterY = grid.snapY(centerY);
                     if (newCenterY !== centerY) {
                         delta.y += newCenterY - centerY;
                     }
@@ -712,7 +719,7 @@ module LayoutEditor {
         }
 
         onPointer(e: InteractionHelper.Event): boolean {
-            var isHandled: boolean = false;
+            var isHandled = false;
 
             switch (e.state) {
                 case InteractionHelper.State.DoubleClick:

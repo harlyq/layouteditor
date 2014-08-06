@@ -526,6 +526,26 @@ var LayoutEditor;
 /// <reference path="_dependencies.ts" />
 var LayoutEditor;
 (function (LayoutEditor) {
+    var PropertyList = (function () {
+        function PropertyList() {
+            this.canHandle = null;
+            this.items = [];
+        }
+        PropertyList.prototype.copy = function (other) {
+            this.canHandle = other.canHandle;
+            this.items = other.items.slice(); // copy
+            return this;
+        };
+
+        PropertyList.prototype.clone = function () {
+            var newList = new PropertyList();
+            newList.copy(this);
+            return newList;
+        };
+        return PropertyList;
+    })();
+    LayoutEditor.PropertyList = PropertyList;
+
     var PropertyBinding = (function () {
         function PropertyBinding(objects, prop) {
             this.objects = objects;
@@ -966,8 +986,6 @@ var LayoutEditor;
             if (!binding.isValueSame()) {
                 valueSpan.innerHTML = "----";
             } else {
-                value = binding.getValue();
-
                 var list = binding.item.getList();
                 var value = binding.getValue();
 
@@ -1266,64 +1284,61 @@ var LayoutEditor;
 
     LayoutEditor.g_styleList = new StyleList();
 
-    LayoutEditor.g_propertyPanel.addPropertyList({
-        canHandle: function (obj) {
-            return obj instanceof Style;
-        },
-        items: [
-            {
-                prop: 'name',
-                match: '^[a-zA-Z]\\w*$',
-                allowMultiple: false,
-                isValid: function (value) {
-                    return LayoutEditor.g_styleList.isValidStyleName(value);
-                }
-            }, {
-                prop: "strokeColor",
-                match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
-            }, {
-                prop: "fillColor",
-                match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
-            }, {
-                prop: "lineWidth",
-                match: '^\\d+$'
-            }, {
-                prop: "textAlign",
-                type: 'list',
-                getList: function () {
-                    return Helper.enumList(StyleTextAlign);
-                }
-            }, {
-                prop: "textBaseline",
-                type: 'list',
-                getList: function () {
-                    return Helper.enumList(StyleTextBaseline);
-                }
-            }, {
-                prop: "fontSize",
-                match: '^\\d+$'
-            }, {
-                prop: "fontFamily",
-                match: '^[a-zA-Z]*$'
-            }, {
-                prop: "fontWeight",
-                type: 'list',
-                getList: function () {
-                    return Helper.enumList(StyleFontWeight);
-                }
-            }, {
-                prop: "fontStyle",
-                type: 'list',
-                getList: function () {
-                    return Helper.enumList(StyleFontStyle);
-                }
-            }, {
-                prop: "fontColor",
-                match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
-            }, {
-                prop: 'fontSpacing'
-            }]
-    });
+    var stylePropertyList = new LayoutEditor.PropertyList();
+    stylePropertyList.canHandle = function (obj) {
+        return obj instanceof Style;
+    };
+    stylePropertyList.items = [
+        {
+            prop: 'name',
+            match: '^[a-zA-Z]\\w*$'
+        }, {
+            prop: "strokeColor",
+            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+        }, {
+            prop: "fillColor",
+            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+        }, {
+            prop: "lineWidth",
+            match: '^\\d+$'
+        }, {
+            prop: "textAlign",
+            type: 'list',
+            getList: function () {
+                return Helper.enumList(StyleTextAlign);
+            }
+        }, {
+            prop: "textBaseline",
+            type: 'list',
+            getList: function () {
+                return Helper.enumList(StyleTextBaseline);
+            }
+        }, {
+            prop: "fontSize",
+            match: '^\\d+$'
+        }, {
+            prop: "fontFamily",
+            match: '^[a-zA-Z]*$'
+        }, {
+            prop: "fontWeight",
+            type: 'list',
+            getList: function () {
+                return Helper.enumList(StyleFontWeight);
+            }
+        }, {
+            prop: "fontStyle",
+            type: 'list',
+            getList: function () {
+                return Helper.enumList(StyleFontStyle);
+            }
+        }, {
+            prop: "fontColor",
+            match: '^[a-zA-Z]*$|^#[A-Fa-f0-9]*$'
+        }, {
+            prop: 'fontSpacing'
+        }];
+
+    LayoutEditor.g_propertyPanel.addPropertyList(stylePropertyList);
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -1848,7 +1863,7 @@ var LayoutEditor;
     //------------------------------
     var Shape = (function () {
         function Shape(name) {
-            this.style = LayoutEditor.g_style;
+            this.style = null;
             this.oabb = new Bounds();
             this.aabb = new Bounds();
             this.transform = new Transform();
@@ -1856,7 +1871,6 @@ var LayoutEditor;
             this.text = "";
             this.layer = null;
             this.onChanged = new Helper.Callback();
-            this.fixedAspect = false;
             if (typeof name === "undefined" || name.length === 0)
                 this.makeUnique();
             else
@@ -2511,6 +2525,7 @@ var LayoutEditor;
         function ImageShape(name, imageSrc) {
             _super.call(this, name);
             this.imageSrc = imageSrc;
+            this.fixedAspect = false;
             this.image = new Image();
             var image = this.image;
             image.src = imageSrc;
@@ -2598,27 +2613,34 @@ var LayoutEditor;
     })(Shape);
     LayoutEditor.ImageShape = ImageShape;
 
-    LayoutEditor.g_propertyPanel.addPropertyList({
-        canHandle: function (obj) {
-            return obj instanceof Shape;
-        },
-        items: [
-            {
-                prop: 'name',
-                match: '^[a-zA-Z]\\w*$',
-                allowMultiple: false
-            }, {
-                prop: 'style',
-                type: 'list',
-                getList: function () {
-                    return LayoutEditor.g_styleList.getList();
-                }
-            }, {
-                prop: 'fixedAspect'
-            }, {
-                prop: 'text'
-            }]
+    var shapePropertyList = new LayoutEditor.PropertyList();
+    shapePropertyList.canHandle = function (obj) {
+        return obj instanceof Shape;
+    };
+    shapePropertyList.items = [
+        {
+            prop: 'name',
+            match: '^[a-zA-Z]\\w*$'
+        }, {
+            prop: 'style',
+            type: 'list',
+            getList: function () {
+                return LayoutEditor.g_styleList.getList();
+            }
+        }, {
+            prop: 'text'
+        }];
+
+    var imageShapePropertyList = shapePropertyList.clone();
+    imageShapePropertyList.canHandle = function (obj) {
+        return obj instanceof ImageShape;
+    };
+    imageShapePropertyList.items.push({
+        prop: 'fixedAspect'
     });
+
+    LayoutEditor.g_propertyPanel.addPropertyList(shapePropertyList);
+    LayoutEditor.g_propertyPanel.addPropertyList(imageShapePropertyList);
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -3042,9 +3064,9 @@ var LayoutEditor;
             this.snapToGrid = false;
             this.gridSize = 10;
             this.snapToShape = true;
+            this.shapeGravity = 5;
             this.xTabs = [];
             this.yTabs = [];
-            this.shapeGravity = 10;
         }
         Grid.prototype.getClosestIndex = function (list, value, index) {
             var bestDist = Math.abs(value - list[index]);
@@ -3071,9 +3093,11 @@ var LayoutEditor;
             return bestIndex;
         };
 
-        Grid.prototype.clearSnap = function () {
+        Grid.prototype.reset = function () {
             this.snappedX = undefined;
             this.snappedY = undefined;
+            this.xTabs.length = 0;
+            this.yTabs.length = 0;
         };
 
         Grid.prototype.snapX = function (x) {
@@ -3811,23 +3835,28 @@ var LayoutEditor;
                     break;
 
                 case 2 /* Move */:
-                    var pos = grid.snapXY(e.x, e.y);
-                    this.x2 = pos.x;
-                    this.y2 = pos.y;
-                    this.canUse = true;
+                    if (this.isUsing) {
+                        var pos = grid.snapXY(e.x, e.y);
+                        this.x2 = pos.x;
+                        this.y2 = pos.y;
+                        this.canUse = true;
+                    }
                     break;
 
                 case 3 /* End */:
-                    if (this.canUse) {
-                        var toolLayer = this.toolLayer;
-                        var newCommand = new LayoutEditor.RectCommand(toolLayer.page, toolLayer.layer, this.rectShape.transform.tx, this.rectShape.transform.ty, this.rectShape.w, this.rectShape.h, toolLayer.style);
-                        toolLayer.commandList.addCommand(newCommand);
-                        toolLayer.selectList.setSelectedShapes([newCommand.shape]);
-                        this.canUse = false;
+                    if (this.isUsing) {
+                        if (this.canUse) {
+                            var toolLayer = this.toolLayer;
+                            var newCommand = new LayoutEditor.RectCommand(toolLayer.page, toolLayer.layer, this.rectShape.transform.tx, this.rectShape.transform.ty, this.rectShape.w, this.rectShape.h, toolLayer.style);
+                            toolLayer.commandList.addCommand(newCommand);
+                            toolLayer.selectList.setSelectedShapes([newCommand.shape]);
+                            this.canUse = false;
+                        }
+                        this.isUsing = false;
+                        isHandled = true;
+                        grid.reset();
                     }
 
-                    this.isUsing = false;
-                    isHandled = true;
                     break;
             }
             return isHandled || this.isUsing;
@@ -3883,6 +3912,7 @@ var LayoutEditor;
                             toolLayer.selectList.setSelectedShapes([newCommand.shape]);
                             this.canUse = false;
                         }
+                        grid.reset();
                         this.isUsing = false;
                         isHandled = true;
                     }
@@ -3981,6 +4011,7 @@ var LayoutEditor;
         }
         ResizeTool.prototype.onPointer = function (e) {
             var isHandled = false;
+            var grid = this.toolLayer.grid;
 
             switch (e.state) {
                 case 1 /* Start */:
@@ -4299,7 +4330,7 @@ var LayoutEditor;
                             toolLayer.commandList.addCommand(newCommand);
                         }
                         toolLayer.moveSelectToLayer();
-                        toolLayer.grid.clearSnap();
+                        toolLayer.grid.reset();
 
                         this.canUse = false;
                         this.shape = null;
@@ -4853,10 +4884,11 @@ var LayoutEditor;
             var style = LayoutEditor.g_styleList.getStyle(id);
             var ctx = this.ctx;
 
-            if (style !== null) {
-                this.rectShape.style = style;
-                this.labelElem.innerHTML = style.name;
-            }
+            if (style === null)
+                style = LayoutEditor.g_styleList.styles[0]; // HACK
+
+            this.rectShape.style = style;
+            this.labelElem.innerHTML = style.name;
 
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             this.rectShape.draw(ctx, LayoutEditor.PanZoom.none);
@@ -4956,11 +4988,11 @@ var LayoutEditor;
     function reset() {
         document.getElementById("upload").value = "";
 
-        g_editor.reset();
         LayoutEditor.g_propertyPanel.reset();
         LayoutEditor.g_styleList.reset();
         g_stylePanel.reset();
 
+        g_editor.reset(); // reset after the styleList
         g_editor.setTool("rectTool");
         shapesSelect();
     }

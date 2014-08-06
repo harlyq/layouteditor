@@ -140,10 +140,11 @@ module LayoutEditor {
             var style: Style = g_styleList.getStyle(id);
             var ctx = this.ctx;
 
-            if (style !== null) {
-                this.rectShape.style = style;
-                this.labelElem.innerHTML = style.name;
-            }
+            if (style === null)
+                style = g_styleList.styles[0]; // HACK
+
+            this.rectShape.style = style;
+            this.labelElem.innerHTML = style.name;
 
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             this.rectShape.draw(ctx, PanZoom.none);

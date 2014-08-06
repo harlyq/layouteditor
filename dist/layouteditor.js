@@ -723,6 +723,53 @@ var LayoutEditor;
     })();
     LayoutEditor.PropertyPanel = PropertyPanel;
 
+    var BooleanPropertyEditor = (function () {
+        function BooleanPropertyEditor() {
+        }
+        BooleanPropertyEditor.prototype.canEdit = function (type) {
+            return type === "boolean";
+        };
+
+        BooleanPropertyEditor.prototype.createElement = function (parentElem, binding) {
+            var nameDiv = document.createElement("div");
+            nameDiv.classList.add("propertyText");
+
+            binding.elem = nameDiv;
+            this.refresh(binding);
+
+            parentElem.appendChild(nameDiv);
+
+            return nameDiv;
+        };
+
+        BooleanPropertyEditor.prototype.refresh = function (binding) {
+            var nameDiv = binding.elem;
+            var value = binding.getValue();
+            if (!binding.isValueSame())
+                value = "----";
+            else if (value)
+                value = "&#x2612";
+            else
+                value = "&#x2610";
+
+            nameDiv.innerHTML = binding.prop + ": " + value;
+        };
+
+        BooleanPropertyEditor.prototype.startEdit = function (binding) {
+            var value = binding.getValue();
+            this.value = !value;
+            LayoutEditor.g_propertyPanel.commitEditing();
+        };
+
+        BooleanPropertyEditor.prototype.commitEdit = function (binding) {
+            binding.setValue(this.value !== false);
+
+            this.refresh(binding);
+        };
+        return BooleanPropertyEditor;
+    })();
+    LayoutEditor.BooleanPropertyEditor = BooleanPropertyEditor;
+
     var TextPropertyEditor = (function () {
         function TextPropertyEditor() {
             this.regExp = null;
@@ -995,6 +1042,7 @@ var LayoutEditor;
     LayoutEditor.g_textPropertyEditor = new TextPropertyEditor();
 
     LayoutEditor.g_propertyPanel.addEditor(LayoutEditor.g_textPropertyEditor);
+    LayoutEditor.g_propertyPanel.addEditor(new BooleanPropertyEditor());
     LayoutEditor.g_propertyPanel.addEditor(new ObjectPropertyEditor());
     LayoutEditor.g_propertyPanel.addEditor(new ListPropertyEditor());
 
@@ -1716,7 +1764,7 @@ var LayoutEditor;
             return this;
         };
 
-        // warning: scaleX -1, scaleY -1 is the same as rotate PI
+        // note: scaleX -1, scaleY -1 is the same as rotate PI with no scaling
         Transform.prototype.decompose = function () {
             var a = this.a;
             var b = this.b;
@@ -2384,18 +2432,18 @@ var LayoutEditor;
 
                 aabb.enclose(shape.aabb);
                 enclosedShapes.push(shape);
-                oabb.copy(shape.oabb); // mimic
                 usedShapes++;
             }
 
             if (enclosedShapes.length === 1) {
-                oabb.copy(enclosedShapes[0].oabb); // exact copy
+                // if only one shape, then group is an exact copy
+                oabb.copy(enclosedShapes[0].oabb);
             } else if (enclosedShapes.length > 1) {
-                oabb.copy(aabb); // for multiple shapes, initial oabb matches aabb
+                // for multiple shapes, then group is an aabb, and the oabb matches aabb
+                oabb.copy(aabb);
             }
 
             this.transform.setIdentity().setTranslate(aabb.cx, aabb.cy);
-
             this.lastTransform.copy(this.transform);
 
             this.encloseHW = aabb.hw;
@@ -2412,8 +2460,15 @@ var LayoutEditor;
             var transform = this.transform;
             var oabb = this.oabb;
             var aabb = this.aabb;
-            var info = transform.decompose();
 
+            if (this.enclosedShapes.length === 1) {
+                // there is only one object so match it exactly
+                oabb.copy(this.enclosedShapes[0].oabb);
+                aabb.copy(this.enclosedShapes[0].aabb);
+                return;
+            }
+
+            var info = transform.decompose();
             oabb.rotate = info.rotate;
             oabb.hw = Math.abs(this.encloseHW * info.scaleX);
             oabb.hh = Math.abs(this.encloseHH * info.scaleY);
@@ -2449,24 +2504,6 @@ var LayoutEditor;
         return GroupShape;
     })(Shape);
     LayoutEditor.GroupShape = GroupShape;
-
-    LayoutEditor.g_propertyPanel.addPropertyList({
-        canHandle: function (obj) {
-            return obj instanceof Shape;
-        },
-        items: [
-            {
-                prop: 'name',
-                match: '^[a-zA-Z]\\w*$',
-                allowMultiple: false
-            }, {
-                prop: 'style',
-                type: 'list',
-                getList: function () {
-                    return LayoutEditor.g_styleList.getList();
-                }
-            }]
-    });
 
     var ImageShape = (function (_super) {
         __extends(ImageShape, _super);
@@ -2509,17 +2546,21 @@ var LayoutEditor;
             var hw = image.width * 0.5;
             var hh = image.height * 0.5;
 
-            // pick the smallest absolute scale, but maintain the sign of the scaling
-            var sx = Math.abs(info.scaleX);
-            var sy = Math.abs(info.scaleY);
-            sx = Math.min(sx, sy);
-            sy = sx * Helper.sgn(info.scaleY);
-            sx *= Helper.sgn(info.scaleX);
+            // determine additional scaling (will be <= 1)
+            var sx = 1;
+            var sy = 1;
+            if (this.fixedAspect) {
+                // scale to the largest scale
+                sx = info.scaleX;
+                sy = info.scaleY;
+                var scale = Math.min(Math.abs(sx), Math.abs(sy));
+                sy = scale / sy;
+                sx = scale / sx;
+            }
 
             ctx.save();
-
-            // images are always drawn up-right
-            panZoom.transform(ctx, oabb.cx, oabb.cy, oabb.rotate, sx, sy);
+            panZoom.draw(ctx, this.transform);
+            ctx.scale(sx, sy);
             ctx.drawImage(image, -hw, -hh);
             ctx.restore();
         };
@@ -2556,6 +2597,28 @@ var LayoutEditor;
         return ImageShape;
     })(Shape);
     LayoutEditor.ImageShape = ImageShape;
+
+    LayoutEditor.g_propertyPanel.addPropertyList({
+        canHandle: function (obj) {
+            return obj instanceof Shape;
+        },
+        items: [
+            {
+                prop: 'name',
+                match: '^[a-zA-Z]\\w*$',
+                allowMultiple: false
+            }, {
+                prop: 'style',
+                type: 'list',
+                getList: function () {
+                    return LayoutEditor.g_styleList.getList();
+                }
+            }, {
+                prop: 'fixedAspect'
+            }, {
+                prop: 'text'
+            }]
+    });
 })(LayoutEditor || (LayoutEditor = {}));
 // Copyright 2014 Reece Elliott
 /// <reference path="_dependencies.ts" />
@@ -4934,7 +4997,15 @@ var LayoutEditor;
     }
 
     function newPage(e) {
-        g_editor.pageNumber = parseInt(e.target.value);
+        var id = e.target.value;
+        if (id === "styles") {
+            document.getElementById('editor').classList.add('hidden');
+            document.getElementById('layoutStyles').classList.remove('hidden');
+        } else {
+            document.getElementById('editor').classList.remove('hidden');
+            document.getElementById('layoutStyles').classList.add('hidden');
+            g_editor.pageNumber = parseInt(id);
+        }
     }
 
     function addImage(e) {
@@ -4969,8 +5040,6 @@ var LayoutEditor;
         document.getElementById("save").addEventListener("click", saveData);
         document.getElementById("duplicate").addEventListener("click", duplicateSelect);
         document.getElementById("delete").addEventListener("click", deleteSelect);
-        document.getElementById("shapes").addEventListener("click", shapesSelect);
-        document.getElementById("styles").addEventListener("click", stylesSelect);
         document.getElementById("upload").addEventListener("change", uploadData);
         document.getElementById("makeSquare").addEventListener("click", makeSquare);
         document.getElementById("distribute").addEventListener("change", distribute);

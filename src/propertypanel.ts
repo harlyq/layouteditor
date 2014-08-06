@@ -230,6 +230,53 @@ module LayoutEditor {
         commitEdit(binding: PropertyBinding);
     }
 
+    export class BooleanPropertyEditor implements PropertyEditor {
+        value: any;
+
+        constructor() {}
+
+        public canEdit(type: string): boolean {
+            return type === "boolean";
+        }
+
+        public createElement(parentElem: HTMLElement, binding: PropertyBinding): HTMLElement {
+            var nameDiv = document.createElement("div");
+            nameDiv.classList.add("propertyText");
+
+            binding.elem = nameDiv;
+            this.refresh(binding);
+
+            parentElem.appendChild(nameDiv);
+
+            return nameDiv;
+        }
+
+        public refresh(binding: PropertyBinding) {
+            var nameDiv: HTMLElement = ( < HTMLElement > binding.elem);
+            var value = binding.getValue();
+            if (!binding.isValueSame())
+                value = "----";
+            else if (value)
+                value = "&#x2612";
+            else
+                value = "&#x2610";
+
+            nameDiv.innerHTML = binding.prop + ": " + value;
+        }
+
+        public startEdit(binding: PropertyBinding) {
+            var value = binding.getValue();
+            this.value = !value;
+            g_propertyPanel.commitEditing();
+        }
+
+        public commitEdit(binding: PropertyBinding) {
+            binding.setValue(this.value !== false);
+
+            this.refresh(binding);
+        }
+    }
+
     export class TextPropertyEditor implements PropertyEditor {
         inputText: HTMLInputElement;
         regExp: RegExp = null;
@@ -497,6 +544,7 @@ module LayoutEditor {
     var g_textPropertyEditor = new TextPropertyEditor();
 
     g_propertyPanel.addEditor(g_textPropertyEditor);
+    g_propertyPanel.addEditor(new BooleanPropertyEditor());
     g_propertyPanel.addEditor(new ObjectPropertyEditor());
     g_propertyPanel.addEditor(new ListPropertyEditor());
 

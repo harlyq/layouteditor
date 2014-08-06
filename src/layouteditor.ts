@@ -94,7 +94,15 @@ module LayoutEditor {
     }
 
     function newPage(e) {
-        g_editor.pageNumber = parseInt(( < HTMLInputElement > e.target).value);
+        var id = ( < HTMLInputElement > e.target).value;
+        if (id === "styles") {
+            document.getElementById('editor').classList.add('hidden');
+            document.getElementById('layoutStyles').classList.remove('hidden');
+        } else {
+            document.getElementById('editor').classList.remove('hidden');
+            document.getElementById('layoutStyles').classList.add('hidden');
+            g_editor.pageNumber = parseInt(id);
+        }
     }
 
     function addImage(e) {
@@ -129,8 +137,6 @@ module LayoutEditor {
         document.getElementById("save").addEventListener("click", saveData);
         document.getElementById("duplicate").addEventListener("click", duplicateSelect);
         document.getElementById("delete").addEventListener("click", deleteSelect);
-        document.getElementById("shapes").addEventListener("click", shapesSelect);
-        document.getElementById("styles").addEventListener("click", stylesSelect);
         document.getElementById("upload").addEventListener("change", uploadData);
         document.getElementById("makeSquare").addEventListener("click", makeSquare);
         document.getElementById("distribute").addEventListener("change", distribute);

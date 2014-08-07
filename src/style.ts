@@ -84,16 +84,17 @@ module LayoutEditor {
     }
     export
     var g_drawStyle: Style = new Style("_draw");
-    export
-    var g_selectStyle: Style = new Style("_select");
-    export
-    var g_snapStyle: Style = new Style("_snap");
-
     g_drawStyle.strokeColor = "red";
     g_drawStyle.lineDash = [2, 2];
+
+    export
+    var g_selectStyle: Style = new Style("_select");
     g_selectStyle.strokeColor = "blue";
     g_selectStyle.lineDash = [5, 5];
     g_selectStyle.fontColor = "blue";
+
+    export
+    var g_snapStyle: Style = new Style("_snap");
     g_snapStyle.strokeColor = "red";
 
     export
@@ -102,13 +103,18 @@ module LayoutEditor {
     export class StyleList {
         styles: Style[] = [];
 
-        constructor() {
-            this.reset();
+        constructor() {}
+
+        shutdown() {
+            g_style = null;
+            this.styles.length = 0;
         }
 
-        reset() {
-            this.styles.length = 0;
+        startup() {
+            g_style = this.styles[0];
+        }
 
+        newGame() {
             var defaultStyle = new Style("default");
             defaultStyle.fillColor = "white";
 
@@ -122,7 +128,6 @@ module LayoutEditor {
 
             this.styles.push(defaultStyle);
             this.styles.push(defaultStyle2);
-            g_style = defaultStyle;
         }
 
         getStyle(id: number): Style {
@@ -182,17 +187,12 @@ module LayoutEditor {
         loadData(obj: any) {
             Helper.assert(obj.type === "StyleList");
 
-            this.reset();
-            this.styles.length = 0; // we will load the default style
-
             var style = null;
             for (var i = 0; i < obj.styles.length; ++i) {
                 style = new Style();
                 style.loadData(obj.styles[i]);
                 this.styles.push(style);
             }
-
-            g_style = style; // last style loaded
         }
 
         getList(): ReferenceItem[] {
@@ -208,14 +208,11 @@ module LayoutEditor {
         }
     }
 
-    export
-    var g_styleList = new StyleList();
-
-    var stylePropertyList = new PropertyList();
-    stylePropertyList.canHandle = function(obj: any) {
+    var styleDefinition = new EditorDefinition();
+    styleDefinition.canHandle = function(obj: any) {
         return obj instanceof Style;
     };
-    stylePropertyList.items = [{
+    styleDefinition.items = [{
         prop: 'name',
         match: '^[a-zA-Z]\\w*$',
         // allowMultiple: false,
@@ -268,6 +265,8 @@ module LayoutEditor {
         prop: 'fontSpacing'
     }];
 
-    g_propertyPanel.addPropertyList(stylePropertyList);
+    g_propertyList.addEditorDefintion(styleDefinition);
 
+    export
+    var g_styleList = new StyleList();
 }

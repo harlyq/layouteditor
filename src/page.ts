@@ -15,21 +15,30 @@ module LayoutEditor {
 
         constructor() {}
 
-        setRootElem(parentElem: HTMLElement, width: number, height: number) {
+        setup(parentElem: HTMLElement, width: number, height: number) {
             this.parentElem = parentElem;
             this.width = width;
             this.height = height;
-
-            for (var i = 0; i < this.layers.length; ++i)
-                this.layers[i].createCanvas(parentElem, this.width, this.height);
         }
 
-        reset() {
-            for (var i = 0; i < this.layers.length; ++i)
-                this.layers[i].destroyCanvas(this.parentElem);
+        shutdown() {
+            for (var i = this.layers.length - 1; i >= 0; --i)
+                this.layers[i].shutdown();
 
             this.layers.length = 0;
+        }
+
+        startup() {
+            for (var i = 0; i < this.layers.length; ++i)
+                this.layers[i].startup();
+
             this.panZoom.reset();
+        }
+
+        newGame() {
+            var newLayer = new Layer();
+            newLayer.setup(this.parentElem, this.width, this.height);
+            this.layers.push(newLayer);
         }
 
         refresh() {
@@ -77,13 +86,11 @@ module LayoutEditor {
 
         addLayer(layer: Layer) {
             this.layers.push(layer);
-            layer.createCanvas(this.parentElem, this.width, this.height);
         }
 
         removeLayer(layer: Layer) {
             var index = this.layers.indexOf(layer);
             if (index !== -1) {
-                this.layers[index].destroyCanvas(this.parentElem);
                 this.layers.splice(index, 1);
             }
         }
@@ -115,14 +122,98 @@ module LayoutEditor {
         loadData(obj: any) {
             Helper.assert(obj.type === "page");
 
-            this.reset();
             this.panZoom.loadData(obj.panZoom);
 
             for (var i = 0; i < obj.layers.length; ++i) {
                 var layerSave = obj.layers[i];
                 var newLayer: Layer = new Layer();
+                newLayer.setup(this.parentElem, this.width, this.height);
+
                 newLayer.loadData(layerSave);
                 this.addLayer(newLayer);
+            }
+        }
+    }
+
+    //-------------------------------
+    export class PageList {
+        pages: Page[] = [];
+        parentElem: HTMLElement = null;
+        width: number = 0;
+        height: number = 0;
+
+        constructor() {}
+
+        setup(parentElem: HTMLElement, width: number, height: number) {
+            this.parentElem = parentElem;
+            this.width = width;
+            this.height = height;
+
+            this.startup();
+        }
+
+        shutdown() {
+            for (var i = this.pages.length - 1; i >= 0; --i)
+                this.pages[i].shutdown();
+
+            this.pages.length = 0;
+        }
+
+        startup() {
+            for (var i = 0; i < this.pages.length; ++i)
+                this.pages[i].startup();
+        }
+
+        newGame() {
+            for (var i = 0; i < 3; ++i) {
+                var page = new Page();
+                page.setup(this.parentElem, this.width, this.height);
+                page.newGame();
+                this.addPage(page);
+            }
+        }
+
+        addPage(page: Page) {
+            page.setup(this.parentElem, this.width, this.height);
+            this.pages.push(page)
+        }
+
+        removePage(page: Page) {
+            // TODO need to do something about the page canvases
+
+            var index = this.pages.indexOf(page);
+            if (index !== -1) {
+                this.pages.splice(index);
+            }
+        }
+
+        getPage(index: number): Page {
+            return this.pages[index];
+        }
+
+        saveData(): any {
+            var obj = {
+                type: "PageList",
+                pages: []
+            };
+
+            for (var i = 0; i < this.pages.length; ++i) {
+                obj.pages[i] = this.pages[i].saveData();
+            }
+
+            return obj;
+        }
+
+        loadData(obj: any) {
+            Helper.assert(obj.type === "PageList");
+
+            this.pages.length = 0;
+            for (var i = 0; i < obj.pages.length; ++i) {
+                var page = new Page();
+                page.setup(this.parentElem, this.width, this.height);
+
+                page.loadData(obj.pages[i]);
+                this.pages[i] = page;
             }
         }
     }

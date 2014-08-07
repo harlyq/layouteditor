@@ -1059,11 +1059,11 @@ module LayoutEditor {
         }
     }
 
-    var shapePropertyList = new PropertyList();
-    shapePropertyList.canHandle = function(obj: any) {
+    var shapeDefinition = new EditorDefinition();
+    shapeDefinition.canHandle = function(obj: any) {
         return obj instanceof Shape;
     };
-    shapePropertyList.items = [{
+    shapeDefinition.items = [{
         prop: 'name',
         match: '^[a-zA-Z]\\w*$',
         // isValid: function(value) {
@@ -1079,14 +1079,14 @@ module LayoutEditor {
         prop: 'text'
     }];
 
-    var imageShapePropertyList: PropertyList = shapePropertyList.clone();
-    imageShapePropertyList.canHandle = (obj: any) => {
+    var imageShapeDefinition = shapeDefinition.clone();
+    imageShapeDefinition.canHandle = (obj: any) => {
         return obj instanceof ImageShape;
     };
-    imageShapePropertyList.items.push({
+    imageShapeDefinition.items.push({
         prop: 'fixedAspect',
     });
 
-    g_propertyPanel.addPropertyList(shapePropertyList);
-    g_propertyPanel.addPropertyList(imageShapePropertyList);
+    g_propertyList.addEditorDefintion(shapeDefinition);
+    g_propertyList.addEditorDefintion(imageShapeDefinition);
 }

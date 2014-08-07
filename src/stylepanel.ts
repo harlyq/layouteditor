@@ -13,11 +13,12 @@ module LayoutEditor {
         private elems: {
             [key: number]: HTMLElement
         } = {};
+
         selectChanged = new Helper.Callback();
 
-        constructor(private styleList: StyleList) {}
+        constructor() {}
 
-        setRootElem(elem: HTMLElement) {
+        setup(elem: HTMLElement) {
             this.rootElem = elem;
 
             var self = this;
@@ -25,7 +26,7 @@ module LayoutEditor {
                 self.onClick(e)
             });
 
-            this.reset();
+            this.startup();
         }
 
         private onClick(e) {
@@ -41,11 +42,16 @@ module LayoutEditor {
             return target;
         }
 
-        reset() {
-            this.buildHTML();
+        shutdown() {
+            this.selected = [];
+            this.elems = {};
 
-            if (this.styleList.styles.length > 0)
-                this.selectStyle(this.styleList.styles[0].id);
+            while (this.rootElem.lastChild)
+                this.rootElem.removeChild(this.rootElem.lastChild);
+        }
+
+        startup() {
+            this.buildHTML();
         }
 
         draw() {
@@ -73,21 +79,15 @@ module LayoutEditor {
         }
 
         private buildHTML() {
-            this.selected = [];
-            this.elems = {};
-
-            while (this.rootElem.lastChild)
-                this.rootElem.removeChild(this.rootElem.lastChild);
-
             this.addButton = document.createElement('div');
             this.addButton.classList.add('StylePanelAddButton');
             this.addButton.addEventListener("click", this.onAddStyle.bind(this));
             this.addButton.innerHTML = "+";
             this.rootElem.appendChild(this.addButton);
 
-            for (var i: number = 0; i < this.styleList.styles.length; ++i) {
+            for (var i: number = 0; i < g_styleList.styles.length; ++i) {
                 var newElem = document.createElement('x-styleButton');
-                var id = this.styleList.styles[i].id;
+                var id = g_styleList.styles[i].id;
 
                 newElem.setAttribute('value', id.toString());
 
@@ -98,7 +98,7 @@ module LayoutEditor {
 
         private onAddStyle() {
             var newStyle: Style = new Style();
-            this.styleList.addStyle(newStyle);
+            g_styleList.addStyle(newStyle);
             this.buildHTML();
             this.selectStyle(newStyle.id);
         }

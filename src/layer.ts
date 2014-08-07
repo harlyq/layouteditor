@@ -6,9 +6,12 @@ module LayoutEditor {
     //------------------------------
     export class Layer {
         shapes: Shape[] = [];
-        id = 0;
+        id: number = 0;
         ctx = null;
         canvas = null;
+        parentElem: HTMLElement = null
+        width: number = 0;
+        height: number = 0;
 
         static uniqueID: number = 1;
 
@@ -16,28 +19,28 @@ module LayoutEditor {
             this.id = Layer.uniqueID++;
         }
 
-        reset() {
-            this.shapes.length = 0;
+        setup(parentElem: HTMLElement, width: number, height: number) {
+            this.parentElem = parentElem;
+            this.width = width;
+            this.height = height;
         }
 
-        createCanvas(parentElem: HTMLElement, width: number, height: number) {
+        startup() {
             this.canvas = document.createElement("canvas");
             this.canvas.classList.add("layout");
             this.canvas.classList.add("hidden");
             this.canvas.setAttribute("data-id", this.id);
-            this.canvas.width = width;
-            this.canvas.height = height;
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
             this.ctx = this.canvas.getContext("2d");
-            if (parentElem !== null)
-                parentElem.appendChild(this.canvas);
+            this.parentElem.appendChild(this.canvas);
         }
 
-        destroyCanvas(parentElem: HTMLElement) {
-            if (parentElem) {
-                var oldElem = parentElem.querySelector('canvas[data-id="' + this.id + '"]');
-                if (oldElem !== null)
-                    parentElem.removeChild(oldElem);
-            }
+        shutdown() {
+            this.parentElem.removeChild(this.canvas);
+            this.ctx = null;
+            this.canvas = null;
+            this.shapes.length = 0;
         }
 
         hide() {
@@ -157,7 +160,6 @@ module LayoutEditor {
         loadData(obj: any) {
             Helper.assert(obj.type === "layer");
 
-            this.reset();
             this.name = obj.name;
 
             for (var i = 0; i < obj.shapes.length; ++i) {

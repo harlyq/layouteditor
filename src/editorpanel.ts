@@ -4,12 +4,15 @@
 module LayoutEditor {
 
     //------------------------------
-    export class Editor {
+    export class EditorPanel {
         private hasRequestToolDraw: boolean = false;
+
+        parentElem: HTMLElement;
+        pageList: PageList;
+
         toolLayer: ToolLayer = new ToolLayer();
         tool: Tool = null;
         toolGroup: Tool[] = [];
-        pages: Page[] = [new Page(), new Page(), new Page()];
 
         private _pageNumber = 0;
         get pageNumber(): number {
@@ -23,12 +26,18 @@ module LayoutEditor {
 
             this._pageNumber = val;
 
-            var page = this.pages[val];
-            this.toolLayer.page = page;
-            page.show();
+            if (this.pageList) {
+                var page = this.pageList.getPage(val);
+                if (page) {
+                    this.toolLayer.page = page;
+                    page.show();
+                }
+            }
         }
         get page(): Page {
-            return this.pages[this._pageNumber];
+            if (this.pageList == null)
+                return null;
+            return this.pageList.getPage(this._pageNumber);
         }
 
 
@@ -36,30 +45,28 @@ module LayoutEditor {
             return this.toolLayer.selectList.selectChanged;
         }
 
-        constructor(public parentElem: HTMLElement, public width: number, public height: number) {
-            this.reset();
+        constructor() {}
+
+        setup(parentElem: HTMLElement, pageList: PageList) {
+            this.parentElem = parentElem;
+            this.pageList = pageList;
+            this.toolLayer.setup(parentElem, 0, 0);
         }
 
-        reset() {
-            while (this.parentElem.lastChild)
-                this.parentElem.removeChild(this.parentElem.lastChild);
+        shutdown() {
+            this.toolLayer.shutdown();
+        }
 
-            for (var i = 0; i < this.pages.length; ++i) {
-                var page = this.pages[i];
-                page.reset();
-                page.setRootElem(this.parentElem, this.width, this.height);
-
-                var layer = new Layer();
-                page.addLayer(layer);
-            }
-
-            this.toolLayer.destroyCanvas(this.parentElem);
-            this.toolLayer.reset();
-            this.toolLayer.createCanvas(this.parentElem, this.width, this.height);
-
+        startup() {
             this.toolGroup.length = 0;
             this.tool = null;
-            this.pageNumber = 0;
+            this._pageNumber = 0;
+
+            var page = this.pageList.getPage(0);
+            page.show();
+
+            this.toolLayer.page = page;
+            this.toolLayer.startup();
 
             this.requestToolDraw();
         }
@@ -167,31 +174,5 @@ module LayoutEditor {
             this.toolLayer.redo();
         }
 
-        saveData(): any {
-            var obj = {
-                type: "editor",
-                pages: []
-            };
-
-            for (var i = 0; i < this.pages.length; ++i) {
-                obj.pages[i] = this.pages[i].saveData();
-            }
-
-            return obj;
-        }
-
-        loadData(obj: any) {
-            Helper.assert(obj.type === "editor");
-            this.reset();
-
-            this.pages.length = 0;
-            for (var i = 0; i < obj.pages.length; ++i) {
-                var page = new Page();
-                page.loadData(obj.pages[i]);
-                this.pages[i] = page;
-            }
-
-            this.pageNumber = 0;
-        }
     }
 }

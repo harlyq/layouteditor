@@ -4,19 +4,22 @@
 module LayoutEditor {
     "use strict";
 
-    var g_propertyTool: Tool = null;
-    var g_stylePanel: StylePanel = new StylePanel(g_styleList);
-    var g_editor: Editor = null;
+    // var g_styleList: StyleList = new StyleList(); simpler if this is global
+    var g_pageList: PageList = new PageList();
+
+    var g_propertyPanel: PropertyPanel = new PropertyPanel();
+    var g_stylePanel: StylePanel = new StylePanel();
+    var g_editorPanel: EditorPanel = new EditorPanel();
 
     //------------------------------
     function toolButtonClick(e) {
-        g_editor.setTool(e.target.id);
+        g_editorPanel.setTool(e.target.id);
     }
 
     function saveData() {
         var obj: any = {
             styleList: g_styleList.saveData(),
-            editor: g_editor.saveData(),
+            pageList: g_pageList.saveData(),
         };
         var objString: string = JSON.stringify(obj);
         localStorage['layouteditor'] = objString;
@@ -27,51 +30,74 @@ module LayoutEditor {
 
     function loadData() {
         var obj: any = JSON.parse(localStorage['layouteditor']);
-        reset();
+
+        shutdown();
+
         g_styleList.loadData(obj.styleList);
-        g_editor.loadData(obj.editor);
+        g_pageList.loadData(obj.pageList);
+
+        startup();
     }
 
-    function uploadData(e) {
-        var files = e.target.files;
-        if (files.length === 0)
+    function loadFile(e) {
+        var file = e.target.files[0];
+        ( < HTMLInputElement > document.getElementById("loadFile")).value = "";
+        if (!file)
             return;
 
         var reader = new FileReader();
         reader.onload = function(e) {
             var obj: any = JSON.parse(e.target.result);
-            reset();
-            g_styleList.loadData(obj.styleList);
-            g_editor.loadData(obj.editor);
 
-            g_stylePanel.reset();
-            g_editor.draw();
+            shutdown();
+
+            g_styleList.loadData(obj.styleList);
+            g_pageList.loadData(obj.pageList);
+
+            startup();
         }
-        reader.readAsText(files[0]);
+        reader.readAsText(file);
     }
 
-    function reset() {
-        ( < HTMLInputElement > document.getElementById("upload")).value = "";
+    function clear() {
+        shutdown();
 
+        g_styleList.newGame();
+        g_pageList.newGame();
+
+        startup();
+    }
+
+    function shutdown() {
+        g_editorPanel.shutdown();
+        g_stylePanel.shutdown();
         g_propertyPanel.reset();
-        g_styleList.reset();
-        g_stylePanel.reset();
 
-        g_editor.reset(); // reset after the styleList
-        g_editor.setTool("rectTool");
-        shapesSelect();
+        g_pageList.shutdown();
+        g_styleList.shutdown();
+    }
+
+    function startup() {
+        g_styleList.startup();
+        g_pageList.startup();
+
+        g_stylePanel.startup();
+        g_editorPanel.startup();
+
+        g_editorPanel.setTool("rectTool");
+        setPage("0");
     }
 
     function duplicateSelect() {
-        g_editor.toolLayer.duplicateSelect();
+        g_editorPanel.toolLayer.duplicateSelect();
     }
 
     function deleteSelect() {
-        g_editor.toolLayer.deleteSelect();
+        g_editorPanel.toolLayer.deleteSelect();
     }
 
     function changePlatform(e) {
-        g_editor.toolLayer.screen.setPlatform(parseInt(e.target.value));
+        g_editorPanel.toolLayer.screen.setPlatform(parseInt(e.target.value));
     }
 
     function shapesSelect() {
@@ -85,23 +111,26 @@ module LayoutEditor {
     }
 
     function distribute(e) {
-        g_editor.toolLayer.distributeSelect(parseInt(e.target.value));
+        g_editorPanel.toolLayer.distributeSelect(parseInt(e.target.value));
         e.target.value = 0; // reset to None
     }
 
     function makeSquare() {
-        g_editor.toolLayer.makeSquareSelect();
+        g_editorPanel.toolLayer.makeSquareSelect();
     }
 
     function newPage(e) {
-        var id = ( < HTMLInputElement > e.target).value;
+        setPage(( < HTMLInputElement > e.target).value);
+    }
+
+    function setPage(id) {
         if (id === "styles") {
             document.getElementById('editor').classList.add('hidden');
             document.getElementById('layoutStyles').classList.remove('hidden');
         } else {
             document.getElementById('editor').classList.remove('hidden');
             document.getElementById('layoutStyles').classList.add('hidden');
-            g_editor.pageNumber = parseInt(id);
+            g_editorPanel.pageNumber = parseInt(id);
         }
     }
 
@@ -113,7 +142,7 @@ module LayoutEditor {
 
         var reader = new FileReader();
         reader.onloadend = function(e) {
-            g_editor.toolLayer.addImage(reader.result);
+            g_editorPanel.toolLayer.addImage(reader.result);
         }
         reader.readAsDataURL(file);
     }
@@ -127,50 +156,51 @@ module LayoutEditor {
         }
 
         document.getElementById("undo").addEventListener("click", function() {
-            g_editor.undo();
+            g_editorPanel.undo();
         });
         document.getElementById("redo").addEventListener("click", function() {
-            g_editor.redo();
+            g_editorPanel.redo();
         });
-        document.getElementById("clear").addEventListener("click", reset);
+        document.getElementById("clear").addEventListener("click", clear);
         document.getElementById("load").addEventListener("click", loadData);
         document.getElementById("save").addEventListener("click", saveData);
         document.getElementById("duplicate").addEventListener("click", duplicateSelect);
         document.getElementById("delete").addEventListener("click", deleteSelect);
-        document.getElementById("upload").addEventListener("change", uploadData);
+        document.getElementById("loadFile").addEventListener("change", loadFile);
         document.getElementById("makeSquare").addEventListener("click", makeSquare);
         document.getElementById("distribute").addEventListener("change", distribute);
         document.getElementById("page").addEventListener("change", newPage);
         document.getElementById("imageTool").addEventListener("change", addImage);
 
-        g_inputText = document.getElementById("inputText");
         g_inputMultiLine = document.getElementById("inputMultiLine");
 
-        // g_propertyTool = new PropertyTool();
-        g_propertyPanel.setRootElem(document.getElementById("PropertyPanel"));
-        g_textPropertyEditor.setInputElem(g_inputText);
+        g_pageList.setup(editorElem, 500, 500);
 
-        g_stylePanel.setRootElem(document.getElementById("layoutStyles"));
+        g_propertyPanel.setup(document.getElementById("PropertyPanel"), g_editorList);
+
+        g_stylePanel.setup(document.getElementById("layoutStyles"));
         g_stylePanel.selectChanged.add(function(styles: Style[]) {
             g_propertyPanel.setObjects(styles, function() {
                 g_stylePanel.draw();
-                g_editor.draw();
+                g_editorPanel.draw();
             });
         });
 
-        g_editor = new Editor(editorElem, 500, 500);
-        g_editor.selectChanged.add(function(objects) {
+        g_editorPanel.setup(editorElem, g_pageList);
+        g_editorPanel.selectChanged.add(function(objects) {
             g_propertyPanel.setObjects(objects, function() {
-                g_editor.draw();
+                g_editorPanel.draw();
             })
         });
 
         var platformSelect = < HTMLSelectElement > document.getElementById("platform");
         platformSelect.addEventListener("change", changePlatform);
-        platformSelect.value = g_editor.toolLayer.screen.getPlatform().toString();
+        platformSelect.value = g_editorPanel.toolLayer.screen.getPlatform().toString();
 
-        reset();
+        var watchCanvas = new InteractionHelper.Watch(editorElem, g_editorPanel.onPointer.bind(g_editorPanel));
 
-        var watchCanvas = new InteractionHelper.Watch(editorElem, g_editor.onPointer.bind(g_editor));
+        g_styleList.newGame();
+        g_pageList.newGame();
+        startup();
     });
 }

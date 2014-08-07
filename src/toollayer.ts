@@ -29,10 +29,21 @@ module LayoutEditor {
             this._page = page;
             this.selectList.reset();
 
-            if (page.layers.length > 0)
-                this.layer = page.layers[0];
-            else
-                this.layer = null;
+            if (page) {
+                this.width = page.width;
+                this.height = page.height;
+
+                if (page.layers.length > 0)
+                    this.layer = page.layers[0];
+                else
+                    this.layer = null;
+
+                if (this.canvas !== null) {
+                    this.canvas.width = page.width;
+                    this.canvas.height = page.height;
+                }
+            }
+
             this.requestDraw();
         }
 
@@ -46,12 +57,22 @@ module LayoutEditor {
             });
         }
 
-        reset() {
-            //this.screen.reset();
-            this.selectList.reset();
-            //this.grid.reset();
+        shutdown() {
+            this.style = null;
+
             this.commandList.reset();
-            //this.style.reset();
+            //this.grid.shutdown();
+            this.selectList.reset();
+            //this.screen.shutdown();
+
+            super.shutdown();
+        }
+
+        startup() {
+            super.startup();
+
+            this.canvas.style.zIndex = "1000"; // tool layer always on top
+            super.show();
 
             this.style = g_styleList.styles[0]; // HACK
             this.requestDraw();
@@ -64,9 +85,9 @@ module LayoutEditor {
             super.draw(panZoom); // must be first, clears the ctx
 
             var ctx = this.ctx;
-            this.screen.draw(ctx, panZoom);
             this.grid.draw(ctx, panZoom);
             this.selectList.draw(ctx, panZoom);
+            this.screen.draw(ctx, panZoom);
             this.hasRequestDraw = false;
         }
 
@@ -130,12 +151,6 @@ module LayoutEditor {
             this.commandList.addCommand(command);
             this.selectList.setSelectedShapes([command.imageShape]);
             this.page.requestDraw(this._layer);
-        }
-
-        createCanvas(parentElem: HTMLElement, width: number, height: number) {
-            super.createCanvas(parentElem, width, height);
-            this.canvas.style.zIndex = "1000"; // tool layer always on top
-            super.show();
         }
     }
 }

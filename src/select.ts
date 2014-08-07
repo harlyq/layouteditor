@@ -76,6 +76,7 @@ module LayoutEditor {
         rebuildSelectGroup() {
             this.selectGroup.reset();
             this.selectGroup.setShapes(this.selectedShapes);
+
             this.selectChanged.fire(this.selectGroup.enclosedShapes);
         }
     }

@@ -8,7 +8,7 @@ body {
   height: 500px;
   border: black solid 1px;
 }
-#inputText,
+.inputText,
 #inputMultiLine,
 .inputSelect {
   position: fixed;

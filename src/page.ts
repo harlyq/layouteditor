@@ -6,20 +6,11 @@ module LayoutEditor {
     //------------------------------
     export class Page {
         layers: Layer[] = [];
-        width = 0;
-        height = 0;
-        parentElem: HTMLElement = null;
         panZoom = new PanZoom();
 
         private requestDrawList: Layer[] = [];
 
-        constructor() {}
-
-        setup(parentElem: HTMLElement, width: number, height: number) {
-            this.parentElem = parentElem;
-            this.width = width;
-            this.height = height;
-        }
+        constructor(private parentElem: HTMLElement, public width: number, public height: number) {}
 
         shutdown() {
             for (var i = this.layers.length - 1; i >= 0; --i)
@@ -36,8 +27,7 @@ module LayoutEditor {
         }
 
         newGame() {
-            var newLayer = new Layer();
-            newLayer.setup(this.parentElem, this.width, this.height);
+            var newLayer = new Layer(this.parentElem, this.width, this.height);
             this.layers.push(newLayer);
         }
 
@@ -126,8 +116,7 @@ module LayoutEditor {
 
             for (var i = 0; i < obj.layers.length; ++i) {
                 var layerSave = obj.layers[i];
-                var newLayer: Layer = new Layer();
-                newLayer.setup(this.parentElem, this.width, this.height);
+                var newLayer: Layer = new Layer(this.parentElem, this.width, this.height);
 
                 newLayer.loadData(layerSave);
                 this.addLayer(newLayer);
@@ -138,19 +127,8 @@ module LayoutEditor {
     //-------------------------------
     export class PageList {
         pages: Page[] = [];
-        parentElem: HTMLElement = null;
-        width: number = 0;
-        height: number = 0;
 
-        constructor() {}
-
-        setup(parentElem: HTMLElement, width: number, height: number) {
-            this.parentElem = parentElem;
-            this.width = width;
-            this.height = height;
-
-            this.startup();
-        }
+        constructor(private parentElem: HTMLElement, private width: number, private height: number) {}
 
         shutdown() {
             for (var i = this.pages.length - 1; i >= 0; --i)
@@ -166,15 +144,13 @@ module LayoutEditor {
 
         newGame() {
             for (var i = 0; i < 3; ++i) {
-                var page = new Page();
-                page.setup(this.parentElem, this.width, this.height);
+                var page = new Page(this.parentElem, this.width, this.height);
                 page.newGame();
                 this.addPage(page);
             }
         }
 
         addPage(page: Page) {
-            page.setup(this.parentElem, this.width, this.height);
             this.pages.push(page)
         }
 
@@ -209,8 +185,7 @@ module LayoutEditor {
 
             this.pages.length = 0;
             for (var i = 0; i < obj.pages.length; ++i) {
-                var page = new Page();
-                page.setup(this.parentElem, this.width, this.height);
+                var page = new Page(this.parentElem, this.width, this.height);
 
                 page.loadData(obj.pages[i]);
                 this.pages[i] = page;

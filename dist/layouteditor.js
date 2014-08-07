@@ -1058,6 +1058,13 @@ var LayoutEditor;
             this.styles.push(defaultStyle2);
         };
 
+        StyleList.prototype.getDefaultStyle = function () {
+            var style = this.styles[0];
+            if (!style)
+                style = null;
+            return style;
+        };
+
         StyleList.prototype.getStyle = function (id) {
             for (var i = 0; i < this.styles.length; ++i) {
                 var style = this.styles[i];
@@ -2504,24 +2511,18 @@ var LayoutEditor;
 (function (LayoutEditor) {
     //------------------------------
     var Layer = (function () {
-        function Layer(name) {
+        function Layer(parentElem, width, height, name) {
             if (typeof name === "undefined") { name = ""; }
+            this.parentElem = parentElem;
+            this.width = width;
+            this.height = height;
             this.name = name;
             this.shapes = [];
             this.id = 0;
             this.ctx = null;
             this.canvas = null;
-            this.parentElem = null;
-            this.width = 0;
-            this.height = 0;
             this.id = Layer.uniqueID++;
         }
-        Layer.prototype.setup = function (parentElem, width, height) {
-            this.parentElem = parentElem;
-            this.width = width;
-            this.height = height;
-        };
-
         Layer.prototype.startup = function () {
             this.canvas = document.createElement("canvas");
             this.canvas.classList.add("layout");
@@ -2639,6 +2640,15 @@ var LayoutEditor;
             }
         };
 
+        Layer.prototype.setDimensions = function (width, height) {
+            this.width = width;
+            this.height = height;
+            if (this.canvas !== null) {
+                this.canvas.width = width;
+                this.canvas.height = height;
+            }
+        };
+
         Layer.prototype.saveData = function () {
             var obj = {
                 type: "layer",
@@ -2678,20 +2688,14 @@ var LayoutEditor;
 (function (LayoutEditor) {
     //------------------------------
     var Page = (function () {
-        function Page() {
-            this.layers = [];
-            this.width = 0;
-            this.height = 0;
-            this.parentElem = null;
-            this.panZoom = new LayoutEditor.PanZoom();
-            this.requestDrawList = [];
-        }
-        Page.prototype.setup = function (parentElem, width, height) {
+        function Page(parentElem, width, height) {
             this.parentElem = parentElem;
             this.width = width;
             this.height = height;
-        };
-
+            this.layers = [];
+            this.panZoom = new LayoutEditor.PanZoom();
+            this.requestDrawList = [];
+        }
         Page.prototype.shutdown = function () {
             for (var i = this.layers.length - 1; i >= 0; --i)
                 this.layers[i].shutdown();
@@ -2707,8 +2711,7 @@ var LayoutEditor;
         };
 
         Page.prototype.newGame = function () {
-            var newLayer = new LayoutEditor.Layer();
-            newLayer.setup(this.parentElem, this.width, this.height);
+            var newLayer = new LayoutEditor.Layer(this.parentElem, this.width, this.height);
             this.layers.push(newLayer);
         };
 
@@ -2799,8 +2802,7 @@ var LayoutEditor;
 
             for (var i = 0; i < obj.layers.length; ++i) {
                 var layerSave = obj.layers[i];
-                var newLayer = new LayoutEditor.Layer();
-                newLayer.setup(this.parentElem, this.width, this.height);
+                var newLayer = new LayoutEditor.Layer(this.parentElem, this.width, this.height);
 
                 newLayer.loadData(layerSave);
                 this.addLayer(newLayer);
@@ -2812,20 +2814,12 @@ var LayoutEditor;
 
     //-------------------------------
     var PageList = (function () {
-        function PageList() {
-            this.pages = [];
-            this.parentElem = null;
-            this.width = 0;
-            this.height = 0;
-        }
-        PageList.prototype.setup = function (parentElem, width, height) {
+        function PageList(parentElem, width, height) {
             this.parentElem = parentElem;
             this.width = width;
             this.height = height;
-
-            this.startup();
-        };
-
+            this.pages = [];
+        }
         PageList.prototype.shutdown = function () {
             for (var i = this.pages.length - 1; i >= 0; --i)
                 this.pages[i].shutdown();
@@ -2840,15 +2834,13 @@ var LayoutEditor;
 
         PageList.prototype.newGame = function () {
             for (var i = 0; i < 3; ++i) {
-                var page = new Page();
-                page.setup(this.parentElem, this.width, this.height);
+                var page = new Page(this.parentElem, this.width, this.height);
                 page.newGame();
                 this.addPage(page);
             }
         };
 
         PageList.prototype.addPage = function (page) {
-            page.setup(this.parentElem, this.width, this.height);
             this.pages.push(page);
         };
 
@@ -2882,8 +2874,7 @@ var LayoutEditor;
 
             this.pages.length = 0;
             for (var i = 0; i < obj.pages.length; ++i) {
-                var page = new Page();
-                page.setup(this.parentElem, this.width, this.height);
+                var page = new Page(this.parentElem, this.width, this.height);
 
                 page.loadData(obj.pages[i]);
                 this.pages[i] = page;
@@ -3170,8 +3161,9 @@ var LayoutEditor;
     //------------------------------
     var ToolLayer = (function (_super) {
         __extends(ToolLayer, _super);
-        function ToolLayer() {
-            _super.call(this);
+        function ToolLayer(parentElem, width, height, name) {
+            if (typeof name === "undefined") { name = ""; }
+            _super.call(this, parentElem, width, height, name);
             this.screen = new LayoutEditor.Screen();
             this.selectList = new LayoutEditor.SelectList();
             this.grid = new LayoutEditor.Grid();
@@ -3181,10 +3173,7 @@ var LayoutEditor;
             this._layer = null;
             this._page = null;
 
-            var self = this;
-            this.screen.screenChanged.add(function (screenType) {
-                self.draw();
-            });
+            this.screen.screenChanged.add(this.draw.bind(this));
         }
         Object.defineProperty(ToolLayer.prototype, "layer", {
             get: function () {
@@ -3207,18 +3196,12 @@ var LayoutEditor;
                 this.selectList.reset();
 
                 if (page) {
-                    this.width = page.width;
-                    this.height = page.height;
+                    _super.prototype.setDimensions.call(this, page.width, page.height);
 
                     if (page.layers.length > 0)
                         this.layer = page.layers[0];
                     else
                         this.layer = null;
-
-                    if (this.canvas !== null) {
-                        this.canvas.width = page.width;
-                        this.canvas.height = page.height;
-                    }
                 }
 
                 this.requestDraw();
@@ -3245,7 +3228,6 @@ var LayoutEditor;
             this.canvas.style.zIndex = "1000"; // tool layer always on top
             _super.prototype.show.call(this);
 
-            this.style = LayoutEditor.g_styleList.styles[0]; // HACK
             this.requestDraw();
         };
 
@@ -4505,15 +4487,19 @@ var LayoutEditor;
 var LayoutEditor;
 (function (LayoutEditor) {
     var PropertyPanel = (function () {
-        function PropertyPanel() {
+        function PropertyPanel(rootElem, editorList) {
+            this.rootElem = rootElem;
+            this.editorList = editorList;
             this.objects = [];
-            this.rootElem = null;
-            this.editorList = null;
             this.editing = null;
             this.clickHandler = null;
             this.bindings = [];
             this.onChangeCallback = null;
             this.clickHandler = this.onClick.bind(this);
+
+            this.rootElem = rootElem;
+            this.rootElem.addEventListener("click", this.clickHandler);
+            this.editorList = editorList;
         }
         PropertyPanel.prototype.reset = function () {
             this.objects.length = 0;
@@ -4544,18 +4530,6 @@ var LayoutEditor;
                 return undefined;
 
             return item.type || typeof objects[0][item.prop];
-        };
-
-        PropertyPanel.prototype.setup = function (rootElem, editorList) {
-            if (this.rootElem) {
-                this.rootElem.removeEventListener("click", this.clickHandler);
-            }
-
-            this.rootElem = rootElem;
-            this.rootElem.addEventListener("click", this.clickHandler);
-            this.editorList = editorList;
-
-            this.reset();
         };
 
         PropertyPanel.prototype.setObjects = function (objects, onChangeCallback) {
@@ -4683,12 +4657,15 @@ var LayoutEditor;
 (function (LayoutEditor) {
     //------------------------------
     var EditorPanel = (function () {
-        function EditorPanel() {
+        function EditorPanel(parentElem, pageList, styleList) {
+            this.parentElem = parentElem;
+            this.pageList = pageList;
+            this.styleList = styleList;
             this.hasRequestToolDraw = false;
-            this.toolLayer = new LayoutEditor.ToolLayer();
             this.tool = null;
             this.toolGroup = [];
             this._pageNumber = 0;
+            this.toolLayer = new LayoutEditor.ToolLayer(parentElem, 0, 0, "_toolLayer");
         }
         Object.defineProperty(EditorPanel.prototype, "pageNumber", {
             get: function () {
@@ -4731,12 +4708,6 @@ var LayoutEditor;
             configurable: true
         });
 
-        EditorPanel.prototype.setup = function (parentElem, pageList) {
-            this.parentElem = parentElem;
-            this.pageList = pageList;
-            this.toolLayer.setup(parentElem, 0, 0);
-        };
-
         EditorPanel.prototype.shutdown = function () {
             this.toolLayer.shutdown();
         };
@@ -4750,6 +4721,7 @@ var LayoutEditor;
             page.show();
 
             this.toolLayer.page = page;
+            this.toolLayer.style = this.styleList.getDefaultStyle();
             this.toolLayer.startup();
 
             this.requestToolDraw();
@@ -4867,26 +4839,20 @@ var LayoutEditor;
     "use strict";
 
     var StylePanel = (function () {
-        function StylePanel() {
+        function StylePanel(rootElem, styleList) {
+            this.rootElem = rootElem;
+            this.styleList = styleList;
             this.canvas = null;
             this.ctx = null;
-            this.rootElem = null;
             this.addButton = null;
             this.selected = [];
             this.elems = {};
             this.selectChanged = new Helper.Callback();
-        }
-        StylePanel.prototype.setup = function (elem) {
-            this.rootElem = elem;
-
             var self = this;
-            elem.addEventListener("click", function (e) {
+            rootElem.addEventListener("click", function (e) {
                 self.onClick(e);
             });
-
-            this.startup();
-        };
-
+        }
         StylePanel.prototype.onClick = function (e) {
             var xStyleButton = this.getXStyleButton(e.target);
             if (xStyleButton)
@@ -4921,7 +4887,7 @@ var LayoutEditor;
         StylePanel.prototype.selectStyle = function (styleID) {
             var styleElem = this.elems[styleID];
             if (styleElem) {
-                var style = LayoutEditor.g_styleList.getStyle(styleID);
+                var style = this.styleList.getStyle(styleID);
                 var index = this.selected.indexOf(style);
 
                 if (index === -1) {
@@ -4943,10 +4909,11 @@ var LayoutEditor;
             this.addButton.innerHTML = "+";
             this.rootElem.appendChild(this.addButton);
 
-            for (var i = 0; i < LayoutEditor.g_styleList.styles.length; ++i) {
+            for (var i = 0; i < this.styleList.styles.length; ++i) {
                 var newElem = document.createElement('x-styleButton');
-                var id = LayoutEditor.g_styleList.styles[i].id;
+                var id = this.styleList.styles[i].id;
 
+                newElem.setStyleList(this.styleList);
                 newElem.setAttribute('value', id.toString());
 
                 this.rootElem.appendChild(newElem);
@@ -4956,7 +4923,7 @@ var LayoutEditor;
 
         StylePanel.prototype.onAddStyle = function () {
             var newStyle = new LayoutEditor.Style();
-            LayoutEditor.g_styleList.addStyle(newStyle);
+            this.styleList.addStyle(newStyle);
             this.buildHTML();
             this.selectStyle(newStyle.id);
         };
@@ -4973,6 +4940,7 @@ var LayoutEditor;
             this.height = 60;
             this.rectShape = new LayoutEditor.RectShape("_Thumb", this.width - 20, this.height - 20);
             this.labelElem = null;
+            this.styleList = null;
             var shadow = elem.createShadowRoot();
 
             shadow.innerHTML = '<style>.label {text-align: center; font: bold 12px courier}</style>' + '<canvas></canvas><div class="label"></div></div>';
@@ -4986,20 +4954,14 @@ var LayoutEditor;
             this.canvas.height = this.height;
             this.ctx = this.canvas.getContext("2d");
             this.labelElem = shadow.querySelector(".label");
-
-            this.refresh();
         }
-        XStyleButtonInternal.prototype.attributeChanged = function (attrName, oldVal, newVal) {
-            this.refresh();
-        };
-
         XStyleButtonInternal.prototype.refresh = function () {
             var id = parseInt(this.elem.getAttribute("value"));
-            var style = LayoutEditor.g_styleList.getStyle(id);
+            var style = this.styleList.getStyle(id);
             var ctx = this.ctx;
 
             if (style === null)
-                style = LayoutEditor.g_styleList.styles[0]; // HACK
+                style = this.styleList.styles[0]; // HACK
 
             this.rectShape.style = style;
             this.labelElem.innerHTML = style.name;
@@ -5017,11 +4979,20 @@ var LayoutEditor;
     };
 
     LayoutEditor.XStyleButton.attributeChangedCallback = function (attrName, oldVal, newVal) {
-        this.internal.attributeChanged(attrName, oldVal, newVal);
+        if (this.parentNode)
+            this.internal.refresh();
+    };
+
+    LayoutEditor.XStyleButton.attachedCallback = function () {
+        this.internal.refresh();
     };
 
     LayoutEditor.XStyleButton.refresh = function () {
         this.internal.refresh();
+    };
+
+    LayoutEditor.XStyleButton.setStyleList = function (styleList) {
+        this.internal.styleList = styleList;
     };
 
     var altDocument = document;
@@ -5054,12 +5025,12 @@ var LayoutEditor;
 (function (LayoutEditor) {
     "use strict";
 
-    // var g_styleList: StyleList = new StyleList(); simpler if this is global
-    var g_pageList = new LayoutEditor.PageList();
+    //var g_styleList: StyleList = null; simpler if this is global
+    var g_pageList = null;
 
-    var g_propertyPanel = new LayoutEditor.PropertyPanel();
-    var g_stylePanel = new LayoutEditor.StylePanel();
-    var g_editorPanel = new LayoutEditor.EditorPanel();
+    var g_propertyPanel = null;
+    var g_stylePanel = null;
+    var g_editorPanel = null;
 
     //------------------------------
     function toolButtonClick(e) {
@@ -5224,11 +5195,12 @@ var LayoutEditor;
 
         LayoutEditor.g_inputMultiLine = document.getElementById("inputMultiLine");
 
-        g_pageList.setup(editorElem, 500, 500);
+        LayoutEditor.g_styleList = new LayoutEditor.StyleList();
+        g_pageList = new LayoutEditor.PageList(editorElem, 500, 500);
 
-        g_propertyPanel.setup(document.getElementById("PropertyPanel"), LayoutEditor.g_editorList);
+        g_propertyPanel = new LayoutEditor.PropertyPanel(document.getElementById("PropertyPanel"), LayoutEditor.g_editorList);
 
-        g_stylePanel.setup(document.getElementById("layoutStyles"));
+        g_stylePanel = new LayoutEditor.StylePanel(document.getElementById("layoutStyles"), LayoutEditor.g_styleList);
         g_stylePanel.selectChanged.add(function (styles) {
             g_propertyPanel.setObjects(styles, function () {
                 g_stylePanel.draw();
@@ -5236,7 +5208,7 @@ var LayoutEditor;
             });
         });
 
-        g_editorPanel.setup(editorElem, g_pageList);
+        g_editorPanel = new LayoutEditor.EditorPanel(editorElem, g_pageList, LayoutEditor.g_styleList);
         g_editorPanel.selectChanged.add(function (objects) {
             g_propertyPanel.setObjects(objects, function () {
                 g_editorPanel.draw();

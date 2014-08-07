@@ -30,31 +30,22 @@ module LayoutEditor {
             this.selectList.reset();
 
             if (page) {
-                this.width = page.width;
-                this.height = page.height;
+                super.setDimensions(page.width, page.height)
 
                 if (page.layers.length > 0)
                     this.layer = page.layers[0];
                 else
                     this.layer = null;
-
-                if (this.canvas !== null) {
-                    this.canvas.width = page.width;
-                    this.canvas.height = page.height;
-                }
             }
 
             this.requestDraw();
         }
 
 
-        constructor() {
-            super();
+        constructor(parentElem: HTMLElement, width: number, height: number, name: string = "") {
+            super(parentElem, width, height, name);
 
-            var self = this;
-            this.screen.screenChanged.add(function(screenType: ScreenType) {
-                self.draw();
-            });
+            this.screen.screenChanged.add(this.draw.bind(this));
         }
 
         shutdown() {
@@ -74,7 +65,6 @@ module LayoutEditor {
             this.canvas.style.zIndex = "1000"; // tool layer always on top
             super.show();
 
-            this.style = g_styleList.styles[0]; // HACK
             this.requestDraw();
         }
 

@@ -4,12 +4,12 @@
 module LayoutEditor {
     "use strict";
 
-    // var g_styleList: StyleList = new StyleList(); simpler if this is global
-    var g_pageList: PageList = new PageList();
+    //var g_styleList: StyleList = null; simpler if this is global
+    var g_pageList: PageList = null;
 
-    var g_propertyPanel: PropertyPanel = new PropertyPanel();
-    var g_stylePanel: StylePanel = new StylePanel();
-    var g_editorPanel: EditorPanel = new EditorPanel();
+    var g_propertyPanel: PropertyPanel = null;
+    var g_stylePanel: StylePanel = null;
+    var g_editorPanel: EditorPanel = null;
 
     //------------------------------
     function toolButtonClick(e) {
@@ -174,11 +174,12 @@ module LayoutEditor {
 
         g_inputMultiLine = document.getElementById("inputMultiLine");
 
-        g_pageList.setup(editorElem, 500, 500);
+        g_styleList = new StyleList();
+        g_pageList = new PageList(editorElem, 500, 500);
 
-        g_propertyPanel.setup(document.getElementById("PropertyPanel"), g_editorList);
+        g_propertyPanel = new PropertyPanel(document.getElementById("PropertyPanel"), g_editorList);
 
-        g_stylePanel.setup(document.getElementById("layoutStyles"));
+        g_stylePanel = new StylePanel(document.getElementById("layoutStyles"), g_styleList);
         g_stylePanel.selectChanged.add(function(styles: Style[]) {
             g_propertyPanel.setObjects(styles, function() {
                 g_stylePanel.draw();
@@ -186,7 +187,7 @@ module LayoutEditor {
             });
         });
 
-        g_editorPanel.setup(editorElem, g_pageList);
+        g_editorPanel = new EditorPanel(editorElem, g_pageList, g_styleList);
         g_editorPanel.selectChanged.add(function(objects) {
             g_propertyPanel.setObjects(objects, function() {
                 g_editorPanel.draw();

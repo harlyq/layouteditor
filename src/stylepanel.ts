@@ -7,7 +7,6 @@ module LayoutEditor {
     export class StylePanel {
         private canvas = null;
         private ctx = null;
-        private rootElem: HTMLElement = null;
         private addButton: HTMLElement = null;
         private selected: Style[] = [];
         private elems: {
@@ -16,17 +15,11 @@ module LayoutEditor {
 
         selectChanged = new Helper.Callback();
 
-        constructor() {}
-
-        setup(elem: HTMLElement) {
-            this.rootElem = elem;
-
+        constructor(private rootElem: HTMLElement, private styleList: StyleList) {
             var self = this;
-            elem.addEventListener("click", function(e) {
+            rootElem.addEventListener("click", function(e) {
                 self.onClick(e)
             });
-
-            this.startup();
         }
 
         private onClick(e) {
@@ -63,7 +56,7 @@ module LayoutEditor {
         selectStyle(styleID: number) {
             var styleElem = this.elems[styleID];
             if (styleElem) {
-                var style = g_styleList.getStyle(styleID);
+                var style = this.styleList.getStyle(styleID);
                 var index = this.selected.indexOf(style);
 
                 if (index === -1) {
@@ -85,10 +78,11 @@ module LayoutEditor {
             this.addButton.innerHTML = "+";
             this.rootElem.appendChild(this.addButton);
 
-            for (var i: number = 0; i < g_styleList.styles.length; ++i) {
+            for (var i: number = 0; i < this.styleList.styles.length; ++i) {
                 var newElem = document.createElement('x-styleButton');
-                var id = g_styleList.styles[i].id;
+                var id = this.styleList.styles[i].id;
 
+                ( < any > newElem).setStyleList(this.styleList);
                 newElem.setAttribute('value', id.toString());
 
                 this.rootElem.appendChild(newElem);
@@ -98,7 +92,7 @@ module LayoutEditor {
 
         private onAddStyle() {
             var newStyle: Style = new Style();
-            g_styleList.addStyle(newStyle);
+            this.styleList.addStyle(newStyle);
             this.buildHTML();
             this.selectStyle(newStyle.id);
         }
@@ -111,6 +105,7 @@ module LayoutEditor {
         private height: number = 60;
         private rectShape = new RectShape("_Thumb", this.width - 20, this.height - 20);
         private labelElem: HTMLElement = null;
+        private styleList: StyleList = null;
 
         constructor(private elem) {
             var shadow = elem.createShadowRoot();
@@ -127,21 +122,15 @@ module LayoutEditor {
             this.canvas.height = this.height;
             this.ctx = this.canvas.getContext("2d");
             this.labelElem = shadow.querySelector(".label");
-
-            this.refresh();
-        }
-
-        public attributeChanged(attrName, oldVal, newVal) {
-            this.refresh();
         }
 
         private refresh() {
             var id: number = parseInt(this.elem.getAttribute("value"));
-            var style: Style = g_styleList.getStyle(id);
+            var style: Style = this.styleList.getStyle(id);
             var ctx = this.ctx;
 
             if (style === null)
-                style = g_styleList.styles[0]; // HACK
+                style = this.styleList.styles[0]; // HACK
 
             this.rectShape.style = style;
             this.labelElem.innerHTML = style.name;
@@ -159,11 +148,20 @@ module LayoutEditor {
     }
 
     XStyleButton.attributeChangedCallback = function(attrName, oldVal, newVal) {
-        this.internal.attributeChanged(attrName, oldVal, newVal);
+        if (this.parentNode)
+            this.internal.refresh();
+    }
+
+    XStyleButton.attachedCallback = function() {
+        this.internal.refresh();
     }
 
     XStyleButton.refresh = function() {
         this.internal.refresh();
+    }
+
+    XStyleButton.setStyleList = function(styleList: StyleList) {
+        this.internal.styleList = styleList;
     }
 
     var altDocument: any = document;

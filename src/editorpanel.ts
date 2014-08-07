@@ -7,10 +7,7 @@ module LayoutEditor {
     export class EditorPanel {
         private hasRequestToolDraw: boolean = false;
 
-        parentElem: HTMLElement;
-        pageList: PageList;
-
-        toolLayer: ToolLayer = new ToolLayer();
+        toolLayer: ToolLayer;
         tool: Tool = null;
         toolGroup: Tool[] = [];
 
@@ -45,12 +42,8 @@ module LayoutEditor {
             return this.toolLayer.selectList.selectChanged;
         }
 
-        constructor() {}
-
-        setup(parentElem: HTMLElement, pageList: PageList) {
-            this.parentElem = parentElem;
-            this.pageList = pageList;
-            this.toolLayer.setup(parentElem, 0, 0);
+        constructor(private parentElem: HTMLElement, private pageList: PageList, private styleList: StyleList) {
+            this.toolLayer = new ToolLayer(parentElem, 0, 0, "_toolLayer");
         }
 
         shutdown() {
@@ -66,6 +59,7 @@ module LayoutEditor {
             page.show();
 
             this.toolLayer.page = page;
+            this.toolLayer.style = this.styleList.getDefaultStyle();
             this.toolLayer.startup();
 
             this.requestToolDraw();

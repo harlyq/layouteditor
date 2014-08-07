@@ -9,20 +9,11 @@ module LayoutEditor {
         id: number = 0;
         ctx = null;
         canvas = null;
-        parentElem: HTMLElement = null
-        width: number = 0;
-        height: number = 0;
 
         static uniqueID: number = 1;
 
-        constructor(public name: string = "") {
+        constructor(private parentElem: HTMLElement, private width: number, private height: number, public name: string = "") {
             this.id = Layer.uniqueID++;
-        }
-
-        setup(parentElem: HTMLElement, width: number, height: number) {
-            this.parentElem = parentElem;
-            this.width = width;
-            this.height = height;
         }
 
         startup() {
@@ -141,6 +132,15 @@ module LayoutEditor {
                     return new EllipseShape("", 0, 0);
                 case "AABBShape":
                     return new AABBShape();
+            }
+        }
+
+        setDimensions(width: number, height: number) {
+            this.width = width;
+            this.height = height;
+            if (this.canvas !== null) {
+                this.canvas.width = width;
+                this.canvas.height = height;
             }
         }
 

@@ -5,16 +5,18 @@ module LayoutEditor {
 
     export class PropertyPanel {
         objects: any = [];
-        rootElem: HTMLElement = null;
-        editorList: EditorList = null;
 
         private editing: PropertyBinding = null;
         private clickHandler = null;
         private bindings: PropertyBinding[] = [];
         private onChangeCallback: () => void = null;
 
-        constructor() {
+        constructor(private rootElem: HTMLElement, private editorList: EditorList) {
             this.clickHandler = this.onClick.bind(this);
+
+            this.rootElem = rootElem;
+            this.rootElem.addEventListener("click", this.clickHandler);
+            this.editorList = editorList;
         }
 
         reset() {
@@ -46,18 +48,6 @@ module LayoutEditor {
                 return undefined;
 
             return item.type || typeof objects[0][item.prop]
-        }
-
-        setup(rootElem: HTMLElement, editorList: EditorList) {
-            if (this.rootElem) {
-                this.rootElem.removeEventListener("click", this.clickHandler);
-            }
-
-            this.rootElem = rootElem;
-            this.rootElem.addEventListener("click", this.clickHandler);
-            this.editorList = editorList;
-
-            this.reset();
         }
 
         setObjects(objects: any[], onChangeCallback: () => void) {

@@ -130,6 +130,13 @@ module LayoutEditor {
             this.styles.push(defaultStyle2);
         }
 
+        getDefaultStyle(): Style {
+            var style = this.styles[0];
+            if (!style)
+                style = null;
+            return style;
+        }
+
         getStyle(id: number): Style {
             for (var i: number = 0; i < this.styles.length; ++i) {
                 var style: Style = this.styles[i];
